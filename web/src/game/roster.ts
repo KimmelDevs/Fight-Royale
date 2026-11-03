@@ -86,6 +86,13 @@ export const CHARACTERS: Character[] = [
       hair: "#ff8a3d", hair_shade: "#e0a6a6", iris_top: "#b34a12", iris_bottom: "#ffd27a", eye_dark: "#331405",
       tunic: "#c8312c", band: "#f5d06b", pants: "#2a2a33", boots: "#2a2a33", metal: "#e0c066", trim: "#f5d06b",
       cape: "#c8312c", cape_bottom: "#ff8a3d", glow: "#ffbf4d", shield: "#c8312c", emblem: "#f5d06b" } },
+  { id: "kira", title: "Tempest Kicker", role: "Martial Artist - Kicks",
+    desc: "Fights with her legs: snap kicks, roundhouses, an axe kick and a flying kick, all lightning fast.",
+    stats: { power: 4, speed: 5, range: 2, defense: 3 },
+    look: { name: "Kira", kit: "kicks", element: "chi", outfit: "martial", style: "ponytail", hat: "headband",
+      hair: "#2a2420", hair_shade: "#b8a8c8", iris_top: "#16736b", iris_bottom: "#7af0d6", eye_dark: "#0e2a28",
+      tunic: "#f2f0ea", band: "#1f6f6b", pants: "#22313a", boots: "#e9d8c8", metal: "#c9d6d6", trim: "#e6c26e",
+      cape: "#1f6f6b", cape_bottom: "#4dbfae", glow: "#4dffd2", shield: "#22313a", emblem: "#1f6f6b" } },
 ];
 
 export function resolveEnemy(player: number, pick: number): number {

@@ -113,8 +113,12 @@ input:focus { border-color: #e6c26e; }
 .perk b { font-size: 18px; color: #9dff9a; }
 .perk span { font-size: 14px; }
 @media (max-width: 800px) {
-  .showcase { width: 100%; bottom: 260px; }
-  .panel { position: absolute; top: auto; bottom: 170px; right: 16px; left: 16px; width: auto; max-height: 30vh; }
-  .cards { max-width: 100%; }
-  .bottom { flex-direction: column; align-items: stretch; }
+  .showcase { width: 100%; bottom: 0; }
+  .panel { position: absolute; top: auto; bottom: 168px; right: 16px; left: 16px; width: auto; max-height: 30vh; }
+  /* One scrollable row of cards so they never cover the info panel. */
+  .cards { max-width: 100%; flex-wrap: nowrap; overflow-x: auto; padding: 4px 2px; }
+  .card { flex: 0 0 84px; height: 60px; }
+  .bottom { flex-direction: column; align-items: stretch; gap: 8px; }
+  .actions { align-items: stretch; }
+  .actions .row { justify-content: flex-end; }
 }

@@ -75,6 +75,8 @@ export class FighterModel extends THREE.Group {
   leg_l!: THREE.Group; leg_r!: THREE.Group; skirt!: THREE.Group; cape!: THREE.Group;
   bladeBase!: THREE.Object3D; bladeTip!: THREE.Object3D; shieldNode!: THREE.Object3D; castPoint!: THREE.Object3D;
   hairSway: THREE.Group[] = [];
+  /** Right foot tip, for kick trails. */
+  footR: THREE.Group | null = null;
   walk = 0;
   recoil = 0;
   charge = 0;
@@ -107,7 +109,7 @@ export class FighterModel extends THREE.Group {
     const outfit = look.outfit;
     if (outfit === "mage") {
       this.mageLegs(); this.mageSkirt(); this.mageTorso(); this.mageArms();
-    } else if (outfit === "assassin" || outfit === "samurai" || outfit === "brawler") {
+    } else if (outfit === "assassin" || outfit === "samurai" || outfit === "brawler" || outfit === "martial") {
       this.lightLegs(); this.lightLower(); this.lightTorso(); this.lightArms();
     } else {
       this.knightLegs(); this.knightSkirt(); this.knightTorso(); this.knightArms();
@@ -120,6 +122,7 @@ export class FighterModel extends THREE.Group {
       case "katana": this.buildKatana(); break;
       case "bow": this.buildBow(); break;
       case "knuckles": this.buildKnuckles(); break;
+      case "kicks": this.buildKicks(); break;
       default: this.buildSword(); this.buildShield();
     }
     this.joints = { torso: this.torso, head: this.head, arm_r: this.arm_r, hand_r: this.hand_r,
@@ -287,7 +290,8 @@ export class FighterModel extends THREE.Group {
     const L = this.look;
     for (const side of [1, -1]) {
       const leg = pivot(this.hips, [0.075 * side, 0, 0]);
-      mesh(leg, cap(0.048, 0.76), this.tn(L.pants), [0, -0.37, 0]);
+      mesh(leg, cap(L.outfit === "martial" ? 0.056 : 0.048, 0.76), this.tn(L.pants), [0, -0.37, 0]);
+      if (side < 0) this.footR = pivot(leg, [0, -0.8, 0.08]);
       for (let i = 0; i < 4; i++) mesh(leg, torus(0.044, 0.056), this.tn(L.band), [0, -0.5 - i * 0.055, 0], [0.25 * (i % 2 ? -1 : 1), 0, 0], [1, 0.6, 1]);
       mesh(leg, box(0.1, 0.05, 0.18), this.tn(L.boots), [0, -0.8, 0.03]);
       if (L.outfit === "assassin") mesh(leg, box(0.012, 0.18, 0.04), this.metal(), [0.055 * side, -0.25, 0]);
@@ -298,6 +302,11 @@ export class FighterModel extends THREE.Group {
   private lightLower() {
     const L = this.look;
     this.skirt = pivot(this.hips, [0, 0.04, 0]);
+    if (L.outfit === "martial") {
+      mesh(this.skirt, cyl(0.112, 0.118, 0.07, 20), this.tn(L.band), [0, 0.0, 0]);
+      for (const s of [1, -1]) mesh(this.skirt, box(0.035, 0.22, 0.01), this.tn(L.band), [0.06 * s, -0.12, 0.115], [-0.12, 0, 0.12 * s]);
+      return;
+    }
     if (L.outfit === "samurai") {
       // Wide pleated hakama.
       mesh(this.skirt, coneSheet(0.11, 0.33, 0.6, 0, TAU, 40, 6, 0.01, 12), M.cloth(L.cape, {
@@ -317,8 +326,8 @@ export class FighterModel extends THREE.Group {
     const L = this.look;
     this.torso = pivot(this.hips, [0, 0.05, 0]);
     mesh(this.torso, cyl(0.088, 0.1, 0.3), this.tn(L.tunic), [0, 0.14, 0]);
-    if (L.outfit === "samurai") {
-      // Kimono: crossed collar and a thick obi.
+    if (L.outfit === "samurai" || L.outfit === "martial") {
+      // Kimono / gi: crossed collar and a thick belt.
       for (const side of [1, -1]) mesh(this.torso, box(0.03, 0.2, 0.01), this.tn(L.band), [0.03 * side, 0.2, 0.093], [-0.1, 0, 0.45 * side]);
       mesh(this.torso, cyl(0.104, 0.104, 0.07, 20), this.tn(L.band), [0, 0.0, 0]);
       mesh(this.torso, box(0.06, 0.05, 0.03), this.tn(L.band), [0.06, -0.01, -0.1]);
@@ -355,6 +364,10 @@ export class FighterModel extends THREE.Group {
       if (L.outfit === "samurai") {
         mesh(a, cap(0.029, 0.36), this.skin(), [0, -0.18, 0]);
         mesh(a, coneSheet(0.04, 0.1, 0.24, 0, TAU, 24, 3), M.cloth(L.tunic, { trimBottom: 0.08, trim: L.band }), [0, -0.02, 0]);
+      } else if (L.outfit === "martial") {
+        mesh(a, cyl(0.045, 0.05, 0.12, 14), this.tn(L.tunic), [0, -0.04, 0]);
+        mesh(a, cap(0.029, 0.36), this.skin(), [0, -0.18, 0]);
+        for (let i = 0; i < 3; i++) mesh(a, torus(0.029, 0.039), this.tn(L.band), [0, -0.26 - i * 0.035, 0], [0, 0, 0], [1, 0.7, 1]);
       } else if (L.outfit === "brawler") {
         mesh(a, sphere(0.04, 12), this.tn(L.tunic));
         mesh(a, cap(0.03, 0.36), this.skin(), [0, -0.18, 0]);
@@ -394,6 +407,7 @@ export class FighterModel extends THREE.Group {
       case "witch": this.hatWitch(hc); break;
       case "goggles": this.hatGoggles(hc); break;
       case "hood": this.hatHood(hc); break;
+      case "headband": this.hatHeadband(hc); break;
     }
   }
 
@@ -516,6 +530,15 @@ export class FighterModel extends THREE.Group {
     mesh(hc, coneSheet(0.193, 0.12, 0.13, 0, TAU, 32, 3), M.cloth(L.band, { bottom: L.tunic }), [0, -0.055, 0]);
   }
 
+  private hatHeadband(hc: THREE.Object3D) {
+    const L = this.look;
+    mesh(hc, torus(0.2, 0.216), this.tn(L.band), [0, 0.085, -0.02], [-0.2, 0, 0], [1, 1.5, 1]);
+    const knot = pivot(hc, [0, 0.11, -0.21]);
+    mesh(knot, sphere(0.022, 10), this.tn(L.band));
+    this.hairSway.push(knot);
+    for (const s of [1, -1]) mesh(knot, strand(v(0, 0, 0), v(0.06 * s, -0.08, -0.1), v(0.1 * s, -0.3, -0.12), 0.025, 0.006, v(0, 0, 0.3)), this.tn(L.band));
+  }
+
   // --- weapons -----------------------------------------------------------------------
   private steel() { return M.toon("#eef3ff", { rim: 0.8, shade: METAL_SHADE }); }
 
@@ -622,6 +645,18 @@ export class FighterModel extends THREE.Group {
     }
     this.bladeBase = this.hand_r;
     this.bladeTip = pivot(this.hand_r, [0, -0.1, 0]);
+    this.castPoint = this.bladeTip;
+    this.shieldNode = this.hand_l;
+  }
+
+  private buildKicks() {
+    // Glowing ankle wraps; the trail follows the right foot.
+    for (const leg of [this.leg_l, this.leg_r]) {
+      mesh(leg, torus(0.045, 0.058), this.glowMat, [0, -0.72, 0], [0, 0, 0], [1, 0.8, 1]);
+      mesh(leg, torus(0.052, 0.062), this.tn(this.look.trim), [0, -0.42, 0], [0, 0, 0], [1, 0.6, 1]);
+    }
+    this.bladeBase = pivot(this.leg_r, [0, -0.45, 0.03]);
+    this.bladeTip = this.footR ?? pivot(this.leg_r, [0, -0.8, 0.08]);
     this.castPoint = this.bladeTip;
     this.shieldNode = this.hand_l;
   }

@@ -137,7 +137,7 @@ export class AiBrain implements Brain {
     if (f.state !== S.IDLE || this.queue.length || this.hold > 0 || this.blockHold > 0) return;
     const dist = f.root.position.distanceTo(o.root.position);
     const ranged = RANGED.has(f.kit);
-    const reach = ranged ? 9 : f.kit === "assassin" || f.kit === "knuckles" ? 1.7 : f.kit === "greatsword" ? 2.3 : 1.9;
+    const reach = ranged ? 9 : f.kit === "assassin" || f.kit === "knuckles" || f.kit === "kicks" ? 1.7 : f.kit === "greatsword" ? 2.3 : 1.9;
     this.skillCd -= dt;
     if (this.skillCd <= 0) {
       this.skillCd = rand(this.p.skill[0], this.p.skill[1]);
@@ -155,7 +155,7 @@ export class AiBrain implements Brain {
     if (o.state === S.STAGGER) this.thinkCd = 0;
     this.thinkCd -= dt;
     if (this.thinkCd > 0) return;
-    this.thinkCd = (f.kit === "assassin" || f.kit === "knuckles" ? rand(0.5, 1.1) : rand(0.7, 1.6)) * this.p.think;
+    this.thinkCd = (f.kit === "assassin" || f.kit === "knuckles" || f.kit === "kicks" ? rand(0.5, 1.1) : rand(0.7, 1.6)) * this.p.think;
     const heavy = o.state === S.STAGGER ? 0.5 : o.state === S.BLOCK ? 0.45 : 0.22;
     if (Math.random() < heavy) this.queue.push([0, HOLD_T + rand(0.3, 0.65)]);
     else {

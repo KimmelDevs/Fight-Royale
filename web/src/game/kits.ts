@@ -30,6 +30,7 @@ export const STATS: Record<string, { hp: number; guard: number; move: number; wa
   katana: { hp: 2200, guard: 80, move: 3.8, walk: 3.0, parry: 0.2, jump: 7.5 },
   bow: { hp: 2000, guard: 60, move: 3.6, walk: 2.6, parry: 0.16, jump: 7.5 },
   knuckles: { hp: 2300, guard: 90, move: 4.0, walk: 3.2, parry: 0.2, jump: 8.0 },
+  kicks: { hp: 2300, guard: 85, move: 4.1, walk: 3.2, parry: 0.2, jump: 8.6 },
 };
 
 const DEFAULT: Omit<Attack, "id" | "element"> = {
@@ -53,6 +54,7 @@ export function attacks(kit: string, element: string): Record<string, Attack> {
     katana: katana,
     bow: bow,
     knuckles: knuckles,
+    kicks: kicks,
   } as Record<string, () => Record<string, Attack>>)[kit]?.() ?? knight();
   for (const k of Object.keys(t)) {
     t[k].element = element;
@@ -168,6 +170,19 @@ function knuckles(): Record<string, Attack> {
   };
 }
 
+function kicks(): Record<string, Attack> {
+  return {
+    l1: a({ wind: 0.08, active: 0.06, recover: 0.16, dmg: 46, guard: 12, reach: 1.65, lunge: 3, knock: 1.2, stun: 0.26, pose_w: "kk1_w", pose_s: "kk1_s", next: "l2" }),
+    l2: a({ wind: 0.1, active: 0.07, recover: 0.18, dmg: 56, guard: 14, reach: 1.75, lunge: 3, knock: 1.6, stun: 0.28, pose_w: "kk2_w", pose_s: "kk2_s", next: "l3" }),
+    l3: a({ wind: 0.12, active: 0.08, recover: 0.2, dmg: 72, guard: 18, reach: 1.85, lunge: 3.5, knock: 2.2, stun: 0.32, pose_w: "kk3_w", pose_s: "kk3_s", next: "l4" }),
+    l4: a({ wind: 0.18, active: 0.08, recover: 0.38, dmg: 105, guard: 30, reach: 1.8, lunge: 2.5, knock: 4.5, stun: 0.5, stagger: true, pose_w: "kk4_w", pose_s: "kk4_s" }),
+    heavy: a({ wind: 0.12, active: 0.16, recover: 0.5, dmg: 230, guard: 55, reach: 2.0, lunge: 11, knock: 6.5, stun: 0.8, heavy: true, self_jump: 4, pose_w: "charge", pose_s: "fly_s" }),
+    z: a({ name: "Cyclone Kick", desc: "A spinning kick that hits everyone around you three times.", cd: 6, type: "strike", at: "self", wind: 0.08, recover: 0.4, dmg: 65, guard: 20, knock: 3, stun: 0.3, delay: 0.05, radius: 2.0, repeat: 3, interval: 0.15, style: "spin", pose_w: "kk3_w", pose_s: "kk3_s" }),
+    x: a({ name: "Crescent Gale", desc: "A kick so fast it launches a cutting wind across the arena.", cd: 6, type: "projectile", wind: 0.14, recover: 0.35, dmg: 110, guard: 30, knock: 3, stun: 0.45, speed: 20, size: 1.4, style: "wave", pierce: true, pose_w: "kk2_w", pose_s: "kk2_s" }),
+    c: a({ name: "Hundred Kicks", desc: "Blitz the target with a storm of eight rapid kicks.", cd: 10, type: "strike", wind: 0.15, recover: 0.6, dmg: 40, guard: 10, knock: 0.8, stun: 0.3, delay: 0.2, radius: 1.5, repeat: 8, interval: 0.06, style: "slashes", pose_w: "kk1_w", pose_s: "kk1_s" }),
+  };
+}
+
 // --- poses ----------------------------------------------------------------------
 // Joint rotations in radians. arm x < 0 raises the arm forward; YXZ order, so y then yaws it.
 
@@ -267,6 +282,25 @@ const KNUCKLES: Record<string, Pose> = {
   kh_s: P([-0.25, 0.2, 0], [-0.35, -0.1, 0], [-2.9, 0.1, -0.1], [0, 0, 0], [-0.8, -0.3, 0.5], [0.6, 0, 0], [-0.6, 0, 0.08], [0.1, 0, -0.08], 0),
 };
 
+// Martial artist: arms stay in a high guard while the legs do the work. A leg's x < 0 lifts it
+// forward; y (applied after) sweeps the raised leg sideways, for roundhouse arcs.
+const GUARD_R: Vec3 = [-1.0, 0.4, -0.3];
+const GUARD_L: Vec3 = [-1.1, -0.3, 0.3];
+const KICKS: Record<string, Pose> = {
+  idle: P([0.1, -0.35, 0], [-0.05, 0.3, 0], GUARD_R, [0.6, 0, 0], GUARD_L, [0.6, 0, 0], [-0.35, 0, 0.1], [0.35, 0, -0.1], -0.08),
+  block: P([0.2, 0, 0], [0.1, 0, 0], [-1.7, 0.55, 0], [0.8, 0, 0], [-1.7, -0.55, 0], [0.8, 0, 0], [-1.3, 0, 0.05], [0.25, 0, -0.08], -0.06),
+  kk1_w: P([0, -0.2, 0], [0, 0.2, 0], GUARD_R, [0.6, 0, 0], GUARD_L, [0.6, 0, 0], [0.15, 0, 0.05], [-1.6, 0, -0.05], -0.04),
+  kk1_s: P([-0.3, -0.2, 0], [0.15, 0.2, 0], [-0.7, 0.2, -0.6], [0.6, 0, 0], GUARD_L, [0.6, 0, 0], [0.2, 0, 0.05], [-1.62, 0, 0], -0.1),
+  kk2_w: P([0, -0.6, 0], [0, 0.6, 0], GUARD_R, [0.6, 0, 0], GUARD_L, [0.6, 0, 0], [-1.3, 1.1, 0], [0.15, 0, -0.05], -0.06),
+  kk2_s: P([-0.15, 0.6, 0], [0, -0.5, 0], [-0.6, 0.2, -0.7], [0.6, 0, 0], GUARD_L, [0.6, 0, 0], [-1.5, -0.6, 0], [0.15, 0, -0.05], -0.08),
+  kk3_w: P([0, 0.8, 0], [0, -0.7, 0], GUARD_R, [0.6, 0, 0], GUARD_L, [0.6, 0, 0], [0.1, 0, 0.05], [-1.4, -1.2, 0], -0.08),
+  kk3_s: P([-0.2, -0.9, 0], [0, 0.8, 0], GUARD_R, [0.6, 0, 0], [-0.6, -0.2, 0.7], [0.6, 0, 0], [0.15, 0, 0.05], [-1.85, 0.6, 0], -0.1),
+  kk4_w: P([-0.3, 0, 0], [-0.2, 0, 0], GUARD_R, [0.6, 0, 0], GUARD_L, [0.6, 0, 0], [-2.6, 0.15, 0], [0.2, 0, -0.05], -0.02),
+  kk4_s: P([0.35, 0, 0], [-0.2, 0, 0], [-0.6, 0, -0.6], [0.6, 0, 0], [-0.6, 0, 0.6], [0.6, 0, 0], [-0.55, 0, 0.05], [0.3, 0, -0.05], -0.2),
+  charge: P([0.45, -0.3, 0], [-0.3, 0.3, 0], [-0.4, -0.3, -0.5], [0.6, 0, 0], [-0.4, 0.3, 0.5], [0.6, 0, 0], [-0.75, 0, 0.1], [0.55, 0, -0.1], -0.28),
+  fly_s: P([-0.35, 0, 0], [0.2, 0, 0], [-0.5, 0, -1.0], [0.6, 0, 0], [-0.5, 0, 1.0], [0.6, 0, 0], [-1.3, 0, 0.05], [-1.6, 0, -0.05], 0),
+};
+
 const TABLES: Record<string, Record<string, Pose>> = {
   knight: KNIGHT,
   mage: MAGE,
@@ -275,6 +309,7 @@ const TABLES: Record<string, Record<string, Pose>> = {
   katana: twoHanded(KNIGHT),
   bow: BOW,
   knuckles: KNUCKLES,
+  kicks: KICKS,
 };
 
 export function poses(kit: string): Record<string, Pose> {

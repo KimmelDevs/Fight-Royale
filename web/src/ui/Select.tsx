@@ -12,6 +12,7 @@ const CONTROLS: Record<string, string> = {
   greatsword: "Tap: 3 heavy cleaves  -  Hold: spinning mega-slash  -  Block: blade guard",
   katana: "Tap: 3 swift cuts  -  Hold: iaido dash slash  -  Block: blade guard (wide parry)",
   bow: "Tap: 3 arrows (third is a spread)  -  Hold: piercing power shot  -  Block: arm guard",
+  kicks: "Tap: 4-kick combo (snap, roundhouse, high spin, axe)  -  Hold: flying kick  -  Block: arm guard (wide parry)",
   knuckles: "Tap: 5-hit punch combo  -  Hold: rising uppercut  -  Block: forearm guard (wide parry)",
 };
 const LEVEL_COLORS = ["#6fcf7f", "#5fa8e3", "#f2994a", "#e8534a"];
