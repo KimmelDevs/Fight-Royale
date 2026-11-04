@@ -763,7 +763,7 @@ export class FighterModel extends THREE.Group {
     this.cape.rotation.set(0.08 + 0.3 * this.walk + 0.3 * this.recoil + Math.sin(this.t * 2.1) * 0.03, 0, Math.sin(this.t * 1.7) * 0.03);
     this.hairSway.forEach((h, i) => { h.rotation.x = 0.1 * this.walk + 0.25 * this.recoil + Math.sin(this.t * 2 + i) * 0.05; });
     if (this.gripL) this.reachGrip();
-    this.vrmRig?.update(dt);
+    this.vrmRig?.update(dt, { t: this.t, walk: this.walk, phase: this.walkPhase, crouch: this.hipsY });
     this.glowMat.color.copy(this.glowBase).lerp(new THREE.Color(1, 1, 1), this.charge * (0.5 + 0.3 * Math.sin(this.t * 30)));
     this.updateBlink(dt);
     this.updateFlash(dt);
