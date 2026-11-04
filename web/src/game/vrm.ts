@@ -83,6 +83,10 @@ export class VrmRig {
   grip = { left: false, right: true };
   /** 0 = hands keep the pose angle exactly, 1 = hands follow the forearm. */
   followArm = 0.35;
+  /** Right hand holds a staff: heavy, upright, spring-driven instead of copying the wrist. */
+  staff = false;
+  private staffDir = new THREE.Vector3();
+  private staffVel = new THREE.Vector3();
   private hipsBone: THREE.Object3D | null;
   private hipsRest = new THREE.Vector3();
   private hipsBoneRest = new THREE.Vector3();
@@ -219,16 +223,34 @@ export class VrmRig {
       // Hand: blend the pose's absolute hand angle with "follow the forearm", so held weapons
       // tilt and sway with the arm instead of staying rigidly at the pose angle.
       const handAbs = deltaOf(hk.joint, hk.rest).multiply(hk.cal);
+      // Direction the pose wants the held weapon to point (weapon meshes run along local +Y).
+      const poseDir = new THREE.Vector3(0, 1, 0).applyQuaternion(quatIn(root, hk.joint, new THREE.Quaternion()));
       const fore = B(`${side}LowerArm`);
       const handB = B(`${side}Hand`);
       if (fore && handB) {
         const follow = quatIn(root, fore, new THREE.Quaternion()).multiply(rz(-sgn * D(10)));
         set(handB, handAbs.clone().slerp(follow, this.followArm));
-        // Weapon mount (procedural hand) takes the VRM hand's final orientation.
-        const vrmHandRoot = quatIn(root, handB, new THREE.Quaternion());
-        const procRoot = vrmHandRoot.multiply(_q2.copy(hk.cal).invert()).multiply(hk.rest);
         const parentRoot = quatIn(root, hk.joint.parent!, new THREE.Quaternion()).invert();
-        hk.joint.quaternion.copy(parentRoot.multiply(procRoot));
+        if (this.staff && side === "right") {
+          // A staff is a long, heavy pole: mostly upright, tilting toward the cast at most
+          // 60 degrees, no wrist spin, and it swings on a spring (lag, slight overshoot).
+          const up = new THREE.Vector3(0, 1, 0);
+          const want = poseDir.clone();
+          const ang = want.angleTo(up);
+          if (ang > D(60)) want.lerp(up, 1 - D(60) / ang).normalize();
+          want.add(new THREE.Vector3(-0.13 + Math.sin(t * 0.9) * 0.03 * idle, 0, 0.04 + Math.sin(ph) * 0.06 * walk)).normalize();
+          if (this.first || this.staffDir.lengthSq() === 0) { this.staffDir.copy(want); this.staffVel.set(0, 0, 0); }
+          const w = 15, zeta = 0.55;
+          this.staffVel.addScaledVector(_v.copy(want).sub(this.staffDir), w * w * dt).multiplyScalar(Math.max(0, 1 - 2 * zeta * w * dt));
+          this.staffDir.addScaledVector(this.staffVel, dt).normalize();
+          const mount = new THREE.Quaternion().setFromUnitVectors(up, this.staffDir);
+          hk.joint.quaternion.copy(parentRoot.multiply(mount));
+        } else {
+          // Weapon mount (procedural hand) takes the VRM hand's final orientation.
+          const vrmHandRoot = quatIn(root, handB, new THREE.Quaternion());
+          const procRoot = vrmHandRoot.multiply(_q2.copy(hk.cal).invert()).multiply(hk.rest);
+          hk.joint.quaternion.copy(parentRoot.multiply(procRoot));
+        }
         hk.joint.updateMatrixWorld(true);
       }
       // Fingers: a closed grip around a weapon, a soft natural curl on a free hand.
