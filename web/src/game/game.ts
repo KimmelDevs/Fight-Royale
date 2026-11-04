@@ -841,6 +841,7 @@ export class Game implements MobHost {
         break;
       case "slam":
       case "cleave":
+        if (a.style === "slam") this.fxp("rocks", g, 22, 1.4);
         this.fxp("ring", g, color, radius * 1.3, 0.35, 0.9);
         this.fxp("ring", g, "#ffffff", radius * 0.8, 0.25, 0.6);
         this.fxp("sparks", g.clone().setY(0.2), "#d8c8a8", 40, 7, [0, 1, 0]);

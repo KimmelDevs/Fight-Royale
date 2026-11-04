@@ -123,6 +123,7 @@ export class Fighter implements Entity {
   onLanded: (f: Fighter) => void = () => {};
 
   private stun = 0;
+  private leapVel = new THREE.Vector3();
   private stunPose = "hit";
   private comboNext = "l1";
   private comboTimer = 0;
@@ -329,13 +330,38 @@ export class Fighter implements Entity {
     this.atkPhase = 0;
     this.buffered = false;
     this.swingSerial++;
-    if (this.atk.self_jump > 0) { this.velY = this.atk.self_jump * (this.stage ? 1.35 : 1); this.onGround = false; this.ground = null; }
+    if (this.atk.self_jump > 0 && this.atk.mode !== "leap") { this.velY = this.atk.self_jump * (this.stage ? 1.35 : 1); this.onGround = false; this.ground = null; }
     this.setState(S.ATTACK);
   }
 
   private attackStep() {
     const a = this.atk!;
     const w = a.wind, ac = a.active, r = a.recover;
+    if (a.mode === "leap") {
+      // Leap attack: wind-up crouch -> jump toward the target -> the hit lands on touchdown.
+      if (this.atkPhase === 0 && this.stateT >= w) {
+        this.atkPhase = 1;
+        this.velY = a.self_jump * (this.stage ? 1.35 : 1);
+        this.onGround = false;
+        this.ground = null;
+        const o = this.opponent;
+        const air = (2 * this.velY) / GRAVITY;
+        if (o && !o.isDown()) {
+          const to = o.root.position.clone().sub(this.root.position).setY(0);
+          const d = Math.max(to.length() - 0.9, 0);
+          this.leapVel.copy(to.normalize().multiplyScalar(Math.min(d / air, 9)));
+        } else this.leapVel.set(Math.sin(this.root.rotation.y), 0, Math.cos(this.root.rotation.y)).multiplyScalar(3);
+        if (this.stage) this.vx = this.leapVel.x;
+      } else if (this.atkPhase === 1) {
+        if (this.onGround && this.stateT > w + 0.1) {
+          this.atkPhase = 2;
+          this.stateT = w + ac;
+          this.leapVel.set(0, 0, 0);
+          this.onSwing(this);
+        }
+      } else if (this.atkPhase === 2 && this.stateT >= w + ac + r) { this.finishAttack(); this.setState(S.IDLE); }
+      return;
+    }
     if (this.atkPhase === 0 && this.stateT >= w) {
       this.atkPhase = 1;
       this.onSwing(this);
@@ -376,6 +402,13 @@ export class Fighter implements Entity {
       let d = target - this.root.rotation.y;
       d = Math.atan2(Math.sin(d), Math.cos(d));
       this.root.rotation.y += d * (1 - Math.exp(-12 * dt));
+    }
+    if (this.state === S.ATTACK && this.atk?.mode === "leap" && this.atkPhase === 1) {
+      pos.addScaledVector(this.leapVel, dt);
+      const fl = Math.hypot(pos.x, pos.z);
+      if (fl > this.arenaRadius) { pos.x *= this.arenaRadius / fl; pos.z *= this.arenaRadius / fl; }
+      this.model.rotation.y = this.viewBias;
+      return;
     }
     if (this.dashT > 0) {
       pos.addScaledVector(this.dashDir, DASH_SPEED * dt);
@@ -692,6 +725,12 @@ export class Fighter implements Entity {
       case S.BLOCK: p = "block"; sp = 30; break;
       case S.CHARGE: p = this.attacks.heavy.pose_w; sp = 10; break;
       case S.ATTACK:
+        if (a?.mode === "leap") {
+          if (this.atkPhase === 0) { p = a.pose_w; sp = 16; }
+          else if (this.atkPhase === 1) { p = "slam_air"; sp = 14; }
+          else { p = a.pose_s; sp = 40; }
+          break;
+        }
         if (this.atkPhase === 0) { p = a!.pose_w; sp = 22; }
         else if (this.atkPhase === 1) { p = a!.pose_s; sp = 45; }
         else if (this.stateT < a!.wind + a!.active + a!.recover * 0.5) { p = a!.pose_s; sp = 20; }

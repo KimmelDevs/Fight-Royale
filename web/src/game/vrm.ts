@@ -112,6 +112,8 @@ export class VrmRig {
   gripL: THREE.Object3D | null = null;
   /** Rest the blade on the shoulder when not fighting (greatsword). */
   restSword = false;
+  /** Fist fighter: high guard with bent elbows, staggered bladed stance, bounce and head weave. */
+  boxer = false;
   /** Sword reference points (base, tip, and a point off the cutting edge) for edge alignment. */
   blade: { base: THREE.Object3D; tip: THREE.Object3D; edge: THREE.Object3D } | null = null;
   private lastTip = new THREE.Vector3();
@@ -205,6 +207,7 @@ export class VrmRig {
       this.hipsBone.position.copy(this.hipsBoneRest).addScaledVector(_v.copy(j.hips.position).sub(this.hipsRest), 1 / this.scale);
       this.hipsBone.position.x += (shift * S.hipSway * idle) / this.scale;
       this.hipsBone.position.y += (Math.abs(Math.sin(ph)) * 0.012 * walk - S.drop) / this.scale;
+      if (this.boxer) this.hipsBone.position.y += ((Math.sin(t * TAU * 2.2) * 0.5 - 0.5) * 0.04 * idle) / this.scale; // bounce on the balls of the feet
       this.hipsBone.quaternion.setFromEuler(_e.set(0, Math.sin(ph) * S.walkYaw * walk - this.bladed * D(12) + this.followYaw * 0.3, (Math.sin(ph) * S.walkRoll * walk + shift * S.hipRoll * idle), "YXZ"));
       this.hipsBone.updateMatrixWorld(true);
     }
@@ -246,7 +249,9 @@ export class VrmRig {
 
     // Head: neck takes 40%, head finishes, with a slow look-around and a little lag.
     const H = deltaOf(j.head, L.head.rest).multiply(new THREE.Quaternion().setFromEuler(
-      _e.set(D(3) * idle * Math.sin(t * TAU / 4.7) * S.breath + S.chin - S.lean * 1.2, S.headYaw * idle * look, shift * S.headTilt * idle)));
+      _e.set(D(3) * idle * Math.sin(t * TAU / 4.7) * S.breath + S.chin - S.lean * 1.2 + (this.boxer ? D(6) : 0),
+        S.headYaw * idle * look + (this.boxer ? (Math.sin(t * 1.3) * D(5) + Math.sin(t * 2.9 + 1) * D(3)) * idle : 0),
+        shift * S.headTilt * idle + (this.boxer ? Math.sin(t * 1.7) * D(3) * idle : 0))));
     const chestNow = quatIn(root, B("upperChest") ?? B("chest") ?? B("spine")!, new THREE.Quaternion());
     set(B("neck"), chestNow.clone().slerp(H, 0.4));
     set(B("head"), H);
@@ -269,9 +274,14 @@ export class VrmRig {
       const elev = dir.angleTo(new THREE.Vector3(0, -1, 0));
       // A shield arm stays bent (~90 deg), holding the shield close instead of reaching out.
       if (this.shield && side === "left") this.shieldRaise = THREE.MathUtils.clamp((elev - D(45)) / D(50), 0, 1);
-      const flex = this.shield && side === "left"
-        ? D(55)
-        : Math.min(D(16) + elev * 0.3 + Math.sin(t * TAU / 3.8 + 1) * D(2) * idle, D(75));
+      // Boxer: the pose's wrist angle drives the elbow (guard ~115 deg, fists at the cheeks;
+      // nearly straight at the moment a punch lands).
+      const wristX = Math.abs(new THREE.Euler().setFromQuaternion(hk.joint.quaternion, "YXZ").x);
+      const flex = this.boxer
+        ? THREE.MathUtils.clamp(D(12) + wristX * 1.75, D(12), D(125))
+        : this.shield && side === "left"
+          ? D(55)
+          : Math.min(D(16) + elev * 0.3 + Math.sin(t * TAU / 3.8 + 1) * D(2) * idle, D(75));
       // Forearm bends toward the front of the arm (around the arm's local Y).
       setLocal(B(`${side}LowerArm`), 0, -sgn * flex, 0);
       // Hand: blend the pose's absolute hand angle with "follow the forearm", so held weapons
@@ -334,11 +344,14 @@ export class VrmRig {
       const cyc = 0.5 + 0.5 * Math.sin(ph + (side === "left" ? 1.2 : 1.2 + Math.PI));
       // Idle: the leg not carrying the weight relaxes with a bent knee.
       const relaxed = Math.max(0, side === "left" ? -shift : shift);
-      const load = this.restSword && m.combat ? D(10) : 0; // knees take the sword's weight
+      const load = (this.restSword && m.combat ? D(10) : 0) // knees take the sword's weight
+        + (this.boxer ? (D(6) + (0.5 - Math.sin(t * TAU * 2.2) * 0.5) * D(8)) * idle : 0);
       const knee = S.knee + load + walk * (D(10) + D(30) * cyc) + Math.min(crouch * D(260), D(55)) + relaxed * S.relaxKnee * idle;
       // Wide stance (legs out, toes out) and hip flexion matching the knee bend, so a bent
       // knee lowers the body instead of kicking the foot back.
-      const stance = new THREE.Quaternion().setFromEuler(_e.set(-knee * 0.5, sg * S.toeOut, sg * S.stance * (1 - 0.4 * walk), "YXZ"));
+      // Boxer stagger: lead (left) foot forward, rear foot back, knees pumping with the bounce.
+      const stagger = this.boxer ? (side === "left" ? -D(14) : D(10)) * (1 - walk) : 0;
+      const stance = new THREE.Quaternion().setFromEuler(_e.set(-knee * 0.5 + stagger, sg * S.toeOut, sg * S.stance * (1 - 0.4 * walk), "YXZ"));
       set(B(`${side}UpperLeg`), stance.multiply(deltaOf(lk.joint, lk.rest)));
       setLocal(B(`${side}LowerLeg`), knee, 0, 0);
       const foot = B(`${side}Foot`);

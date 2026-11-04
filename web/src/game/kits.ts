@@ -191,7 +191,7 @@ function knuckles(): Record<string, Attack> {
     heavy: a({ wind: 0.14, active: 0.12, recover: 0.5, dmg: 220, guard: 55, reach: 1.6, lunge: 3, knock: 6, stun: 0.8, heavy: true, self_jump: 5, pose_w: "kh_w", pose_s: "kh_s" }),
     z: a({ name: "Rush", desc: "Barrel forward with a flurry that staggers.", cd: 5, wind: 0.08, active: 0.2, recover: 0.4, dmg: 120, guard: 35, reach: 1.6, lunge: 14, knock: 3, stun: 0.7, stagger: true, pose_w: "k5_w", pose_s: "k5_s" }),
     x: a({ name: "Shockwave Punch", desc: "Punch the air so hard it flies.", cd: 6, type: "projectile", wind: 0.14, recover: 0.35, dmg: 110, guard: 30, knock: 5, stun: 0.5, speed: 18, size: 1.3, style: "shock", pose_w: "k1_w", pose_s: "k1_s" }),
-    c: a({ name: "Meteor Fist", desc: "Leap high and crash down with a crater-making punch.", cd: 11, type: "strike", at: "self", self_jump: 9, wind: 0.1, recover: 0.6, dmg: 300, guard: 80, knock: 8, stun: 0.9, heavy: true, delay: 0.8, radius: 2.5, style: "slam", pose_w: "kh_w", pose_s: "kh_s" }),
+    c: a({ name: "Meteor Fist", desc: "Leap at the enemy and smash the ground on landing, cratering everything nearby.", cd: 11, type: "strike", at: "self", mode: "leap", self_jump: 9, wind: 0.22, recover: 0.6, dmg: 300, guard: 80, knock: 8, stun: 0.9, heavy: true, delay: 0.02, radius: 2.5, style: "slam", pose_w: "slam_w", pose_s: "slam_s" }),
   };
 }
 
@@ -305,6 +305,10 @@ const KNUCKLES: Record<string, Pose> = {
   k5_s: P([0.35, 0, 0], [-0.2, 0, 0], [-1.6, 0.15, 0], [0, 0, 0], [-1.6, -0.15, 0], [0, 0, 0], [-0.7, 0, 0.08], [0.6, 0, -0.08], -0.2),
   kh_w: P([0.5, -0.3, 0], [-0.3, 0.3, 0], [-0.3, -0.2, -0.35], [1.2, 0, 0], [-1.2, -0.25, 0.25], [0.6, 0, 0], [-0.7, 0, 0.1], [0.6, 0, -0.1], -0.28),
   kh_s: P([-0.25, 0.2, 0], [-0.35, -0.1, 0], [-2.9, 0.1, -0.1], [0, 0, 0], [-0.8, -0.3, 0.5], [0.6, 0, 0], [-0.6, 0, 0.08], [0.1, 0, -0.08], 0),
+  // Meteor Fist: deep crouch, airborne with both fists overhead, then fists driven into the ground.
+  slam_w: P([0.55, 0, 0], [-0.35, 0, 0], [0.5, 0.2, -0.3], [0.6, 0, 0], [0.5, -0.2, 0.3], [0.6, 0, 0], [-0.9, 0, 0.15], [-0.9, 0, -0.15], -0.32),
+  slam_air: P([-0.2, 0, 0], [-0.25, 0, 0], [-2.95, 0.15, 0], [0.3, 0, 0], [-2.95, -0.15, 0], [0.3, 0, 0], [-1.1, 0, 0.1], [-0.4, 0, -0.1], 0),
+  slam_s: P([0.85, 0, 0], [-0.55, 0, 0], [-0.55, 0.25, 0], [0.1, 0, 0], [-0.55, -0.25, 0], [0.1, 0, 0], [-1.0, 0, 0.2], [0.2, 0, -0.2], -0.42),
 };
 
 // Martial artist: arms stay in a high guard while the legs do the work. A leg's x < 0 lifts it

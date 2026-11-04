@@ -840,6 +840,7 @@ export class FighterModel extends THREE.Group {
       this.vrmRig.blade = { base: this.bladeBase, tip: this.bladeTip, edge };
     }
     if (this.kit === "greatsword") { this.vrmRig.restSword = true; this.vrmRig.grip.left = true; }
+    if (this.kit === "knuckles") { this.vrmRig.boxer = true; this.vrmRig.bladed = 0.65; }
     for (const h of [this.hand_l, this.hand_r]) h.scale.multiplyScalar(VRM_WEAPON_SCALE);
     JN.forEach((n, i) => this.joints[n].quaternion.copy(save[i]));
     this.hips.position.copy(hipsPos);
