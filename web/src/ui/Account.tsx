@@ -12,7 +12,7 @@ export function Wallet({ onAccount }: { onAccount?: () => void }) {
       <span className="gold"><Gold /> {p.gold.toLocaleString()}</span>
       <span className="dia"><Diamond /> {p.diamonds.toLocaleString()}</span>
       {onAccount && (
-        <button className="chip" onClick={onAccount}>{acc.signedIn ? p.username : "Sign in"}</button>
+        <button className="chip" onClick={onAccount}>{!acc.ready ? "..." : acc.signedIn ? (acc.loading ? "Loading..." : p.username) : "Sign in"}</button>
       )}
     </div>
   );
@@ -36,6 +36,7 @@ export default function AccountScreen({ onBack }: { onBack: () => void }) {
         const confirm = await account.signUp(email, password, username);
         setMsg(confirm ? "Account created. Check your email to confirm it, then sign in." : "Account created!");
       } else {
+        if (!email.trim() || !password) throw new Error("Enter your email and password.");
         await account.signIn(email, password);
       }
     } catch (e: any) {
@@ -52,8 +53,11 @@ export default function AccountScreen({ onBack }: { onBack: () => void }) {
           <h1 className="logo small">{p.username}</h1>
           <p className="tag">{acc.email}</p>
           <Wallet />
-          <p className="note">{p.characters.length} fighters owned. Your progress is saved to your account.</p>
-          <button className="big ghost" onClick={() => account.signOut()}>Sign out</button>
+          {acc.loading ? <p className="note">Loading your profile...</p>
+            : acc.loadError ? <div className="error">{acc.loadError}</div>
+            : <p className="note">{p.characters.length} fighters owned. Your progress is saved to your account.</p>}
+          {acc.loadError && <button className="big" onClick={() => account.refresh()}>Retry</button>}
+          <button className="big ghost" onClick={async () => { await account.signOut(); onBack(); }}>Sign out</button>
           <button className="big gold" onClick={onBack}>Back</button>
         </div>
       </div>

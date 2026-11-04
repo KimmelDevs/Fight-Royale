@@ -22,6 +22,11 @@ class Account {
   email = "";
   profile: Profile = guestProfile();
   ready = false;
+  /** Signed in but the cloud profile hasn't arrived (or failed): don't show guest data. */
+  loading = false;
+  loadError = "";
+  /** Bumped on every sign-in / sign-out so late replies from an old session are dropped. */
+  private gen = 0;
   private listeners = new Set<Listener>();
 
   constructor() {
@@ -38,13 +43,36 @@ class Account {
   private emit() { this.listeners.forEach((l) => l()); }
 
   private async onSession(session: any) {
-    if (session && this.signedIn && this.email === session.user?.email && this.ready) return; // token refresh
+    const email = session?.user?.email ?? "";
+    if (session && this.signedIn && this.email === email && this.ready && !this.loadError) return; // token refresh
+    if (!session && !this.signedIn && this.ready) return;
+    const gen = ++this.gen;
     this.signedIn = !!session;
-    this.email = session?.user?.email ?? "";
-    if (session) await this.refresh();
-    else this.loadGuest();
+    this.email = email;
+    if (session) {
+      // Never show the guest wallet as if it were the account while the profile loads.
+      this.profile = { ...guestProfile(), gold: 0, diamonds: 0, characters: [], username: email.split("@")[0] || "Player" };
+      this.loading = true;
+      this.loadError = "";
+      this.ready = true;
+      this.emit();
+      await this.refresh(gen);
+      this.cleanAuthUrl();
+    } else {
+      this.loading = false;
+      this.loadError = "";
+      this.loadGuest();
+    }
     this.ready = true;
     this.emit();
+  }
+
+  /** Google sign-in returns with ?code=...; drop it from the address bar once used. */
+  private cleanAuthUrl() {
+    try {
+      const u = new URL(window.location.href);
+      if (u.searchParams.has("code") || u.hash.includes("access_token")) window.history.replaceState(null, "", u.pathname);
+    } catch {}
   }
 
   private loadGuest() {
@@ -59,8 +87,8 @@ class Account {
     this.emit();
   }
 
-  private setProfile(row: any) {
-    if (!row) return;
+  private setProfile(row: any, gen = this.gen) {
+    if (!row || gen !== this.gen || !this.signedIn) return; // stale reply from an older session
     this.profile = {
       username: row.username ?? "Player", gold: Number(row.gold), diamonds: Number(row.diamonds),
       characters: row.characters ?? [], skills: row.skills ?? [], loadouts: row.loadouts ?? {},
@@ -69,13 +97,21 @@ class Account {
     this.emit();
   }
 
-  async refresh() {
+  async refresh(gen = this.gen) {
     if (!supabase || !this.signedIn) return;
     // my_profile also re-applies admin unlocks; fall back to a plain read if it isn't deployed.
     let { data, error } = await supabase.rpc("my_profile");
-    if (error) ({ data } = await supabase.from("profiles").select("*").single());
-    this.setProfile(data);
-    supabase.rpc("refund_stale_bets").then(({ data: d }) => d && this.setProfile(d));
+    if (error || !data) ({ data, error } = await supabase.from("profiles").select("*").maybeSingle());
+    if (gen !== this.gen) return;
+    this.loading = false;
+    if (error || !data) {
+      this.loadError = error ? `Couldn't load your profile: ${error.message}` : "Your profile wasn't found. Try signing out and in again.";
+      this.emit();
+      return;
+    }
+    this.loadError = "";
+    this.setProfile(data, gen);
+    supabase.rpc("refund_stale_bets").then(({ data: d }) => d && this.setProfile(d, gen));
   }
 
   /** Calls a server function and adopts the profile row it returns. Throws its message. */
@@ -88,15 +124,17 @@ class Account {
   // --- auth ------------------------------------------------------------------------
   async signUp(email: string, password: string, username: string) {
     if (!supabase) throw new Error("Accounts are not configured");
-    const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { username } } });
+    const { data, error } = await supabase.auth.signUp({ email: email.trim(), password, options: { data: { username } } });
     if (error) throw new Error(error.message);
+    if (data.session) await this.onSession(data.session);
     return !data.session; // true = check your email to confirm
   }
 
   async signIn(email: string, password: string) {
     if (!supabase) throw new Error("Accounts are not configured");
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw new Error(error.message);
+    const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    if (error) throw new Error(error.message === "Invalid login credentials" ? "Wrong email or password." : error.message);
+    await this.onSession(data.session);
   }
 
   /** Google sign-in: redirects to Google, then back to this page already signed in. */
@@ -106,7 +144,22 @@ class Account {
     if (error) throw new Error(error.message);
   }
 
-  async signOut() { await supabase?.auth.signOut(); }
+  /** Signs out on this device right away (no network needed), back to the guest wallet. */
+  async signOut() {
+    if (!supabase) return;
+    this.gen++;
+    this.signedIn = false;
+    this.email = "";
+    this.loading = false;
+    this.loadError = "";
+    this.loadGuest();
+    this.emit();
+    const { error } = await supabase.auth.signOut({ scope: "local" });
+    if (error) {
+      // Last resort: forget the stored session so a refresh can't sign back in.
+      try { Object.keys(localStorage).filter((k) => k.startsWith("sb-") && k.includes("auth")).forEach((k) => localStorage.removeItem(k)); } catch {}
+    }
+  }
 
   // --- ownership ---------------------------------------------------------------------
   owns(charId: string) { return this.profile.characters.includes(charId); }
