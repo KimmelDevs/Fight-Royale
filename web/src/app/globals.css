@@ -238,3 +238,4 @@ input:focus { border-color: #e6c26e; }
 .emblem-pick .em em { font-style: normal; font-size: 11px; color: #ffd98a; }
 .emblem-pick .em small { font-size: 10.5px; color: #b9c6e6; }
 @media (max-width: 800px) { .panel.prep { bottom: 96px; max-height: 58vh; } }
+.credits { font-size: 11px; color: #8a93b8; margin: 6px 0 0; text-align: center; }

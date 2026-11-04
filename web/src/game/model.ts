@@ -17,6 +17,8 @@ const BROWN = "#5a3a2a";
 const PEARL = "#fff8ee";
 const HEAD_R = 0.19;
 const HIP = 0.84;
+/** Weapon size on VRoid bodies relative to the chibi-sized originals. */
+const VRM_WEAPON_SCALE = 0.68;
 const CAP_C = new THREE.Vector3(0, 0.035, -0.035);
 const JOINTS = ["torso", "head", "arm_r", "hand_r", "arm_l", "hand_l", "leg_l", "leg_r"] as const;
 
@@ -804,6 +806,11 @@ export class FighterModel extends THREE.Group {
       arm_r: this.arm_r, hand_r: this.hand_r, leg_l: this.leg_l, leg_r: this.leg_r,
     }, (box.max.y - Math.max(box.min.y, 0)) * 1.08);
     for (const m of this.bodyMeshes) m.visible = false;
+    // Weapons were sized for the chibi bodies; scale them down to suit the VRoid proportions.
+    // Left hand grips for shields, paired weapons, bows and two-handed swords; mages and
+    // kickers keep it free and relaxed.
+    this.vrmRig.grip = { left: !["mage", "kicks"].includes(this.kit), right: this.kit !== "kicks" };
+    for (const h of [this.hand_l, this.hand_r]) h.scale.multiplyScalar(VRM_WEAPON_SCALE);
     JN.forEach((n, i) => this.joints[n].quaternion.copy(save[i]));
     this.hips.position.copy(hipsPos);
     this.quaternion.copy(rootQ);

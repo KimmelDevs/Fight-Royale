@@ -55,6 +55,15 @@ const rx = (a: number) => new THREE.Quaternion().setFromAxisAngle(new THREE.Vect
 /** What the procedural model is doing, for the natural-motion layer. */
 export interface MotionInfo { t: number; walk: number; phase: number; crouch: number }
 
+/** Per-bone follow-through speed (1/s): lower = more lag and overlap. */
+const RATE: Partial<Record<VRMHumanBoneName, number>> = {
+  spine: 16, chest: 12, upperChest: 10, neck: 12, head: 10,
+  leftShoulder: 10, rightShoulder: 10, leftUpperArm: 22, rightUpperArm: 22, leftLowerArm: 18, rightLowerArm: 18,
+  leftHand: 20, rightHand: 20, leftUpperLeg: 26, rightUpperLeg: 26, leftLowerLeg: 22, rightLowerLeg: 22, leftFoot: 22, rightFoot: 22,
+};
+const FINGERS = ["Index", "Middle", "Ring", "Little"] as const;
+const SEGS = ["Proximal", "Intermediate", "Distal"] as const;
+
 /** Rotation of `o` in `root`'s frame. */
 function quatIn(root: THREE.Object3D, o: THREE.Object3D, out: THREE.Quaternion) {
   root.getWorldQuaternion(_inv).invert();
@@ -65,8 +74,12 @@ export class VrmRig {
   readonly vrm: VRM;
   private links: Link[] = [];
   private byJoint: Record<"torso" | "head" | "arm_l" | "hand_l" | "arm_r" | "hand_r" | "leg_l" | "leg_r", Link> = {} as any;
-  private headQ = new THREE.Quaternion();
   private first = true;
+  /** Smoothed local rotation per bone (follow-through). */
+  private smooth = new Map<THREE.Object3D, THREE.Quaternion>();
+  private nameOf = new Map<THREE.Object3D, string>();
+  /** Which hands hold a weapon (curl into a grip) vs hang free (relaxed curl). */
+  grip = { left: false, right: true };
   private hipsBone: THREE.Object3D | null;
   private hipsRest = new THREE.Vector3();
   private hipsBoneRest = new THREE.Vector3();
@@ -113,6 +126,10 @@ export class VrmRig {
     add("leg_l", j.leg_l, bone("leftUpperLeg"));
     add("leg_r", j.leg_r, bone("rightUpperLeg"));
     this.hipsBone = bone("hips");
+    for (const [name] of Object.entries(vrm.humanoid.humanBones)) {
+      const node = bone(name as VRMHumanBoneName);
+      if (node) this.nameOf.set(node, name);
+    }
     this.hipsRest.copy(j.hips.position);
     if (this.hipsBone) this.hipsBoneRest.copy(this.hipsBone.position);
   }
@@ -127,29 +144,37 @@ export class VrmRig {
     const B = (n: VRMHumanBoneName) => vrm.humanoid.getNormalizedBoneNode(n);
     root.updateMatrixWorld(true);
     const t = m.t, walk = m.walk, idle = 1 - walk, ph = m.phase;
-    const breath = Math.sin(t * TAU / 3.8);
-    const shift = Math.sin(t * TAU / 5.2 + 0.7);
-    const look = Math.sin(t * TAU / 6.1 + 1.9);
+    const breath = Math.sin(t * TAU / 3.6);
+    // Weight rests on one leg and slowly moves to the other (contrapposto), never centered.
+    const shift = Math.tanh(Math.sin(t * TAU / 9 + 0.7) * 2.2);
+    const look = Math.sin(t * TAU / 6.1 + 1.9) * 0.7 + Math.sin(t * TAU / 2.3) * 0.3;
     const crouch = Math.max(0, -m.crouch);
 
     // Hips: bob / crouch from the rig, idle weight shift, walk yaw + roll.
     if (this.hipsBone) {
       this.hipsBone.position.copy(this.hipsBoneRest).addScaledVector(_v.copy(j.hips.position).sub(this.hipsRest), 1 / this.scale);
-      this.hipsBone.position.x += (shift * 0.018 * idle) / this.scale;
-      this.hipsBone.quaternion.setFromEuler(_e.set(0, Math.sin(ph) * D(4) * walk, (Math.sin(ph) * D(3) * walk + shift * D(1.5) * idle), "YXZ"));
+      this.hipsBone.position.x += (shift * 0.03 * idle) / this.scale;
+      this.hipsBone.position.y += (Math.abs(Math.sin(ph)) * 0.012 * walk) / this.scale;
+      this.hipsBone.quaternion.setFromEuler(_e.set(0, Math.sin(ph) * D(5) * walk, (Math.sin(ph) * D(3) * walk + shift * D(4) * idle), "YXZ"));
       this.hipsBone.updateMatrixWorld(true);
     }
     const deltaOf = (joint: THREE.Object3D, rest: THREE.Quaternion) => quatIn(root, joint, new THREE.Quaternion()).multiply(_q2.copy(rest).invert());
+    const ease = (b: THREE.Object3D, local: THREE.Quaternion, rate = 30) => {
+      let q = this.smooth.get(b);
+      if (!q || this.first) { q = local.clone(); this.smooth.set(b, q); }
+      else q.slerp(local, 1 - Math.exp(-rate * dt));
+      b.quaternion.copy(q);
+      b.updateMatrixWorld(true);
+    };
+    const rateOf = (b: THREE.Object3D) => RATE[this.nameOf.get(b) as VRMHumanBoneName] ?? 30;
     const set = (b: THREE.Object3D | null, target: THREE.Quaternion) => {
       if (!b) return;
       const parentQ = quatIn(root, b.parent!, new THREE.Quaternion()).invert();
-      b.quaternion.copy(parentQ.multiply(target));
-      b.updateMatrixWorld(true);
+      ease(b, parentQ.multiply(target), rateOf(b));
     };
     const setLocal = (b: THREE.Object3D | null, x: number, y: number, z: number) => {
       if (!b) return;
-      b.quaternion.setFromEuler(_e.set(x, y, z, "XYZ"));
-      b.updateMatrixWorld(true);
+      ease(b, new THREE.Quaternion().setFromEuler(_e.set(x, y, z, "XYZ")), rateOf(b));
     };
     const L = this.byJoint;
 
@@ -158,20 +183,22 @@ export class VrmRig {
     const T = deltaOf(j.torso, L.torso.rest);
     const counter = new THREE.Quaternion().setFromEuler(_e.set(0, -Math.sin(ph) * D(4) * walk, 0));
     const I = new THREE.Quaternion();
-    set(B("spine"), I.clone().slerp(T, 0.5));
-    set(B("chest"), I.clone().slerp(T, 0.8).multiply(counter).multiply(rx(breath * D(1))));
-    set(B("upperChest"), T.clone().multiply(counter).multiply(rx(breath * D(1.2))));
+    // Shoulders tilt against the hips in the idle stance; lean a bit into the walk.
+    const contra = new THREE.Quaternion().setFromEuler(_e.set(D(4) * walk, 0, -shift * D(3) * idle));
+    set(B("spine"), I.clone().slerp(T, 0.5).multiply(contra));
+    set(B("chest"), I.clone().slerp(T, 0.8).multiply(counter).multiply(contra).multiply(rx(-breath * D(1.8))));
+    set(B("upperChest"), T.clone().multiply(counter).multiply(contra).multiply(rx(-breath * D(2.2))));
 
     // Head: neck takes 40%, head finishes, with a slow look-around and a little lag.
-    const H = deltaOf(j.head, L.head.rest).multiply(new THREE.Quaternion().setFromEuler(_e.set(D(2) * idle * look * 0.5, D(3) * idle * look, 0)));
-    this.headQ.slerp(H, this.first ? 1 : 1 - Math.exp(-22 * dt));
+    const H = deltaOf(j.head, L.head.rest).multiply(new THREE.Quaternion().setFromEuler(
+      _e.set(D(3) * idle * Math.sin(t * TAU / 4.7), D(7) * idle * look, shift * D(3) * idle)));
     const chestNow = quatIn(root, B("upperChest") ?? B("chest") ?? B("spine")!, new THREE.Quaternion());
-    set(B("neck"), chestNow.clone().slerp(this.headQ, 0.4));
-    set(B("head"), this.headQ);
+    set(B("neck"), chestNow.clone().slerp(H, 0.4));
+    set(B("head"), H);
 
     // Shoulders: relaxed and rising slightly with each breath.
-    setLocal(B("leftShoulder"), 0, 0, -D(4) - breath * D(1.2));
-    setLocal(B("rightShoulder"), 0, 0, D(4) + breath * D(1.2));
+    setLocal(B("leftShoulder"), 0, 0, -D(5) - breath * D(1.8));
+    setLocal(B("rightShoulder"), 0, 0, D(5) + breath * D(1.8));
 
     // Arms: rig rotation (T-pose calibrated), walk swing opposite the legs, soft elbows that
     // bend more as the arm rises.
@@ -187,6 +214,15 @@ export class VrmRig {
       // Forearm bends toward the front of the arm (around the arm's local Y).
       setLocal(B(`${side}LowerArm`), 0, -sgn * flex, 0);
       set(B(`${side}Hand`), deltaOf(hk.joint, hk.rest).multiply(hk.cal));
+      // Fingers: a closed grip around a weapon, a soft natural curl on a free hand.
+      const g = this.grip[side];
+      FINGERS.forEach((f, fi) => SEGS.forEach((seg, si) => {
+        const base = g ? [D(72), D(85), D(55)][si] : [D(18), D(30), D(22)][si];
+        const fan = g ? 0 : fi * D(4) + Math.sin(t * 1.3 + fi) * D(2);
+        setLocal(B(`${side}${f}${seg}` as VRMHumanBoneName), 0, 0, -sgn * (base + fan));
+      }));
+      setLocal(B(`${side}ThumbProximal` as VRMHumanBoneName), 0, sgn * (g ? D(35) : D(15)), -sgn * (g ? D(25) : D(8)));
+      setLocal(B(`${side}ThumbDistal` as VRMHumanBoneName), 0, sgn * (g ? D(30) : D(10)), 0);
     }
 
     // Legs: rig rotation, soft knees that flex through the walk cycle and when crouching,
@@ -195,7 +231,9 @@ export class VrmRig {
       const lk = side === "left" ? L.leg_l : L.leg_r;
       set(B(`${side}UpperLeg`), deltaOf(lk.joint, lk.rest));
       const cyc = 0.5 + 0.5 * Math.sin(ph + (side === "left" ? 1.2 : 1.2 + Math.PI));
-      const knee = D(6) + walk * (D(10) + D(28) * cyc) + Math.min(crouch * D(260), D(55)) + (side === "left" ? shift : -shift) * D(2) * idle;
+      // Idle: the leg not carrying the weight relaxes with a bent knee.
+      const relaxed = Math.max(0, side === "left" ? -shift : shift);
+      const knee = D(5) + walk * (D(10) + D(30) * cyc) + Math.min(crouch * D(260), D(55)) + relaxed * D(14) * idle;
       setLocal(B(`${side}LowerLeg`), knee, 0, 0);
       const foot = B(`${side}Foot`);
       if (foot) {
