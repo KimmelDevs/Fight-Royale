@@ -868,15 +868,19 @@ export class Game implements MobHost {
   }
 
   private applyBuff(f: Fighter, a: Attack) {
+    // PvP versions of defensive magic are weaker than in survival.
+    const pvp = this.cfg.mode !== "survival";
     if (a.mode === "ward") {
-      f.wardT = a.duration;
-      this.fxp("bubble", f.id, a.duration);
+      const dur = pvp ? Math.min(a.duration, 2) : a.duration;
+      f.wardT = dur;
+      this.fxp("bubble", f.id, dur);
       this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.9, 0)), "WARD", "#8fe6ff", 0.9);
     } else if (a.mode === "heal") {
-      f.heal(f.maxHp * 0.25);
+      const frac = pvp ? 0.16 : 0.25;
+      f.heal(f.maxHp * frac);
       this.fxp("splash", f.chest(), 30, 1.2, "#7fe0ff");
       this.fxp("ring", f.root.position.clone(), "#9dff9a", 1.6, 0.4, 0.9);
-      this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.9, 0)), `+${Math.round(f.maxHp * 0.25)}`, "#9dff9a", 1.1);
+      this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.9, 0)), `+${Math.round(f.maxHp * frac)}`, "#9dff9a", 1.1);
     } else if (a.mode === "rage") {
       f.rageT = a.duration;
       this.fxp("flash", f.chest(), "#ff5a3d", 0.7, 0.3, 0.8);
@@ -1374,7 +1378,7 @@ export class Game implements MobHost {
       other: other ? { ...info(other), tag: isCpu(other.owner) ? `CPU - ${LEVELS[this.cfg.difficulty ?? 1]}` : "" } : null,
       team: !this.isDuel() ? this.fighters.filter((f) => f !== me && f.team === me?.team).map(info) : [],
       foes: this.cfg.mode === "team" ? this.fighters.filter((f) => f.team !== me?.team).map(info) : [],
-      atkLock: me && me.attacks.l1.type !== "melee" ? { t: me.atkLock, max: RANGED_COMBO_REST } : null,
+      atkLock: me && me.attacks.l1.type !== "melee" ? { t: me.atkLock, max: RANGED_COMBO_REST[me.kit] ?? 1.2 } : null,
       dash: me ? { t: me.dashCd, max: DASH_CD } : null,
       skills: me ? ["z", "x", "c"].map((k) => ({ key: k, id: me.attacks[k].id, name: me.attacks[k].name, cd: me.cooldowns[k], max: me.attacks[k].cd * me.cdMult })) : [],
       kit: me?.kit ?? "", element: me?.look.element ?? "",

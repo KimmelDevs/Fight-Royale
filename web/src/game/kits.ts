@@ -26,7 +26,7 @@ export const STATS: Record<string, { hp: number; guard: number; move: number; wa
   knight: { hp: 2500, guard: 100, move: 3.2, walk: 2.6, parry: 0.16, jump: 7.0 },
   mage: { hp: 2100, guard: 80, move: 3.4, walk: 2.6, parry: 0.16, jump: 7.0 },
   assassin: { hp: 2000, guard: 60, move: 4.2, walk: 3.4, parry: 0.22, jump: 8.2 },
-  greatsword: { hp: 2900, guard: 120, move: 2.9, walk: 2.3, parry: 0.14, jump: 6.5 },
+  greatsword: { hp: 2750, guard: 120, move: 2.9, walk: 2.3, parry: 0.14, jump: 6.5 },
   katana: { hp: 2200, guard: 80, move: 3.8, walk: 3.0, parry: 0.2, jump: 7.5 },
   bow: { hp: 2000, guard: 60, move: 3.6, walk: 2.6, parry: 0.16, jump: 7.5 },
   knuckles: { hp: 2300, guard: 90, move: 4.0, walk: 3.2, parry: 0.2, jump: 8.0 },
@@ -70,11 +70,11 @@ function bonusSkill(kit: string, element: string): Attack {
     case "mage":
       if (element === "fire") return a({ name: "Inferno Ring", desc: "A ring of fire erupts around you.", cd: 9, type: "strike", at: "self", wind: 0.15, recover: 0.45, dmg: 165, guard: 45, knock: 6, stun: 0.5, delay: 0.1, radius: 2.8, style: "explosion", pose_w: "mh_w", pose_s: "m3_s" });
       if (element === "electric") return a({ name: "Static Field", desc: "Three lightning bolts strike all around you.", cd: 10, type: "strike", at: "self", wind: 0.12, recover: 0.5, dmg: 75, guard: 22, knock: 2, stun: 0.5, delay: 0.15, radius: 2.2, repeat: 3, interval: 0.25, style: "lightning", pose_w: "mh_w", pose_s: "m3_s" });
-      return a({ name: "Healing Rain", desc: "Restore 25% of your HP.", cd: 14, type: "buff", mode: "heal", duration: 0.25, wind: 0.2, recover: 0.4, pose_w: "mh_w", pose_s: "m3_s" });
+      return a({ name: "Healing Rain", desc: "Restore 16% of your HP (25% in survival).", cd: 14, type: "buff", mode: "heal", duration: 0.25, wind: 0.2, recover: 0.4, pose_w: "mh_w", pose_s: "m3_s" });
     case "assassin":
       return a({ name: "Venom Fan", desc: "A wide spray of five poisoned blades.", cd: 7, type: "projectile", wind: 0.12, recover: 0.3, dmg: 42, guard: 12, knock: 1.2, stun: 0.3, speed: 24, count: 5, spread: 0.5, style: "shuriken", pose_w: "as1_w", pose_s: "as1_s" });
     case "greatsword":
-      return a({ name: "Berserk", desc: "Deal 40% more damage for 6 seconds.", cd: 14, type: "buff", mode: "rage", duration: 6, wind: 0.2, recover: 0.4, pose_w: "charge", pose_s: "win" });
+      return a({ name: "Berserk", desc: "Deal 20% more damage for 6 seconds.", cd: 14, type: "buff", mode: "rage", duration: 6, wind: 0.2, recover: 0.4, pose_w: "charge", pose_s: "win" });
     case "katana":
       return a({ name: "Iaido Flash", desc: "An instant cross-arena draw cut.", cd: 8, wind: 0.08, active: 0.16, recover: 0.45, dmg: 200, guard: 50, reach: 2.2, lunge: 18, knock: 5, stun: 0.7, heavy: true, pose_w: "charge", pose_s: "heavy_s" });
     case "bow":
@@ -125,7 +125,7 @@ function mage(element: string): Record<string, Attack> {
     t.c = a({ name: "Thunderstorm", desc: "Three lightning strikes hunt the enemy.", cd: 12, type: "strike", wind: 0.3, recover: 0.6, dmg: 110, guard: 35, knock: 3, stun: 0.6, heavy: true, delay: 0.45, radius: 1.25, repeat: 3, interval: 0.35, style: "lightning", pose_w: "mh_w", pose_s: "mh_s" });
   } else {
     t.heavy = a({ type: "projectile", wind: 0.15, active: 0.05, recover: 0.55, dmg: 190, guard: 60, knock: 7, stun: 0.7, heavy: true, speed: 9, size: 2.4, pierce: true, pose_w: "mh_w", pose_s: "mh_s" });
-    t.z = a({ name: "Bubble Ward", desc: "A bubble that absorbs every hit for 4 seconds.", cd: 10, type: "buff", mode: "ward", duration: 4, wind: 0.1, recover: 0.25, pose_w: "mh_w", pose_s: "m3_s" });
+    t.z = a({ name: "Bubble Ward", desc: "A bubble that absorbs every hit for 2 seconds (4 in survival).", cd: 10, type: "buff", mode: "ward", duration: 4, wind: 0.1, recover: 0.25, pose_w: "mh_w", pose_s: "m3_s" });
     t.x = a({ name: "Tidal Ring", desc: "A ring of geysers bursts up around you.", cd: 7, type: "strike", at: "self", wind: 0.14, recover: 0.45, dmg: 105, guard: 35, knock: 7, stun: 0.5, delay: 0.1, radius: 2.7, style: "tide", pose_w: "mh_w", pose_s: "m3_s" });
     t.c = a({ name: "Ocean Requiem", desc: "Slam a colossal sphere of water onto the enemy.", cd: 12, type: "strike", wind: 0.35, recover: 0.6, dmg: 270, guard: 80, knock: 8, stun: 0.9, heavy: true, delay: 0.8, radius: 2.4, style: "requiem", pose_w: "mh_w", pose_s: "mh_s" });
   }
@@ -134,11 +134,11 @@ function mage(element: string): Record<string, Attack> {
 
 function assassin(): Record<string, Attack> {
   return {
-    l1: a({ wind: 0.08, active: 0.06, recover: 0.16, dmg: 36, guard: 10, reach: 1.55, lunge: 3, knock: 1.2, stun: 0.26, pose_w: "as1_w", pose_s: "as1_s", next: "l2" }),
-    l2: a({ wind: 0.08, active: 0.06, recover: 0.16, dmg: 36, guard: 10, reach: 1.55, lunge: 3, knock: 1.2, stun: 0.26, pose_w: "as2_w", pose_s: "as2_s", next: "l3" }),
-    l3: a({ wind: 0.1, active: 0.06, recover: 0.18, dmg: 44, guard: 12, reach: 1.7, lunge: 4, knock: 1.5, stun: 0.28, pose_w: "as3_w", pose_s: "as3_s", next: "l4" }),
-    l4: a({ wind: 0.16, active: 0.08, recover: 0.36, dmg: 75, guard: 22, reach: 1.7, lunge: 3, knock: 4, stun: 0.45, pose_w: "as4_w", pose_s: "as4_s" }),
-    heavy: a({ wind: 0.12, active: 0.16, recover: 0.5, dmg: 170, guard: 45, reach: 2, lunge: 13, knock: 5, stun: 0.7, heavy: true, pose_w: "ash_w", pose_s: "ash_s" }),
+    l1: a({ wind: 0.08, active: 0.06, recover: 0.16, dmg: 41, guard: 10, reach: 1.55, lunge: 3, knock: 1.2, stun: 0.26, pose_w: "as1_w", pose_s: "as1_s", next: "l2" }),
+    l2: a({ wind: 0.08, active: 0.06, recover: 0.16, dmg: 41, guard: 10, reach: 1.55, lunge: 3, knock: 1.2, stun: 0.26, pose_w: "as2_w", pose_s: "as2_s", next: "l3" }),
+    l3: a({ wind: 0.1, active: 0.06, recover: 0.18, dmg: 51, guard: 12, reach: 1.7, lunge: 4, knock: 1.5, stun: 0.28, pose_w: "as3_w", pose_s: "as3_s", next: "l4" }),
+    l4: a({ wind: 0.16, active: 0.08, recover: 0.36, dmg: 86, guard: 22, reach: 1.7, lunge: 3, knock: 4, stun: 0.45, pose_w: "as4_w", pose_s: "as4_s" }),
+    heavy: a({ wind: 0.12, active: 0.16, recover: 0.5, dmg: 170, guard: 45, reach: 2, lunge: 7, knock: 5, stun: 0.7, heavy: true, pose_w: "ash_w", pose_s: "ash_s" }),
     z: a({ name: "Smoke Step", desc: "Vanish and reappear behind the enemy.", cd: 5, type: "blink", mode: "behind", wind: 0.06, recover: 0.12, pose_w: "ash_w", pose_s: "idle" }),
     x: a({ name: "Shuriken Fan", desc: "Throw three spinning shuriken.", cd: 6, type: "projectile", wind: 0.12, recover: 0.3, dmg: 48, guard: 14, knock: 1.5, stun: 0.35, speed: 22, count: 3, spread: 0.3, style: "shuriken", pose_w: "as1_w", pose_s: "as1_s" }),
     c: a({ name: "Phantom Rush", desc: "A blinding dash that cuts through the enemy.", cd: 10, wind: 0.18, active: 0.18, recover: 0.55, dmg: 260, guard: 70, reach: 2.2, lunge: 16, knock: 6, stun: 0.9, heavy: true, stagger: true, pose_w: "ash_w", pose_s: "ash_s" }),
@@ -159,10 +159,10 @@ function greatsword(): Record<string, Attack> {
 
 function katana(): Record<string, Attack> {
   return {
-    l1: a({ wind: 0.1, active: 0.07, recover: 0.2, dmg: 70, guard: 18, reach: 1.85, lunge: 3, knock: 1.6, stun: 0.3, next: "l2" }),
-    l2: a({ wind: 0.1, active: 0.07, recover: 0.2, dmg: 75, guard: 18, reach: 1.85, lunge: 3, knock: 1.6, stun: 0.3, pose_w: "l2_w", pose_s: "l2_s", next: "l3" }),
-    l3: a({ wind: 0.14, active: 0.08, recover: 0.36, dmg: 120, guard: 30, reach: 1.95, lunge: 3.5, knock: 4, stun: 0.5, pose_w: "l3_w", pose_s: "l3_s" }),
-    heavy: a({ wind: 0.16, active: 0.14, recover: 0.5, dmg: 230, guard: 55, reach: 2.2, lunge: 14, knock: 5, stun: 0.75, heavy: true, pose_w: "charge", pose_s: "heavy_s" }),
+    l1: a({ wind: 0.1, active: 0.07, recover: 0.2, dmg: 64, guard: 18, reach: 1.85, lunge: 3, knock: 1.6, stun: 0.3, next: "l2" }),
+    l2: a({ wind: 0.1, active: 0.07, recover: 0.2, dmg: 69, guard: 18, reach: 1.85, lunge: 3, knock: 1.6, stun: 0.3, pose_w: "l2_w", pose_s: "l2_s", next: "l3" }),
+    l3: a({ wind: 0.14, active: 0.08, recover: 0.36, dmg: 110, guard: 30, reach: 1.95, lunge: 3.5, knock: 4, stun: 0.5, pose_w: "l3_w", pose_s: "l3_s" }),
+    heavy: a({ wind: 0.16, active: 0.14, recover: 0.5, dmg: 230, guard: 55, reach: 2.2, lunge: 8, knock: 5, stun: 0.75, heavy: true, pose_w: "charge", pose_s: "heavy_s" }),
     z: a({ name: "Counter Stance", desc: "Brace for a moment; the next hit is parried and punished.", cd: 6, type: "buff", mode: "counter", duration: 0.9, wind: 0.04, recover: 0.9, pose_w: "block", pose_s: "block" }),
     x: a({ name: "Crescent Wind", desc: "A cutting gust that flies through enemies.", cd: 6, type: "projectile", wind: 0.14, recover: 0.35, dmg: 120, guard: 30, knock: 3, stun: 0.45, speed: 20, size: 1.4, style: "wave", pierce: true, pose_w: "l1_w", pose_s: "l1_s" }),
     c: a({ name: "Thousand Cuts", desc: "Seven blinding slashes rip through the target area.", cd: 11, type: "strike", wind: 0.2, recover: 0.6, dmg: 48, guard: 12, knock: 1, stun: 0.3, delay: 0.3, radius: 1.5, repeat: 7, interval: 0.07, style: "slashes", pose_w: "charge", pose_s: "heavy_s" }),
@@ -201,7 +201,7 @@ function kicks(): Record<string, Attack> {
     l2: a({ wind: 0.1, active: 0.07, recover: 0.18, dmg: 56, guard: 14, reach: 1.75, lunge: 3, knock: 1.6, stun: 0.28, pose_w: "kk2_w", pose_s: "kk2_s", next: "l3" }),
     l3: a({ wind: 0.12, active: 0.08, recover: 0.2, dmg: 72, guard: 18, reach: 1.85, lunge: 3.5, knock: 2.2, stun: 0.32, pose_w: "kk3_w", pose_s: "kk3_s", next: "l4" }),
     l4: a({ wind: 0.18, active: 0.08, recover: 0.38, dmg: 105, guard: 30, reach: 1.8, lunge: 2.5, knock: 4.5, stun: 0.5, stagger: true, pose_w: "kk4_w", pose_s: "kk4_s" }),
-    heavy: a({ wind: 0.12, active: 0.16, recover: 0.5, dmg: 230, guard: 55, reach: 2.0, lunge: 11, knock: 6.5, stun: 0.8, heavy: true, self_jump: 4, pose_w: "charge", pose_s: "fly_s" }),
+    heavy: a({ wind: 0.12, active: 0.16, recover: 0.5, dmg: 230, guard: 55, reach: 2.0, lunge: 7, knock: 6.5, stun: 0.8, heavy: true, self_jump: 4, pose_w: "charge", pose_s: "fly_s" }),
     z: a({ name: "Cyclone Kick", desc: "A spinning kick that hits everyone around you three times.", cd: 6, type: "strike", at: "self", wind: 0.08, recover: 0.4, dmg: 65, guard: 20, knock: 3, stun: 0.3, delay: 0.05, radius: 2.0, repeat: 3, interval: 0.15, style: "spin", pose_w: "kk3_w", pose_s: "kk3_s" }),
     x: a({ name: "Crescent Gale", desc: "A kick so fast it launches a cutting wind across the arena.", cd: 6, type: "projectile", wind: 0.14, recover: 0.35, dmg: 110, guard: 30, knock: 3, stun: 0.45, speed: 20, size: 1.4, style: "wave", pierce: true, pose_w: "kk2_w", pose_s: "kk2_s" }),
     c: a({ name: "Hundred Kicks", desc: "Blitz the target with a storm of eight rapid kicks.", cd: 10, type: "strike", wind: 0.15, recover: 0.6, dmg: 40, guard: 10, knock: 0.8, stun: 0.3, delay: 0.2, radius: 1.5, repeat: 8, interval: 0.06, style: "slashes", pose_w: "kk1_w", pose_s: "kk1_s" }),

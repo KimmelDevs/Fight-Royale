@@ -31,7 +31,13 @@ const GUARD_REGEN = 30;
 export interface Plat { x0: number; x1: number; y: number; solid: boolean }
 export interface Stage { plats: Plat[]; blast: { l: number; r: number; b: number; t: number }; respawn: THREE.Vector3 }
 export const STOCKS = 3;
-export const RANGED_COMBO_REST = 2;
+/** After a ranged combo's last hit, normal attacks rest this long (per kit). */
+export const RANGED_COMBO_REST: Record<string, number> = { mage: 1.2, bow: 1.3 };
+/** Berserk (rage buff) damage multiplier. */
+export const RAGE_MULT = 1.2;
+/** Re-stuns within this window are shortened (diminishing returns). */
+const STUN_DR_WINDOW = 3;
+const STUN_DR = 0.6;
 const PCT_PER_DMG = 0.07;
 
 export interface Intent { attack: boolean; block: boolean; jump: boolean; skill: string; move: THREE.Vector3; dash: THREE.Vector3 }
@@ -93,6 +99,10 @@ export class Fighter implements Entity {
   cooldowns: Record<string, number> = { z: 0, x: 0, c: 0 };
   /** After a ranged combo's last hit, normal attacks rest this long (stops shot spam). */
   atkLock = 0;
+  private clock = 0;
+  private stunSrc = "";
+  private lastStunAt = -99;
+  private stunChain = 0;
   onGround = true;
   velY = 0;
   wardT = 0;
@@ -196,6 +206,7 @@ export class Fighter implements Entity {
     this.stateT += dt;
     for (const k in this.cooldowns) this.cooldowns[k] = Math.max(this.cooldowns[k] - dt, 0);
     this.atkLock = Math.max(this.atkLock - dt, 0);
+    this.clock += dt;
     this.dashCd = Math.max(this.dashCd - dt, 0);
     this.dashT = Math.max(this.dashT - dt, 0);
     this.readDash();
@@ -254,7 +265,7 @@ export class Fighter implements Entity {
     this.dashDir.copy(dir);
     this.dashT = DASH_T;
     this.dashCd = DASH_CD;
-    this.invulnT = Math.max(this.invulnT, DASH_T + 0.05);
+    this.invulnT = Math.max(this.invulnT, 0.15); // brief dodge window at the start of the dash
     this.onDash(this);
   }
   dashing() { return this.dashT > 0; }
@@ -312,7 +323,7 @@ export class Fighter implements Entity {
     }
     this.atkPower = 1;
     if (id === "heavy" && this.state === S.CHARGE) this.atkPower = 1 + 0.5 * Math.min(this.stateT / CHARGE_MAX, 1);
-    this.atkPower *= this.dmgMult * (this.rageT > 0 ? 1.4 : 1);
+    this.atkPower *= this.dmgMult * (this.rageT > 0 ? RAGE_MULT : 1);
     this.atkId = id;
     this.atk = this.attacks[id];
     this.atkPhase = 0;
@@ -339,7 +350,7 @@ export class Fighter implements Entity {
 
   private finishAttack() {
     const a = this.atk!;
-    if (/^l\d$/.test(this.atkId) && !a.next && a.type !== "melee") this.atkLock = RANGED_COMBO_REST;
+    if (/^l\d$/.test(this.atkId) && !a.next && a.type !== "melee") this.atkLock = RANGED_COMBO_REST[this.kit] ?? 1.2;
     this.comboNext = a.next || "l1";
     this.comboTimer = a.next ? 0.45 : 0;
   }
@@ -451,7 +462,7 @@ export class Fighter implements Entity {
         this.hp = Math.max(this.hp - this.lastDamage, 0);
         this.knock = 3.5;
         if (this.hp <= 0) { this.ko(); return "ko"; }
-        this.stagger(1.1);
+        this.stagger(0.85);
         this.model.flash("#ffd966", 0.18);
         return "guard_break";
       }
@@ -468,8 +479,17 @@ export class Fighter implements Entity {
     this.knock = a.knock;
     this.model.flash();
     if (this.hp <= 0) { this.ko(); return "ko"; }
-    if (a.heavy || a.stagger) this.stagger(a.stun);
-    else { this.stun = a.stun; this.stunPose = "hit"; this.holding = false; this.setState(S.HITSTUN); }
+    // Stun rules: one stun per skill use (multi-hit skills don't re-stun every tick), and
+    // repeated stuns within a few seconds get shorter, so nobody can be locked forever.
+    const src = attacker instanceof Fighter ? `${attacker.id}:${attacker.swingSerial}` : "";
+    const reeling = this.state === S.HITSTUN || this.state === S.STAGGER;
+    if (src && src === this.stunSrc && reeling) return this.lastCrit ? "crit" : "hit";
+    this.stunSrc = src;
+    this.stunChain = this.clock - this.lastStunAt < STUN_DR_WINDOW ? this.stunChain + 1 : 0;
+    this.lastStunAt = this.clock;
+    const stun = Math.max(0.1, a.stun * Math.pow(STUN_DR, this.stunChain));
+    if (a.heavy || a.stagger) this.stagger(stun);
+    else { this.stun = stun; this.stunPose = "hit"; this.holding = false; this.setState(S.HITSTUN); }
     return this.lastCrit ? "crit" : "hit";
   }
 

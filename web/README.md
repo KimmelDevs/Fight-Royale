@@ -37,29 +37,31 @@ All numbers live in code; the tables in **Balance reference** below are generate
 **Damage.** A hit deals the attack's `Dmg` x the attacker's power:
 - **Charged attack** (`heavy`): hold attack for 0.22 s to start charging; power grows to **1.5x** at full charge (0.9 s).
 - **Crits**: 20% base chance (+ Assassin emblem), **x1.6** damage.
-- **Fighter emblem** adds damage %, **Berserk** buff (greatsword V) is **x1.4** for 6 s.
+- **Fighter emblem** adds damage %, **Berserk** buff (greatsword V) is **x1.2** for 6 s.
 - Survival perks stack on top (+20% damage, crit, lifesteal...).
 
 **Timing.** Every attack has three phases: **wind** (startup, can be read and blocked), **active** (the hit lands at the start of this window), **recover** (endlag). Lower total time = faster / safer. Tap attacks chain into the next `l` step if you tap again during recovery (combo window 0.45 s).
 
 **Defense.**
 - **Block** (hold right click): the hit's `Guard dmg` is taken from your **guard** bar instead of HP, plus a small push back. Guard refills at 30/s after 1 s without blocking.
-- **Guard break**: if guard hits 0 you take 40% of the damage and are **staggered for 1.1 s**.
+- **Guard break**: if guard hits 0 you take 40% of the damage and are **staggered for 0.85 s**.
 - **Parry**: a block started within the kit's **parry window** before the hit takes no guard damage, restores 20 guard and **staggers the attacker for 0.95 s**.
 - **Clash**: two melee hits that meet at the same moment knock both fighters back.
 
 **Hit reactions.** `Stun` = how long the target can't act. `Knock` = push-back speed. `heavy` / `staggers` attacks put the target in the longer stagger state.
+- **One stun per skill**: a multi-hit skill (Thousand Cuts, Hundred Kicks, Whirlwind...) stuns once; later ticks only deal damage.
+- **Diminishing stun**: each new stun within 3 s of the last is **x0.6** shorter (0.3 s, then 0.18 s, ... minimum 0.1 s), so no fighter can be stun-locked.
 
 **Skills.** Z / X / C (any 3 of the kit's 4, V is unlocked in the Shop) each have a cooldown (`CD`). The Mage emblem shortens cooldowns. Skill types:
 - **melee**: hits everything in front within `reach`.
 - **projectile**: `count` shots with `spread`, `speed`; `pierces` goes through enemies.
 - **strike**: area hit at the target (or around you) after a telegraph `delay`, possibly repeated. Jumping avoids ground strikes.
-- **buff**: ward (absorb all hits), heal 25% HP, rage (+40% dmg), counter stance (auto-counter the next hit for 180 dmg).
+- **buff**: ward (absorb all hits; **2 s in PvP**, full duration in survival), heal (**16% HP in PvP**, 25% in survival), rage (+20% dmg), counter stance (auto-counter the next hit for 180 dmg).
 - **blink**: teleport behind the enemy or back away.
 
-**Ranged rest.** Mage and bow combos: after the last hit of the tap combo, normal attacks rest **2 s** (shown on the ATK slot).
+**Ranged rest.** After the last hit of the tap combo, normal attacks rest **1.2 s (mage)** / **1.3 s (bow)** (shown on the ATK slot).
 
-**Dash.** Double-tap a direction: 0.3 s dash with brief invulnerability, **3 s** cooldown.
+**Dash.** Double-tap a direction: 0.3 s dash, **0.15 s** of invulnerability at the start, **3 s** cooldown.
 
 **Platform Brawl (hidden for now).** Damage becomes %: `% = Dmg x 0.07`. Launch speed = `2.5 + Knock x 0.5 + % x (0.06 + hit% x 0.006)`, so knockback grows with % taken. 3 stocks.
 
@@ -110,11 +112,11 @@ _Generated from the game code by `npm run balance` — edit the code, then re-ru
 | Kit | HP | Guard | Run speed | Walk speed | Parry window (s) | Jump | Fighters | Light combo dmg | Combo time (s) | Combo DPS | Charged dmg (x1.5 at full) |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | knight | 2500 | 100 | 3.2 | 2.6 | 0.16 | 7 | Aster, Vesper | 244 | 1.63 | 150 | 190 -> 285 |
-| greatsword | 2900 | 120 | 2.9 | 2.3 | 0.14 | 6.5 | Garrick, Leon | 420 | 2.56 | 164 | 320 -> 480 |
-| katana | 2200 | 80 | 3.8 | 3 | 0.2 | 7.5 | Kaede, Sakura | 265 | 1.32 | 201 | 230 -> 345 |
+| greatsword | 2750 | 120 | 2.9 | 2.3 | 0.14 | 6.5 | Garrick, Leon | 420 | 2.56 | 164 | 320 -> 480 |
+| katana | 2200 | 80 | 3.8 | 3 | 0.2 | 7.5 | Kaede, Sakura | 243 | 1.32 | 184 | 230 -> 345 |
 | mage | 2100 | 80 | 3.4 | 2.6 | 0.16 | 7 | Ember, Marina, Volta, Raven, Yuki | 241 | 1.67 | 144 | 210 -> 315 |
 | bow | 2000 | 60 | 3.6 | 2.6 | 0.16 | 7.5 | Sylva, Ash | 260 | 1.51 | 172 | 260 -> 390 |
-| assassin | 2000 | 60 | 4.2 | 3.4 | 0.22 | 8.2 | Nyx | 191 | 1.54 | 124 | 170 -> 255 |
+| assassin | 2000 | 60 | 4.2 | 3.4 | 0.22 | 8.2 | Nyx | 219 | 1.54 | 142 | 170 -> 255 |
 | knuckles | 2300 | 90 | 4 | 3.2 | 0.2 | 8 | Rook, Bruno | 290 | 1.67 | 174 | 220 -> 330 |
 | kicks | 2300 | 85 | 4.1 | 3.2 | 0.2 | 8.6 | Kira | 279 | 1.69 | 165 | 230 -> 345 |
 
@@ -144,10 +146,10 @@ _Generated from the game code by `npm run balance` — edit the code, then re-ru
 
 | Key | Name | Type | Dmg | Guard dmg | Wind / active / recover (s) | Knock | Stun (s) | CD | Notes |
 |---|---|---|---|---|---|---|---|---|---|
-| l1 | - | melee | 70 | 18 | 0.1 / 0.07 / 0.2 | 1.6 | 0.3 | - | reach 1.85, lunge 3 |
-| l2 | - | melee | 75 | 18 | 0.1 / 0.07 / 0.2 | 1.6 | 0.3 | - | reach 1.85, lunge 3 |
-| l3 | - | melee | 120 | 30 | 0.14 / 0.08 / 0.36 | 4 | 0.5 | - | reach 1.95, lunge 3.5 |
-| heavy | - | melee | 230 | 55 | 0.16 / 0.14 / 0.5 | 5 | 0.75 | - | reach 2.2, lunge 14, heavy |
+| l1 | - | melee | 64 | 18 | 0.1 / 0.07 / 0.2 | 1.6 | 0.3 | - | reach 1.85, lunge 3 |
+| l2 | - | melee | 69 | 18 | 0.1 / 0.07 / 0.2 | 1.6 | 0.3 | - | reach 1.85, lunge 3 |
+| l3 | - | melee | 110 | 30 | 0.14 / 0.08 / 0.36 | 4 | 0.5 | - | reach 1.95, lunge 3.5 |
+| heavy | - | melee | 230 | 55 | 0.16 / 0.14 / 0.5 | 5 | 0.75 | - | reach 2.2, lunge 8, heavy |
 
 #### mage
 
@@ -171,11 +173,11 @@ _Generated from the game code by `npm run balance` — edit the code, then re-ru
 
 | Key | Name | Type | Dmg | Guard dmg | Wind / active / recover (s) | Knock | Stun (s) | CD | Notes |
 |---|---|---|---|---|---|---|---|---|---|
-| l1 | - | melee | 36 | 10 | 0.08 / 0.06 / 0.16 | 1.2 | 0.26 | - | reach 1.55, lunge 3 |
-| l2 | - | melee | 36 | 10 | 0.08 / 0.06 / 0.16 | 1.2 | 0.26 | - | reach 1.55, lunge 3 |
-| l3 | - | melee | 44 | 12 | 0.1 / 0.06 / 0.18 | 1.5 | 0.28 | - | reach 1.7, lunge 4 |
-| l4 | - | melee | 75 | 22 | 0.16 / 0.08 / 0.36 | 4 | 0.45 | - | reach 1.7, lunge 3 |
-| heavy | - | melee | 170 | 45 | 0.12 / 0.16 / 0.5 | 5 | 0.7 | - | reach 2, lunge 13, heavy |
+| l1 | - | melee | 41 | 10 | 0.08 / 0.06 / 0.16 | 1.2 | 0.26 | - | reach 1.55, lunge 3 |
+| l2 | - | melee | 41 | 10 | 0.08 / 0.06 / 0.16 | 1.2 | 0.26 | - | reach 1.55, lunge 3 |
+| l3 | - | melee | 51 | 12 | 0.1 / 0.06 / 0.18 | 1.5 | 0.28 | - | reach 1.7, lunge 4 |
+| l4 | - | melee | 86 | 22 | 0.16 / 0.08 / 0.36 | 4 | 0.45 | - | reach 1.7, lunge 3 |
+| heavy | - | melee | 170 | 45 | 0.12 / 0.16 / 0.5 | 5 | 0.7 | - | reach 2, lunge 7, heavy |
 
 #### knuckles
 
@@ -196,7 +198,7 @@ _Generated from the game code by `npm run balance` — edit the code, then re-ru
 | l2 | - | melee | 56 | 14 | 0.1 / 0.07 / 0.18 | 1.6 | 0.28 | - | reach 1.75, lunge 3 |
 | l3 | - | melee | 72 | 18 | 0.12 / 0.08 / 0.2 | 2.2 | 0.32 | - | reach 1.85, lunge 3.5 |
 | l4 | - | melee | 105 | 30 | 0.18 / 0.08 / 0.38 | 4.5 | 0.5 | - | reach 1.8, lunge 2.5, staggers |
-| heavy | - | melee | 230 | 55 | 0.12 / 0.16 / 0.5 | 6.5 | 0.8 | - | reach 2, lunge 11, self-launch 4, heavy |
+| heavy | - | melee | 230 | 55 | 0.12 / 0.16 / 0.5 | 6.5 | 0.8 | - | reach 2, lunge 7, self-launch 4, heavy |
 
 ### Skills per fighter
 
