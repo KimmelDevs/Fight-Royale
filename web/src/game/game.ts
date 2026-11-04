@@ -1134,7 +1134,7 @@ export class Game implements MobHost {
     const me = this.local;
     const boss = this.mobs.find((m) => m.def.boss && !m.dead);
     const other = this.cfg.mode === "duel" ? this.fighters.find((f) => f !== me) : null;
-    const info = (f: Fighter) => ({ name: f.look.name, hp: f.hp, maxHp: f.maxHp, guard: f.guard, maxGuard: f.maxGuard, down: f.isDown(), glow: f.look.glow });
+    const info = (f: Fighter) => ({ id: CHARACTERS[f.charIndex].id, name: f.look.name, hp: f.hp, maxHp: f.maxHp, guard: f.guard, maxGuard: f.maxGuard, down: f.isDown(), glow: f.look.glow });
     return {
       mode: this.cfg.mode,
       me: me ? info(me) : null,

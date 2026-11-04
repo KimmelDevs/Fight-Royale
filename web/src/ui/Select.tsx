@@ -6,7 +6,7 @@ import { LEVELS } from "@/game/ai";
 import { Preview } from "@/game/preview";
 import { account, useAccount } from "@/lib/account";
 import { CHARACTER_PRICE } from "@/game/economy";
-import { Icon, skillIcon } from "./icons";
+import { Icon, skillIcon, charIcon } from "./icons";
 
 const CONTROLS: Record<string, string> = {
   knight: "Tap: 3-hit sword combo  -  Hold: charged slash  -  Block: shield",
@@ -136,6 +136,7 @@ export function CardRow({ current, onPick, allowRandom, showLocks }: { current: 
     <div className="cards">
       {CHARACTERS.map((ch, i) => (
         <button key={ch.id} tabIndex={-1} onMouseDown={(e) => e.preventDefault()} className={"card" + (i === current ? " on" : "")} style={{ background: lum(ch.look.tunic) > 0.7 ? ch.look.cape : ch.look.tunic }} onClick={() => onPick(i)}>
+          <Icon src={charIcon(ch.id)} alt={ch.look.name} size={40} />
           <b>{ch.look.name}</b>
           <span>{ch.role.split(" - ")[1] ?? ch.role}</span>
           {showLocks && !acc.owns(ch.id) && <i className="lock">LOCKED</i>}
@@ -143,7 +144,8 @@ export function CardRow({ current, onPick, allowRandom, showLocks }: { current: 
       ))}
       {allowRandom && (
         <button tabIndex={-1} onMouseDown={(e) => e.preventDefault()} className={"card" + (current === RANDOM ? " on" : "")} style={{ background: "#4a4f66" }} onClick={() => onPick(RANDOM)}>
-          <b>Random</b><span>?</span>
+          <Icon src={charIcon("random")} alt="Random" size={40} />
+          <b>Random</b>
         </button>
       )}
     </div>

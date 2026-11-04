@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Game, type GameConfig, type Perk, type UiEvent } from "@/game/game";
 import type { Net } from "@/game/net";
 import { account } from "@/lib/account";
-import { Icon, skillIcon } from "./icons";
+import { Icon, skillIcon, charIcon } from "./icons";
 
 type Hud = ReturnType<Game["hud"]>;
 
@@ -89,7 +89,7 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
         <div className="hud">
           {me && (
             <div className="hp left">
-              <div className="nm">{me.name}</div>
+              <div className="nm"><Icon src={charIcon(me.id)} alt={me.name} size={44} />{me.name}</div>
               <Bar v={me.hp / me.maxHp} color="#7fd65b" />
               <div className="guard"><Bar v={me.guard / me.maxGuard} color={me.guard / me.maxGuard > 0.25 ? "#f2c94c" : "#ff7043"} /></div>
               <div className="num">{Math.ceil(me.hp)} / {Math.round(me.maxHp)}</div>
@@ -97,7 +97,7 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
           )}
           {other && (
             <div className="hp right">
-              <div className="nm">{other.name}{other.tag ? `  (${other.tag})` : ""}</div>
+              <div className="nm">{other.name}{other.tag ? `  (${other.tag})` : ""}<Icon src={charIcon(other.id)} alt={other.name} size={44} /></div>
               <Bar v={other.hp / other.maxHp} color="#e8534a" right />
               <div className="guard"><Bar v={other.guard / other.maxGuard} color="#f2c94c" right /></div>
             </div>
@@ -106,7 +106,7 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
             <div className="team foes">
               {hud.foes.map((t, i) => (
                 <div key={i} className={"mate" + (t.down ? " down" : "")}>
-                  <i style={{ background: t.glow }} /><b>{t.name}</b>
+                  <Icon src={charIcon(t.id)} alt={t.name} size={26} fallback={<i style={{ background: t.glow }} />} /><b>{t.name}</b>
                   <Bar v={t.hp / t.maxHp} color="#e8534a" />
                 </div>
               ))}
@@ -116,7 +116,7 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
             <div className="team">
               {hud.team.map((t, i) => (
                 <div key={i} className={"mate" + (t.down ? " down" : "")}>
-                  <i style={{ background: t.glow }} /><b>{t.name}</b>
+                  <Icon src={charIcon(t.id)} alt={t.name} size={26} fallback={<i style={{ background: t.glow }} />} /><b>{t.name}</b>
                   <Bar v={t.hp / t.maxHp} color="#7fd65b" />
                 </div>
               ))}
@@ -128,7 +128,7 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
               <div className="team">
                 {hud.team.map((t, i) => (
                   <div key={i} className={"mate" + (t.down ? " down" : "")}>
-                    <i style={{ background: t.glow }} /><b>{t.name}</b>
+                    <Icon src={charIcon(t.id)} alt={t.name} size={26} fallback={<i style={{ background: t.glow }} />} /><b>{t.name}</b>
                     <Bar v={t.hp / t.maxHp} color="#7fd65b" />
                   </div>
                 ))}

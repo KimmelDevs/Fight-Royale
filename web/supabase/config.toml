@@ -3,3 +3,7 @@ project_id = "fight-royale"
 [auth]
 site_url = "https://fight-royale-r87m.vercel.app"
 additional_redirect_urls = ["http://localhost:3000"]
+
+[auth.email]
+# Players can sign in right after sign-up, without confirming their email first.
+enable_confirmations = false

@@ -75,6 +75,8 @@ export class FighterModel extends THREE.Group {
   leg_l!: THREE.Group; leg_r!: THREE.Group; skirt!: THREE.Group; cape!: THREE.Group;
   bladeBase!: THREE.Object3D; bladeTip!: THREE.Object3D; shieldNode!: THREE.Object3D; castPoint!: THREE.Object3D;
   hairSway: THREE.Group[] = [];
+  /** Two-handed weapons: the left hand is pulled onto this point of the grip every frame. */
+  private gripL: THREE.Object3D | null = null;
   /** Right foot tip, for kick trails. */
   footR: THREE.Group | null = null;
   walk = 0;
@@ -578,6 +580,7 @@ export class FighterModel extends THREE.Group {
     mesh(s, box(0.026, 1.1, 0.028), this.glowMat, [0, 0.82, 0]);
     this.bladeBase = pivot(s, [0, 0.5, 0]);
     this.bladeTip = pivot(s, [0, 1.62, 0]);
+    this.gripL = pivot(s, [0, -0.11, 0]);
     this.shieldNode = pivot(s, [0, 0.6, 0]);
     this.castPoint = this.bladeTip;
   }
@@ -595,6 +598,7 @@ export class FighterModel extends THREE.Group {
     mesh(s, cyl(0, 0.017, 0.08, 4), this.steel(), [0.022, 1.1, 0], [0, 0, -0.1], [1, 1, 0.3]);
     this.bladeBase = pivot(s, [0, 0.35, 0]);
     this.bladeTip = pivot(s, [0.02, 1.12, 0]);
+    this.gripL = pivot(s, [0, -0.1, 0]);
     this.shieldNode = pivot(s, [0, 0.5, 0]);
     this.castPoint = this.bladeTip;
     // Scabbard on the left hip.
@@ -707,6 +711,7 @@ export class FighterModel extends THREE.Group {
     this.leg_r.rotation.x -= s * 0.55 * this.walk;
     this.cape.rotation.set(0.08 + 0.3 * this.walk + 0.3 * this.recoil + Math.sin(this.t * 2.1) * 0.03, 0, Math.sin(this.t * 1.7) * 0.03);
     this.hairSway.forEach((h, i) => { h.rotation.x = 0.1 * this.walk + 0.25 * this.recoil + Math.sin(this.t * 2 + i) * 0.05; });
+    if (this.gripL) this.reachGrip();
     this.glowMat.color.copy(this.glowBase).lerp(new THREE.Color(1, 1, 1), this.charge * (0.5 + 0.3 * Math.sin(this.t * 30)));
     this.updateBlink(dt);
     this.updateFlash(dt);
@@ -715,6 +720,16 @@ export class FighterModel extends THREE.Group {
       const f = 1 - this.falling / 0.6;
       this.rotation.x = -1.45 * Math.min(1, f * f * 1.2);
     }
+  }
+
+  /** Aims the left arm (shoulder to hand along local -Y) at the weapon's grip point. */
+  private reachGrip() {
+    this.updateMatrixWorld(true);
+    const grip = this.torso.worldToLocal(this.gripL!.getWorldPosition(new THREE.Vector3()));
+    const dir = grip.sub(this.arm_l.position);
+    if (dir.lengthSq() < 1e-6) return;
+    this.arm_l.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), dir.normalize());
+    this.hand_l.rotation.set(0, 0, 0);
   }
 
   setBarrier(on: boolean) { if (this.barrier) this.barrier.visible = on; }

@@ -6,6 +6,7 @@ import type { GameConfig, PlayerSlot } from "@/game/game";
 import { MAX_BET } from "@/game/economy";
 import { account, useAccount } from "@/lib/account";
 import { CardRow, InfoPanel, Showcase } from "./Select";
+import { Icon, charIcon } from "./icons";
 
 type Mode = "survival" | "duel" | "team";
 type LobbySlot = PlayerSlot & { bet?: number };
@@ -193,7 +194,7 @@ export default function Lobby({ name, onBack, onStart, onShop }: {
         <h3>Players ({players.length}/{MAX_PLAYERS[mode]})</h3>
         {players.map((p) => (
           <div key={p.peer} className="player" style={mode === "team" ? { borderLeft: `4px solid ${TEAM_COLORS[p.team ?? 0]}` } : {}}>
-            <i style={{ background: CHARACTERS[p.char].look.glow }} />
+            <Icon src={charIcon(CHARACTERS[p.char].id)} alt={CHARACTERS[p.char].look.name} size={30} fallback={<i style={{ background: CHARACTERS[p.char].look.glow }} />} />
             <b>{p.name}{p.peer === net.myId ? " (you)" : ""}</b>
             {mode === "team" && !!p.bet && <em className="betchip">{p.bet} gold</em>}
             <span>{CHARACTERS[p.char].look.name}</span>

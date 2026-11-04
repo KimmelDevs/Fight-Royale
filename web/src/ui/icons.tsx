@@ -1,13 +1,15 @@
 "use client";
 // Icon images live in public/icons (generated with ChatGPT and sliced from sheets):
 //   skills/<set>-<key>.webp  where set = kit, or mage-<element> for mages; key = z, x, c or v
-//   emblems/<id>.webp, gold.webp, diamond.webp
+//   emblems/<id>.webp, chars/<character id>.webp, gold.webp, diamond.webp
 // Each <Icon> falls back to its text when the image is missing.
 import { useState } from "react";
 
 export const skillIcon = (kit: string, element: string, key: string) =>
   `/icons/skills/${kit === "mage" ? `mage-${element}` : kit}-${key}.webp`;
 export const emblemIcon = (id: string) => `/icons/emblems/${id}.webp`;
+/** Character portrait; "random" is the question mark. */
+export const charIcon = (id: string) => `/icons/chars/${id}.webp`;
 
 export function Icon({ src, alt, size = 40, fallback }: { src: string; alt: string; size?: number; fallback?: React.ReactNode }) {
   const [bad, setBad] = useState(false);

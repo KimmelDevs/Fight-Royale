@@ -8,7 +8,7 @@ import {
   CHARACTER_PRICE, SKILL_PRICE, DIAMOND_PACKS, EMBLEMS, EMBLEM_MAX, emblemCost, AD_DIAMONDS, ADS_PER_DAY,
 } from "@/game/economy";
 import { Wallet } from "./Account";
-import { Icon, skillIcon, emblemIcon, Gold, Diamond } from "./icons";
+import { Icon, skillIcon, emblemIcon, charIcon, Gold, Diamond } from "./icons";
 
 type Tab = "fighters" | "skills" | "emblems" | "diamonds";
 
@@ -52,7 +52,7 @@ export default function Shop({ onBack, onAccount, start = "fighters" }: { onBack
             const owned = acc.owns(ch.id);
             return (
               <div key={ch.id} className="item" style={{ borderColor: ch.look.glow }}>
-                <b>{ch.look.name}</b>
+                <div className="item-head"><Icon src={charIcon(ch.id)} alt={ch.look.name} size={56} /><b>{ch.look.name}</b></div>
                 <span>{ch.role}</span>
                 {owned ? <em>Owned</em> : (
                   <div className="row">

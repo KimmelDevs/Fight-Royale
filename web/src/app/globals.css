@@ -174,3 +174,12 @@ input:focus { border-color: #e6c26e; }
 .item-head .icon-img { flex: none; }
 .skill-pick { flex-direction: row; align-items: center; gap: 6px; }
 .skill-pick span { display: flex; flex-direction: column; }
+
+/* Cards carry a portrait above the name. */
+.card { height: auto; min-height: 96px; padding: 6px 2px; gap: 1px; }
+.card .icon-img { width: 40px; height: 40px; }
+@media (max-width: 800px) { .card { height: auto; min-height: 92px; } }
+.hp .nm { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.hp.right .nm { justify-content: flex-end; }
+.mate { grid-template-columns: 26px 1fr; }
+.mate .icon-img { width: 26px; height: 26px; }
