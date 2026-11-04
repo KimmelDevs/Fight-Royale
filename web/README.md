@@ -95,16 +95,11 @@ _Generated from the game code by `npm run balance` — edit the code, then re-ru
 | Kaede | Moonlit Blade | Samurai - Katana | katana | moon | female | `#1f2235` | `#a9a6d6` | `#b3243a` / `#ff9aa8` | `#ff5a73` | - |
 | Ember | Flame Witch | Mage - Fire | mage | fire | female | `#ff7448` | `#d99eb3` | `#c0392b` / `#ffd166` | `#ff8026` | yes |
 | Marina | Tide Sorceress | Mage - Water | mage | water | female | `#8cc3f0` | `#adbdf2` | `#1f6fd0` / `#73dcf5` | `#59bfff` | - |
-| Volta | Storm Caller | Mage - Electric | mage | electric | male | `#ffe066` | `#d9b8d9` | `#6c3fd1` / `#ffe066` | `#c79eff` | - |
-| Sylva | Greenwood Ranger | Archer - Longbow | bow | nature | female | `#e9d29b` | `#c9b89e` | `#2e8b57` / `#b6f08a` | `#8cff80` | - |
 | Nyx | Shadow Blade | Assassin - Twin Daggers | assassin | shadow | female | `#3a3550` | `#b3a8e6` | `#7b2cbf` / `#e0aaff` | `#bf66ff` | - |
 | Rook | Iron Fist | Brawler - Knuckles | knuckles | force | male | `#ff8a3d` | `#e0a6a6` | `#b34a12` / `#ffd27a` | `#ffbf4d` | - |
 | Kira | Tempest Kicker | Martial Artist - Kicks | kicks | chi | female | `#2a2420` | `#b8a8c8` | `#16736b` / `#7af0d6` | `#4dffd2` | - |
 | Leon | Dawn Paladin | Paladin - Greatsword | greatsword | light | male | `#e8c45a` | `#d8b8a0` | `#b8860b` / `#ffe680` | `#ffe680` | - |
-| Sakura | Blossom Blade | Samurai - Katana | katana | blossom | female | `#ffb3cf` | `#e0a8c8` | `#d0457a` / `#ffc2dc` | `#ff8ac0` | - |
 | Raven | Hex Weaver | Mage - Electric | mage | electric | female | `#2a2a3a` | `#a8a8c8` | `#1aa874` / `#5dffc0` | `#5dffc0` | - |
-| Yuki | Snow Maiden | Mage - Water | mage | water | female | `#e6f6ff` | `#b8c8e8` | `#3a8ad0` / `#a8e8ff` | `#a8e8ff` | - |
-| Bruno | Stone Monk | Brawler - Knuckles | knuckles | earth | male | `#5a3a22` | `#b8a090` | `#6a3a1a` / `#d8a060` | `#ffb347` | - |
 | Ash | Crimson Hunter | Archer - Longbow | bow | blood | male | `#b8bcc8` | `#a8a8c0` | `#b01a2a` / `#ff7a7a` | `#ff4d4d` | - |
 
 ### Kit stats (shared by every fighter on that kit)
@@ -113,12 +108,12 @@ _Generated from the game code by `npm run balance` — edit the code, then re-ru
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | knight | 2500 | 100 | 3.2 | 2.6 | 0.16 | 7 | Aster, Vesper | 244 | 1.63 | 150 | 190 -> 285 |
 | greatsword | 2750 | 120 | 2.9 | 2.3 | 0.14 | 6.5 | Garrick, Leon | 420 | 2.56 | 164 | 320 -> 480 |
-| katana | 2200 | 80 | 3.8 | 3 | 0.2 | 7.5 | Kaede, Sakura | 243 | 1.32 | 184 | 230 -> 345 |
-| mage | 2100 | 80 | 3.4 | 2.6 | 0.16 | 7 | Ember, Marina, Volta, Raven, Yuki | 241 | 1.67 | 144 | 210 -> 315 |
-| bow | 2000 | 60 | 3.6 | 2.6 | 0.16 | 7.5 | Sylva, Ash | 260 | 1.51 | 172 | 260 -> 390 |
+| katana | 2200 | 80 | 3.8 | 3 | 0.2 | 7.5 | Kaede | 243 | 1.32 | 184 | 230 -> 345 |
+| mage | 2100 | 80 | 3.4 | 2.6 | 0.16 | 7 | Ember, Marina, Raven | 241 | 1.67 | 144 | 210 -> 315 |
 | assassin | 2000 | 60 | 4.2 | 3.4 | 0.22 | 8.2 | Nyx | 219 | 1.54 | 142 | 170 -> 255 |
-| knuckles | 2300 | 90 | 4 | 3.2 | 0.2 | 8 | Rook, Bruno | 290 | 1.67 | 174 | 220 -> 330 |
+| knuckles | 2300 | 90 | 4 | 3.2 | 0.2 | 8 | Rook | 290 | 1.67 | 174 | 220 -> 330 |
 | kicks | 2300 | 85 | 4.1 | 3.2 | 0.2 | 8.6 | Kira | 279 | 1.69 | 165 | 230 -> 345 |
+| bow | 2000 | 60 | 3.6 | 2.6 | 0.16 | 7.5 | Ash | 260 | 1.51 | 172 | 260 -> 390 |
 
 ### Normal attacks per kit
 
@@ -160,15 +155,6 @@ _Generated from the game code by `npm run balance` — edit the code, then re-ru
 | l3 | - | projectile | 42 | 14 | 0.24 / 0.05 / 0.42 | 3 | 0.4 | - | 3 x proj, speed 15, spread 0.22 rad |
 | heavy | - | strike | 210 | 60 | 0.15 / 0.05 / 0.55 | 6 | 0.7 | - | at target, radius 1.6, lands after 0.5s, heavy |
 
-#### bow
-
-| Key | Name | Type | Dmg | Guard dmg | Wind / active / recover (s) | Knock | Stun (s) | CD | Notes |
-|---|---|---|---|---|---|---|---|---|---|
-| l1 | - | projectile | 60 | 14 | 0.16 / 0.05 / 0.22 | 1.4 | 0.28 | - | 1 x proj, speed 28 |
-| l2 | - | projectile | 62 | 14 | 0.16 / 0.05 / 0.22 | 1.4 | 0.28 | - | 1 x proj, speed 28 |
-| l3 | - | projectile | 46 | 12 | 0.22 / 0.05 / 0.38 | 2.5 | 0.35 | - | 3 x proj, speed 28, spread 0.12 rad |
-| heavy | - | projectile | 260 | 60 | 0.1 / 0.05 / 0.5 | 6 | 0.7 | - | 1 x proj, speed 42, pierces, heavy |
-
 #### assassin
 
 | Key | Name | Type | Dmg | Guard dmg | Wind / active / recover (s) | Knock | Stun (s) | CD | Notes |
@@ -199,6 +185,15 @@ _Generated from the game code by `npm run balance` — edit the code, then re-ru
 | l3 | - | melee | 72 | 18 | 0.12 / 0.08 / 0.2 | 2.2 | 0.32 | - | reach 1.85, lunge 3.5 |
 | l4 | - | melee | 105 | 30 | 0.18 / 0.08 / 0.38 | 4.5 | 0.5 | - | reach 1.8, lunge 2.5, staggers |
 | heavy | - | melee | 230 | 55 | 0.12 / 0.16 / 0.5 | 6.5 | 0.8 | - | reach 2, lunge 7, self-launch 4, heavy |
+
+#### bow
+
+| Key | Name | Type | Dmg | Guard dmg | Wind / active / recover (s) | Knock | Stun (s) | CD | Notes |
+|---|---|---|---|---|---|---|---|---|---|
+| l1 | - | projectile | 60 | 14 | 0.16 / 0.05 / 0.22 | 1.4 | 0.28 | - | 1 x proj, speed 28 |
+| l2 | - | projectile | 62 | 14 | 0.16 / 0.05 / 0.22 | 1.4 | 0.28 | - | 1 x proj, speed 28 |
+| l3 | - | projectile | 46 | 12 | 0.22 / 0.05 / 0.38 | 2.5 | 0.35 | - | 3 x proj, speed 28, spread 0.12 rad |
+| heavy | - | projectile | 260 | 60 | 0.1 / 0.05 / 0.5 | 6 | 0.7 | - | 1 x proj, speed 42, pierces, heavy |
 
 ### Skills per fighter
 
@@ -258,24 +253,6 @@ Z / X / C are the default loadout; V is the locked bonus skill (unlock: 2000 gol
 | C | Ocean Requiem | strike | 270 | 80 | 0.35 / 0.08 / 0.6 | 8 | 0.9 | 12s | at target, radius 2.4, lands after 0.8s, heavy |
 | V | Healing Rain | buff | - | - | 0.2 / 0.08 / 0.4 | - | - | 14s | heal 0.25s |
 
-#### Volta (mage, electric)
-
-| Key | Name | Type | Dmg | Guard dmg | Wind / active / recover (s) | Knock | Stun (s) | CD | Notes |
-|---|---|---|---|---|---|---|---|---|---|
-| Z | Blink | blink | - | - | 0.04 / 0.08 / 0.15 | - | - | 4s | blink back |
-| X | Chain Lightning | projectile | 90 | 25 | 0.14 / 0.08 / 0.35 | 1 | 0.75 | 6s | 1 x proj, speed 42 |
-| C | Thunderstorm | strike | 110 | 35 | 0.3 / 0.08 / 0.6 | 3 | 0.6 | 12s | at target, radius 1.25, lands after 0.45s, x3 every 0.35s, heavy |
-| V | Static Field | strike | 75 | 22 | 0.12 / 0.08 / 0.5 | 2 | 0.5 | 10s | around self, radius 2.2, lands after 0.15s, x3 every 0.25s |
-
-#### Sylva (bow, nature)
-
-| Key | Name | Type | Dmg | Guard dmg | Wind / active / recover (s) | Knock | Stun (s) | CD | Notes |
-|---|---|---|---|---|---|---|---|---|---|
-| Z | Leap Back | blink | - | - | 0.04 / 0.08 / 0.12 | - | - | 4s | blink back |
-| X | Arrow Rain | strike | 80 | 20 | 0.22 / 0.08 / 0.4 | 2 | 0.35 | 8s | at target, radius 1.8, lands after 0.7s, x3 every 0.25s |
-| C | Hunter's Snare | projectile | 100 | 30 | 0.2 / 0.08 / 0.4 | 0.5 | 1.6 | 10s | 1 x proj, speed 32, staggers |
-| V | Piercing Volley | projectile | 55 | 14 | 0.2 / 0.08 / 0.4 | 2 | 0.3 | 9s | 5 x proj, speed 32, spread 0.25 rad, pierces |
-
 #### Nyx (assassin, shadow)
 
 | Key | Name | Type | Dmg | Guard dmg | Wind / active / recover (s) | Knock | Stun (s) | CD | Notes |
@@ -312,15 +289,6 @@ Z / X / C are the default loadout; V is the locked bonus skill (unlock: 2000 gol
 | C | Titan Cleave | strike | 340 | 90 | 0.4 / 0.08 / 0.7 | 9 | 1 | 12s | at target, radius 2, lands after 0.55s, heavy |
 | V | Berserk | buff | - | - | 0.2 / 0.08 / 0.4 | - | - | 14s | rage 6s |
 
-#### Sakura (katana, blossom)
-
-| Key | Name | Type | Dmg | Guard dmg | Wind / active / recover (s) | Knock | Stun (s) | CD | Notes |
-|---|---|---|---|---|---|---|---|---|---|
-| Z | Counter Stance | buff | - | - | 0.04 / 0.08 / 0.9 | - | - | 6s | counter 0.9s |
-| X | Crescent Wind | projectile | 120 | 30 | 0.14 / 0.08 / 0.35 | 3 | 0.45 | 6s | 1 x proj, speed 20, pierces |
-| C | Thousand Cuts | strike | 48 | 12 | 0.2 / 0.08 / 0.6 | 1 | 0.3 | 11s | at target, radius 1.5, lands after 0.3s, x7 every 0.07s |
-| V | Iaido Flash | melee | 200 | 50 | 0.08 / 0.16 / 0.45 | 5 | 0.7 | 8s | reach 2.2, lunge 18, heavy |
-
 #### Raven (mage, electric)
 
 | Key | Name | Type | Dmg | Guard dmg | Wind / active / recover (s) | Knock | Stun (s) | CD | Notes |
@@ -329,24 +297,6 @@ Z / X / C are the default loadout; V is the locked bonus skill (unlock: 2000 gol
 | X | Chain Lightning | projectile | 90 | 25 | 0.14 / 0.08 / 0.35 | 1 | 0.75 | 6s | 1 x proj, speed 42 |
 | C | Thunderstorm | strike | 110 | 35 | 0.3 / 0.08 / 0.6 | 3 | 0.6 | 12s | at target, radius 1.25, lands after 0.45s, x3 every 0.35s, heavy |
 | V | Static Field | strike | 75 | 22 | 0.12 / 0.08 / 0.5 | 2 | 0.5 | 10s | around self, radius 2.2, lands after 0.15s, x3 every 0.25s |
-
-#### Yuki (mage, water)
-
-| Key | Name | Type | Dmg | Guard dmg | Wind / active / recover (s) | Knock | Stun (s) | CD | Notes |
-|---|---|---|---|---|---|---|---|---|---|
-| Z | Bubble Ward | buff | - | - | 0.1 / 0.08 / 0.25 | - | - | 10s | ward 4s |
-| X | Tidal Ring | strike | 105 | 35 | 0.14 / 0.08 / 0.45 | 7 | 0.5 | 7s | around self, radius 2.7, lands after 0.1s |
-| C | Ocean Requiem | strike | 270 | 80 | 0.35 / 0.08 / 0.6 | 8 | 0.9 | 12s | at target, radius 2.4, lands after 0.8s, heavy |
-| V | Healing Rain | buff | - | - | 0.2 / 0.08 / 0.4 | - | - | 14s | heal 0.25s |
-
-#### Bruno (knuckles, earth)
-
-| Key | Name | Type | Dmg | Guard dmg | Wind / active / recover (s) | Knock | Stun (s) | CD | Notes |
-|---|---|---|---|---|---|---|---|---|---|
-| Z | Rush | melee | 120 | 35 | 0.08 / 0.2 / 0.4 | 3 | 0.7 | 5s | reach 1.6, lunge 14, staggers |
-| X | Shockwave Punch | projectile | 110 | 30 | 0.14 / 0.08 / 0.35 | 5 | 0.5 | 6s | 1 x proj, speed 18 |
-| C | Meteor Fist | strike | 300 | 80 | 0.22 / 0.08 / 0.6 | 8 | 0.9 | 11s | around self, radius 2.5, lands after 0.02s, self-launch 9, heavy |
-| V | Iron Body | buff | - | - | 0.1 / 0.08 / 0.25 | - | - | 13s | ward 2.5s |
 
 #### Ash (bow, blood)
 
