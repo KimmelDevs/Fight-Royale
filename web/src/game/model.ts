@@ -813,12 +813,47 @@ export class FighterModel extends THREE.Group {
     // Staffs and bows follow the arm a lot (natural tilt); blades less, to keep swing arcs.
     this.vrmRig.followArm = this.kit === "mage" ? 0.4 : this.kit === "bow" ? 0.5 : 0.3;
     this.vrmRig.staff = this.kit === "mage";
+    this.vrmRig.style = this.look.body === "m" ? "heavy" : "light";
+    if (this.kit === "knight") this.buildHeaterShield();
     for (const h of [this.hand_l, this.hand_r]) h.scale.multiplyScalar(VRM_WEAPON_SCALE);
     JN.forEach((n, i) => this.joints[n].quaternion.copy(save[i]));
     this.hips.position.copy(hipsPos);
     this.quaternion.copy(rootQ);
     this.position.copy(rootP);
     this.updateMatrixWorld(true);
+  }
+
+  /**
+   * Large heater shield for VRoid knights (covers chest to thigh) in place of the small
+   * round one. Built at its final world size, compensating the weapon scale on the hand.
+   */
+  private buildHeaterShield() {
+    const L = this.look;
+    for (const c of [...this.shieldNode.children]) c.visible = false;
+    const k = 1 / VRM_WEAPON_SCALE;
+    const W = 0.5 * k, H = 0.78 * k;
+    const heater = (w: number, h: number) => {
+      const s = new THREE.Shape();
+      s.moveTo(-w / 2, h * 0.42);
+      s.lineTo(w / 2, h * 0.42);
+      s.lineTo(w / 2, h * 0.02);
+      s.quadraticCurveTo(w / 2, -h * 0.36, 0, -h * 0.58);
+      s.quadraticCurveTo(-w / 2, -h * 0.36, -w / 2, h * 0.02);
+      s.closePath();
+      return s;
+    };
+    const plate = (w: number, h: number, depth: number) => {
+      const g = new THREE.ExtrudeGeometry(heater(w, h), { depth, bevelEnabled: true, bevelSize: 0.01 * k, bevelThickness: 0.008 * k, bevelSegments: 2, curveSegments: 16 });
+      g.translate(0, 0, -depth / 2);
+      g.rotateX(-PI / 2); // face along the hand's +/-Y like the round shield; top toward -Z
+      return g;
+    };
+    const s = pivot(this.shieldNode, [0, -0.03 * k, 0.05 * k]);
+    s.rotation.y = PI; // top of the shield up when the arm is raised in guard
+    mesh(s, plate(W + 0.05 * k, H + 0.05 * k, 0.02 * k), this.tn(L.trim), [0, 0.005 * k, 0]);
+    mesh(s, plate(W, H, 0.035 * k), this.tn(L.shield), [0, -0.004 * k, 0]);
+    mesh(s, cyl(0.12 * k, 0.12 * k, 0.045 * k, 4), this.tn(L.emblem), [0, -0.012 * k, 0.03 * k], [0, PI / 4, 0], [1, 1, 1.4]);
+    mesh(s, sphere(0.05 * k, 14), this.metal(), [0, -0.03 * k, 0.03 * k], [0, 0, 0], [1, 0.5, 1]);
   }
 
   setBarrier(on: boolean) { if (this.barrier) this.barrier.visible = on; }
