@@ -11,7 +11,9 @@ import { CHARACTERS } from "@/game/roster";
 import { SUPABASE_URL as URL_, SUPABASE_ANON_KEY as KEY } from "./config";
 const GUEST_KEY = "fr-guest-profile";
 
-export const supabase: SupabaseClient | null = URL_ && KEY ? createClient(URL_, KEY) : null;
+export const supabase: SupabaseClient | null = URL_ && KEY
+  ? createClient(URL_, KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: "pkce" } })
+  : null;
 
 type Listener = () => void;
 
@@ -26,14 +28,17 @@ class Account {
     if (typeof window === "undefined") return;
     this.loadGuest();
     if (!supabase) { this.ready = true; return; }
-    supabase.auth.getSession().then(({ data }) => this.onSession(data.session));
-    supabase.auth.onAuthStateChange((_e, session) => this.onSession(session));
+    // The listener fires INITIAL_SESSION on load with the session saved in localStorage.
+    // Never await Supabase calls inside it (supabase-js holds an auth lock there and the
+    // nested call deadlocks, which left the page looking signed out after a refresh).
+    supabase.auth.onAuthStateChange((_e, session) => { setTimeout(() => this.onSession(session), 0); });
   }
 
   subscribe(l: Listener) { this.listeners.add(l); return () => { this.listeners.delete(l); }; }
   private emit() { this.listeners.forEach((l) => l()); }
 
   private async onSession(session: any) {
+    if (session && this.signedIn && this.email === session.user?.email && this.ready) return; // token refresh
     this.signedIn = !!session;
     this.email = session?.user?.email ?? "";
     if (session) await this.refresh();
@@ -66,7 +71,9 @@ class Account {
 
   async refresh() {
     if (!supabase || !this.signedIn) return;
-    const { data } = await supabase.from("profiles").select("*").single();
+    // my_profile also re-applies admin unlocks; fall back to a plain read if it isn't deployed.
+    let { data, error } = await supabase.rpc("my_profile");
+    if (error) ({ data } = await supabase.from("profiles").select("*").single());
     this.setProfile(data);
     supabase.rpc("refund_stale_bets").then(({ data: d }) => d && this.setProfile(d));
   }
@@ -89,6 +96,13 @@ class Account {
   async signIn(email: string, password: string) {
     if (!supabase) throw new Error("Accounts are not configured");
     const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw new Error(error.message);
+  }
+
+  /** Google sign-in: redirects to Google, then back to this page already signed in. */
+  async signInWithGoogle() {
+    if (!supabase) throw new Error("Accounts are not configured");
+    const { error } = await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.origin } });
     if (error) throw new Error(error.message);
   }
 

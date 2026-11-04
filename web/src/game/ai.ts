@@ -45,11 +45,11 @@ export class AiBrain implements Brain {
   think(f: Fighter, dt: number) {
     const o = f.opponent as Fighter | null;
     if (!o || o.isDown()) return;
+    if (f.stage) { if (this.platform(f, o, dt)) return; }
     this.react(f, o);
-    this.dodge(f);
-    this.position(f, o, dt);
+    if (!f.stage) { this.dodge(f); this.position(f, o, dt); }
     this.offense(f, o, dt);
-    if (this.jumpWait >= 0) { this.jumpWait -= dt; if (this.jumpWait < 0) f.intent.jump = true; }
+    if (this.jumpWait >= 0) { this.jumpWait -= dt; if (this.jumpWait < 0) { this.jumpPulse = !this.jumpPulse; f.intent.jump = true; } }
     if (this.blockWait >= 0) { this.blockWait -= dt; if (this.blockWait < 0) this.blockHold = this.blockDur; }
     if (this.blockHold > 0) {
       this.blockHold -= dt;
@@ -65,6 +65,49 @@ export class AiBrain implements Brain {
       this.queue[0][0] -= dt;
       if (this.queue[0][0] <= 0) { this.hold = this.queue[0][1]; this.queue.shift(); f.intent.attack = true; }
     }
+  }
+
+  private jumpPulse = false;
+  private hopCd = 0;
+
+  /** Platform-fight movement. Returns true when busy recovering (skip everything else). */
+  private platform(f: Fighter, o: Fighter, dt: number): boolean {
+    const st = f.stage!;
+    const main = st.plats[0];
+    const p = f.root.position;
+    const press = () => { this.jumpPulse = !this.jumpPulse; f.intent.jump = this.jumpPulse; };
+    // Recovery: off stage or below it -> drift home and jump.
+    const offstage = p.x < main.x0 + 0.2 || p.x > main.x1 - 0.2 || p.y < main.y - 0.2;
+    if (!f.onGround && offstage && (f.state === S.IDLE || f.state === S.ATTACK)) {
+      f.intent.move.set(Math.sign(-p.x) || 1, 0, 0);
+      if (f.velY < 1.5) {
+        press();
+        if (p.y < main.y - 1.5) for (const k of ["x", "z", "c"]) if (f.attacks[k].self_jump > 0 && f.cooldowns[k] <= 0) { f.intent.skill = k; break; }
+      }
+      return true;
+    }
+    if (o.out) { f.intent.move.set(Math.sign(-p.x) * (Math.abs(p.x) > 3 ? 1 : 0), 0, 0); return true; }
+    const dx = o.root.position.x - p.x;
+    const dy = o.root.position.y - p.y;
+    const ranged = RANGED.has(f.kit);
+    const want = ranged ? 5 : f.kit === "greatsword" ? 1.6 : 1.25;
+    let mx = 0;
+    if (Math.abs(dx) > want + 0.4) mx = Math.sign(dx);
+    else if (ranged && Math.abs(dx) < 3) mx = -Math.sign(dx);
+    // Don't walk off the main stage edge on purpose.
+    if (f.onGround && mx && (p.x + mx * 0.6 < main.x0 + 0.6 || p.x + mx * 0.6 > main.x1 - 0.6)) mx = 0;
+    f.intent.move.set(mx, 0, 0);
+    this.hopCd -= dt;
+    if (f.onGround && dy > 1.6 && Math.abs(dx) < 4 && this.hopCd <= 0) { press(); this.hopCd = 0.6; }
+    else if (!f.onGround && dy > 1.2 && f.velY < 0.5 && this.hopCd <= 0) { press(); this.hopCd = 0.6; }
+    else if (f.onGround && dy < -1.2 && p.y > 0.5 && Math.abs(dx) < 4) f.intent.move.z = 1; // drop through
+    // Hop over incoming projectiles.
+    for (const pr of this.threats.projectiles()) {
+      if (pr.target !== f || this.seen.has(pr.id)) continue;
+      this.seen.add(pr.id);
+      if (Math.random() < this.p.jump + 0.15 && f.onGround) this.jumpWait = Math.max(f.chest().distanceTo(pr.pos) / Math.max(pr.vel.length(), 0.1) - 0.25, 0);
+    }
+    return false;
   }
 
   private schedule(wait: number, dur: number) {
@@ -136,6 +179,7 @@ export class AiBrain implements Brain {
   private offense(f: Fighter, o: Fighter, dt: number) {
     if (f.state !== S.IDLE || this.queue.length || this.hold > 0 || this.blockHold > 0) return;
     const dist = f.root.position.distanceTo(o.root.position);
+    if (f.stage && Math.abs(o.root.position.y - f.root.position.y) > 1.4 && !RANGED.has(f.kit)) return;
     const ranged = RANGED.has(f.kit);
     const reach = ranged ? 9 : f.kit === "assassin" || f.kit === "knuckles" || f.kit === "kicks" ? 1.7 : f.kit === "greatsword" ? 2.3 : 1.9;
     this.skillCd -= dt;

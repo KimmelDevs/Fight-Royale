@@ -7,6 +7,9 @@
 //   skill "z" / "x" / "c"          -> skill, if off cooldown
 // The arena gets `onSwing` when an attack reaches its active frame and resolves its effect.
 // On network clients the fighter is a puppet: it only mirrors state sent by the host.
+// With a `stage` set (duel / team modes) it plays as a side-view platform fighter: moves on
+// the X axis, double jumps, lands on platforms, and takes damage % instead of losing HP. The
+// higher the %, the farther hits launch it; flying past the blast zone costs a stock.
 import * as THREE from "three";
 import { FighterModel } from "./model";
 import { Trail } from "./fx";
@@ -23,6 +26,12 @@ const ENGAGE = 1.45;
 const MIN_DIST = 0.95;
 const GRAVITY = 22;
 const GUARD_REGEN = 30;
+
+/** One-way platforms (solid = main stage: can't drop through, has side walls). */
+export interface Plat { x0: number; x1: number; y: number; solid: boolean }
+export interface Stage { plats: Plat[]; blast: { l: number; r: number; b: number; t: number }; respawn: THREE.Vector3 }
+export const STOCKS = 3;
+const PCT_PER_DMG = 0.07;
 
 export interface Intent { attack: boolean; block: boolean; jump: boolean; skill: string; move: THREE.Vector3 }
 export interface Brain { think(f: Fighter, dt: number): void }
@@ -107,6 +116,24 @@ export class Fighter implements Entity {
   private netPos = new THREE.Vector3();
   private netRot = 0;
 
+  // Platform-fighter state.
+  stage: Stage | null = null;
+  pct = 0;
+  stocks = STOCKS;
+  /** Off screen after a blast-zone KO, waiting to respawn. */
+  out = false;
+  vx = 0;
+  facing = 1;
+  lane = 0;
+  onBlast: (f: Fighter) => void = () => {};
+  private airJumps = 1;
+  private ground: Plat | null = null;
+  private dropT = 0;
+  private respawnT = 0;
+  private upPrev = false;
+  private downPrev = false;
+  private knockFrom = 0;
+
   /** Damage multiplier from Berserk, while rageT > 0. */
   rageT = 0;
 
@@ -144,12 +171,16 @@ export class Fighter implements Entity {
 
   isDown() { return this.state === S.KO; }
   chest() { return this.root.position.clone().add(new THREE.Vector3(0, 1.1, 0)); }
-  airborne() { return !this.onGround && this.root.position.y > 0.7; }
+  airborne() { return this.stage ? !this.onGround : !this.onGround && this.root.position.y > 0.7; }
+  /** Stick up / down (side view: the camera looks down -Z, so "up" is -Z on the stick). */
+  private up() { return -this.intent.move.z > 0.5; }
+  private down() { return -this.intent.move.z < -0.5; }
 
   update(dt: number) {
     if (this.puppet) { this.updatePuppet(dt); return; }
     const it = this.intent;
     it.attack = false; it.block = false; it.jump = false; it.skill = ""; it.move.set(0, 0, 0);
+    if (this.out) { this.waitRespawn(dt); return; }
     if (this.brain && this.state !== S.KO && this.state !== S.WIN) this.brain.think(this, dt);
     if (!this.onGround) it.block = false;
     this.stateT += dt;
@@ -178,8 +209,8 @@ export class Fighter implements Entity {
       case S.STAGGER: if (this.stateT >= this.stun) this.setState(S.IDLE); break;
     }
 
-    this.move(dt);
-    this.vertical(dt);
+    if (this.stage) { this.movePlat(dt); this.verticalPlat(dt); }
+    else { this.move(dt); this.vertical(dt); }
     if (this.state !== S.BLOCK) {
       this.guardDelay -= dt;
       if (this.guardDelay <= 0) this.guard = Math.min(this.guard + GUARD_REGEN * dt, this.maxGuard);
@@ -214,6 +245,7 @@ export class Fighter implements Entity {
   }
 
   private readJump() {
+    if (this.stage) { this.readJumpPlat(); return; }
     const pressed = this.intent.jump && !this.jumpPrev;
     this.jumpPrev = this.intent.jump;
     if (pressed && this.onGround && (this.state === S.IDLE || this.state === S.BLOCK)) {
@@ -239,6 +271,11 @@ export class Fighter implements Entity {
   }
 
   private startAttack(id: string) {
+    // Platform mode: with no direction held, turn toward a nearby foe before swinging.
+    if (this.stage && Math.abs(this.intent.move.x) < 0.2 && this.opponent && !this.opponent.isDown()) {
+      const dx = this.opponent.root.position.x - this.root.position.x;
+      if (Math.abs(dx) < 6 && Math.abs(dx) > 0.05) this.facing = Math.sign(dx);
+    }
     this.atkPower = 1;
     if (id === "heavy" && this.state === S.CHARGE) this.atkPower = 1 + 0.5 * Math.min(this.stateT / CHARGE_MAX, 1);
     this.atkPower *= this.dmgMult * (this.rageT > 0 ? 1.4 : 1);
@@ -247,7 +284,7 @@ export class Fighter implements Entity {
     this.atkPhase = 0;
     this.buffered = false;
     this.swingSerial++;
-    if (this.atk.self_jump > 0) { this.velY = this.atk.self_jump; this.onGround = false; }
+    if (this.atk.self_jump > 0) { this.velY = this.atk.self_jump * (this.stage ? 1.35 : 1); this.onGround = false; this.ground = null; }
     this.setState(S.ATTACK);
   }
 
@@ -330,6 +367,13 @@ export class Fighter implements Entity {
   }
 
   teleport(to: THREE.Vector3) {
+    if (this.stage) {
+      const b = this.stage.blast;
+      this.root.position.x = Math.max(b.l + 2, Math.min(b.r - 2, to.x));
+      this.invulnT = 0.3;
+      if (this.opponent) this.facing = Math.sign(this.opponent.root.position.x - this.root.position.x) || this.facing;
+      return;
+    }
     const flat = Math.hypot(to.x, to.z);
     const k = flat > this.arenaRadius ? this.arenaRadius / flat : 1;
     this.root.position.set(to.x * k, this.root.position.y, to.z * k);
@@ -348,6 +392,7 @@ export class Fighter implements Entity {
     if (this.wardT > 0) { this.model.recoil = 0.4; return "warded"; }
     if (this.counterT > 0) { this.counterT = 0; return "counter"; }
     let dmg = a.dmg * power;
+    this.knockFrom = attacker ? attacker.root.position.x : this.root.position.x - this.facing;
     if (this.state === S.BLOCK) {
       if (this.stateT <= this.parryWindow) {
         this.guard = Math.min(this.guard + 20, this.maxGuard);
@@ -374,6 +419,7 @@ export class Fighter implements Entity {
     const cc = attacker && (attacker as any).critChance !== undefined ? (attacker as any).critChance : 0.2;
     this.lastCrit = Math.random() < cc;
     if (this.lastCrit) dmg *= 1.6;
+    if (this.stage) return this.launch(attacker, a, dmg);
     this.lastDamage = dmg;
     this.hp = Math.max(this.hp - dmg, 0);
     this.knock = a.knock;
@@ -403,10 +449,174 @@ export class Fighter implements Entity {
 
   heal(amount: number) { this.hp = Math.min(this.hp + amount, this.maxHp); }
 
-  private ko() {
+  ko() {
     this.setState(S.KO);
     this.model.fall();
     this.onKo(this);
+  }
+
+  // --- platform fighter -----------------------------------------------------------------
+  /** Damage % and knockback: launch speed grows with the % already taken. */
+  private launch(attacker: Entity | null, a: Attack, dmg: number): string {
+    const p = dmg * PCT_PER_DMG;
+    this.pct = Math.min(this.pct + p, 999);
+    this.lastDamage = p;
+    const speed = 2.5 + a.knock * 0.5 + this.pct * (0.06 + p * 0.006);
+    let side = Math.sign(this.root.position.x - (attacker ? attacker.root.position.x : this.knockFrom));
+    if (!side) side = attacker instanceof Fighter ? attacker.facing : -this.facing;
+    const ang = THREE.MathUtils.degToRad(a.self_jump > 0 ? 72 : a.heavy ? 42 : 34);
+    this.vx = side * speed * Math.cos(ang);
+    const vy = speed * Math.sin(ang);
+    if (vy > 3 || !this.onGround) { this.velY = Math.max(this.velY * 0.2, vy); this.onGround = false; this.ground = null; }
+    this.model.flash();
+    this.holding = false;
+    this.stun = 0.18 + speed * 0.032;
+    this.stunPose = speed > 9 || a.heavy ? "stagger" : "hit";
+    this.setState(S.HITSTUN);
+    return this.lastCrit ? "crit" : "hit";
+  }
+
+  private readJumpPlat() {
+    const want = this.intent.jump || this.up();
+    const pressed = want && !this.upPrev;
+    this.upPrev = want;
+    if (!pressed || ![S.IDLE, S.BLOCK, S.CHARGE].includes(this.state)) return;
+    if (this.onGround) {
+      this.velY = this.jumpV * 1.32;
+      this.onGround = false;
+      this.ground = null;
+      if (this.state === S.BLOCK) this.setState(S.IDLE);
+    } else if (this.airJumps > 0) {
+      this.airJumps--;
+      this.velY = this.jumpV * 1.15;
+      const mx = this.intent.move.x;
+      if (Math.abs(mx) > 0.2) { this.vx = Math.sign(mx) * this.moveSpeed * 1.2; this.facing = Math.sign(mx); }
+      this.model.recoil = 0.3;
+    }
+  }
+
+  private movePlat(dt: number) {
+    const pos = this.root.position;
+    pos.z += (this.lane - pos.z) * Math.min(1, dt * 8);
+    const mx = Math.abs(this.intent.move.x) > 0.2 ? Math.sign(this.intent.move.x) : 0;
+    const free = this.state === S.IDLE || this.state === S.CHARGE;
+    if (this.knock > 0) {
+      const o = this.opponent;
+      const away = Math.sign(pos.x - (o ? o.root.position.x : this.knockFrom)) || -this.facing;
+      this.vx = away * this.knock * 1.3;
+      this.knock = 0;
+    }
+    if (mx && (this.state === S.IDLE || (this.state === S.CHARGE && this.onGround))) this.facing = mx;
+    let walking = false;
+    if (this.onGround) {
+      let target = 0;
+      if (free) { target = mx * this.moveSpeed * (this.state === S.CHARGE ? 0.3 : 1.55); walking = mx !== 0; }
+      if (this.state === S.ATTACK && this.atk && this.atkPhase <= 1) {
+        const o = this.opponent;
+        const near = o && !o.isDown() && Math.abs(o.root.position.x - pos.x) < MIN_DIST && Math.abs(o.root.position.y - pos.y) < 1;
+        target = near ? 0 : this.facing * this.atk.lunge;
+      }
+      const grip = this.state === S.HITSTUN || this.state === S.STAGGER ? 5 : 16;
+      this.vx += (target - this.vx) * (1 - Math.exp(-grip * dt));
+    } else if (this.state === S.HITSTUN || this.state === S.STAGGER) {
+      this.vx *= Math.exp(-0.6 * dt);
+    } else {
+      const cap = this.moveSpeed * 1.35;
+      if (mx) this.vx += mx * this.moveSpeed * 4 * dt;
+      if (Math.abs(this.vx) > cap) this.vx *= Math.exp(-3 * dt);
+      else if (!mx) this.vx *= Math.exp(-1.2 * dt);
+      if (this.state === S.ATTACK && this.atk && this.atkPhase <= 1 && this.atk.lunge > 3) this.vx = this.facing * Math.max(Math.abs(this.vx), this.atk.lunge * 0.6);
+    }
+    pos.x += this.vx * dt;
+    // Main stage walls: can't pass through its sides.
+    for (const p of this.stage!.plats) {
+      if (!p.solid || pos.y >= p.y - 0.05 || pos.y < p.y - 4) continue;
+      if (pos.x > p.x0 && pos.x < p.x1) {
+        pos.x = pos.x - p.x0 < p.x1 - pos.x ? p.x0 : p.x1;
+        this.vx = 0;
+      }
+    }
+    if (this.state !== S.KO) {
+      const target = this.facing * Math.PI / 2;
+      let d = target - this.root.rotation.y;
+      d = Math.atan2(Math.sin(d), Math.cos(d));
+      this.root.rotation.y += d * (1 - Math.exp(-18 * dt));
+      this.model.rotation.y = this.viewBias;
+    }
+    this.model.walk = Math.min(Math.max(this.model.walk + (walking ? 1 : -1) * dt * 6, 0), 1);
+  }
+
+  private verticalPlat(dt: number) {
+    const pos = this.root.position;
+    const st = this.stage!;
+    const down = this.down();
+    const downPressed = down && !this.downPrev;
+    this.downPrev = down;
+    this.dropT = Math.max(this.dropT - dt, 0);
+    if (this.onGround) {
+      const g = this.ground;
+      if (!g || pos.x < g.x0 || pos.x > g.x1) { this.onGround = false; this.ground = null; this.velY = 0; }
+      else if (downPressed && !g.solid && (this.state === S.IDLE || this.state === S.BLOCK)) {
+        this.dropT = 0.3; this.onGround = false; this.ground = null; this.velY = -2; pos.y -= 0.03;
+        if (this.state === S.BLOCK) this.setState(S.IDLE);
+      } else { pos.y = g.y; return; }
+    }
+    const prevY = pos.y;
+    const tumbling = this.state === S.HITSTUN || this.state === S.STAGGER;
+    this.velY -= GRAVITY * dt;
+    if (!tumbling) {
+      if (down && this.velY < 3 && this.state === S.IDLE) this.velY = Math.min(this.velY, -15); // fast fall
+      this.velY = Math.max(this.velY, -16);
+    }
+    pos.y += this.velY * dt;
+    if (this.velY <= 0) {
+      for (const p of st.plats) {
+        if (pos.x < p.x0 || pos.x > p.x1 || prevY < p.y - 0.001 || pos.y > p.y) continue;
+        if (!p.solid && (this.dropT > 0 || (down && this.state === S.IDLE))) continue;
+        pos.y = p.y;
+        this.velY = 0;
+        this.onGround = true;
+        this.ground = p;
+        this.airJumps = 1;
+        this.model.recoil = 0.35;
+        this.onLanded(this);
+        break;
+      }
+    }
+    const b = st.blast;
+    if (pos.x < b.l || pos.x > b.r || pos.y < b.b || pos.y > b.t) this.blastOut();
+  }
+
+  private blastOut() {
+    this.onBlast(this);
+    this.stocks--;
+    this.out = true;
+    this.root.visible = false;
+    this.trail.emitting = false;
+    this.vx = 0; this.velY = 0; this.knock = 0;
+    this.atk = null;
+    this.holding = false;
+    if (this.stocks <= 0) { this.ko(); return; }
+    this.respawnT = 1.4;
+  }
+
+  private waitRespawn(dt: number) {
+    if (this.state === S.KO) return;
+    this.respawnT -= dt;
+    if (this.respawnT > 0) return;
+    const r = this.stage!.respawn;
+    this.root.position.set(r.x + this.lane * 2, r.y, this.lane);
+    this.root.visible = true;
+    this.out = false;
+    this.pct = 0;
+    this.onGround = false;
+    this.ground = null;
+    this.velY = 0;
+    this.airJumps = 1;
+    this.invulnT = 2;
+    this.guard = this.maxGuard;
+    this.setState(S.IDLE);
+    this.model.flash("#ffffff", 0.25);
   }
 
   // --- posing -------------------------------------------------------------------------
@@ -439,7 +649,8 @@ export class Fighter implements Entity {
     return [this.id, +p.x.toFixed(3), +p.y.toFixed(3), +p.z.toFixed(3), +this.root.rotation.y.toFixed(3),
       this.state, this.poseName, this.poseSpeed, Math.round(this.hp), Math.round(this.guard),
       +this.model.walk.toFixed(2), +this.model.charge.toFixed(2), this.trail.emitting ? 1 : 0,
-      +this.model.recoil.toFixed(2), this.cooldowns.z, this.cooldowns.x, this.cooldowns.c, this.maxHp];
+      +this.model.recoil.toFixed(2), this.cooldowns.z, this.cooldowns.x, this.cooldowns.c, this.maxHp,
+      +this.pct.toFixed(1), this.stocks, this.out ? 1 : 0];
   }
 
   applySnapshot(s: any[]) {
@@ -457,6 +668,11 @@ export class Fighter implements Entity {
     this.model.recoil = Math.max(this.model.recoil, s[13]);
     this.cooldowns.z = s[14]; this.cooldowns.x = s[15]; this.cooldowns.c = s[16];
     this.maxHp = s[17];
+    if (s.length > 18) {
+      this.pct = s[18]; this.stocks = s[19];
+      const out = s[20] === 1;
+      if (out !== this.out) { this.out = out; this.root.visible = !out; if (!out) this.root.position.copy(this.netPos); }
+    }
     if (this.state === S.KO && prev !== S.KO) this.model.fall();
     if (this.state !== S.KO && prev === S.KO) this.model.standUp();
   }

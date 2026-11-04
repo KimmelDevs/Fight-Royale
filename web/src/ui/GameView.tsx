@@ -87,7 +87,21 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
       <div ref={overlay} className="overlay" />
       {hud && (
         <div className="hud">
-          {me && (
+          {hud.plat && (
+            <div className="brawl-hud">
+              {hud.all.map((f, i) => (
+                <div key={i} className={"bcard" + (f.me ? " me" : "") + (f.down ? " down" : "")} style={{ ["--c" as any]: f.glow }}>
+                  <Icon src={charIcon(f.id)} alt={f.name} size={52} />
+                  <div className="binfo">
+                    <b>{f.name}{f.cpu ? " (CPU)" : ""}</b>
+                    <div className="pct" style={{ color: pctColor(f.pct) }}>{f.down ? "OUT" : f.out ? "--" : `${Math.floor(f.pct)}%`}</div>
+                    <div className="stocks">{Array.from({ length: 3 }, (_, k) => <i key={k} className={k < f.stocks ? "on" : ""} />)}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {me && !hud.plat && (
             <div className="hp left">
               <div className="nm"><Icon src={charIcon(me.id)} alt={me.name} size={44} />{me.name}</div>
               <Bar v={me.hp / me.maxHp} color="#7fd65b" />
@@ -95,7 +109,7 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
               <div className="num">{Math.ceil(me.hp)} / {Math.round(me.maxHp)}</div>
             </div>
           )}
-          {other && (
+          {other && !hud.plat && (
             <div className="hp right">
               <div className="nm">{other.name}{other.tag ? `  (${other.tag})` : ""}<Icon src={charIcon(other.id)} alt={other.name} size={44} /></div>
               <Bar v={other.hp / other.maxHp} color="#e8534a" right />
@@ -151,7 +165,9 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
               </div>
             ))}
           </div>
-          <div className="hint">WASD move - Space jump - Left click attack (hold = charged) - Right click block - Z X C skills - Esc leave</div>
+          <div className="hint">{hud?.plat
+            ? "A/D move - W or Space jump (twice to double jump) - S drop / fast fall - Left click attack (hold = charged) - Right click shield - Z X C skills - Esc leave"
+            : "WASD move - Space jump - Left click attack (hold = charged) - Right click block - Z X C skills - Esc leave"}</div>
         </div>
       )}
       <div className="toasts">{toasts.map((t) => <div key={t.id} className="toast">{t.text}</div>)}</div>
@@ -178,11 +194,18 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
           <div className="txt" style={{ color: over?.color ?? "#ff7b7b" }}>{lost ? "DISCONNECTED" : over!.text}</div>
           <div className="bsub">{lost ? "The host left the match." : over!.sub}</div>
           <div className="row">
-            {hud?.canRestart && !lost && <button className="big gold" onClick={rematch}>{cfg.mode === "duel" ? "Rematch" : "Try Again"}</button>}
+            {hud?.canRestart && !lost && <button className="big gold" onClick={rematch}>{cfg.mode === "duel" || cfg.mode === "brawl" ? "Rematch" : "Try Again"}</button>}
             <button className="big ghost" onClick={onExit}>Menu</button>
           </div>
         </div>
       )}
     </div>
   );
+}
+
+/** Damage % turns from white through yellow and orange to deep red as it climbs. */
+function pctColor(p: number) {
+  const t = Math.min(p / 150, 1);
+  const r = 255, g = Math.round(255 - 200 * t), b = Math.round(255 - 235 * Math.min(t * 1.6, 1));
+  return `rgb(${r},${g},${b})`;
 }

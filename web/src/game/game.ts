@@ -1,12 +1,14 @@
-// The running match. Owns the renderer, scene, entities and rules for both modes:
-//   duel     - 1v1, vs CPU (offline) or vs a friend (online)
+// The running match. Owns the renderer, scene, entities and rules for all modes:
+//   duel     - 1v1 in the 3D arena, vs CPU (offline) or vs a friend (online)
+//   brawl    - 1v1 side-view platform fight (damage %, 3 stocks, blast zones), CPU or friend
+//   team     - 2v2 / 3v3 / 4v4 in the 3D arena
 //   survival - 1-4 players vs roguelike waves of mobs, a boss every 5 waves, perks between waves
 // Networking is host-authoritative: the host (or offline player) simulates everything and
 // streams snapshots + effect events; guests send inputs and render puppets.
 import * as THREE from "three";
 import * as M from "./mat";
 import { Fx } from "./fx";
-import { Fighter, S, type Entity, type Brain } from "./fighter";
+import { Fighter, S, STOCKS, type Entity, type Brain, type Stage } from "./fighter";
 import { Mob, waveRoster, MOB_TYPES, type MobHost } from "./mobs";
 import { AiBrain, LEVELS, type Threats } from "./ai";
 import { CHARACTERS } from "./roster";
@@ -25,7 +27,7 @@ export interface PlayerSlot {
   team?: number;
 }
 export interface GameConfig {
-  mode: "duel" | "survival" | "team";
+  mode: "duel" | "brawl" | "survival" | "team";
   role: "offline" | "host" | "client";
   players: PlayerSlot[];
   localPeer: string;
@@ -55,6 +57,18 @@ export type UiEvent =
 const v3 = (a: any) => a instanceof THREE.Vector3 ? a : new THREE.Vector3(a.x ?? a[0], a.y ?? a[1], a.z ?? a[2]);
 const DUEL_RADIUS = 7;
 const SURVIVAL_RADIUS = 11;
+
+/** The floating stage for duel and team fights: a main island plus three soft platforms. */
+export const STAGE: Stage = {
+  plats: [
+    { x0: -7.5, x1: 7.5, y: 0, solid: true },
+    { x0: -5.6, x1: -2.4, y: 2.4, solid: false },
+    { x0: 2.4, x1: 5.6, y: 2.4, solid: false },
+    { x0: -1.6, x1: 1.6, y: 4.6, solid: false },
+  ],
+  blast: { l: -17, r: 17, b: -9, t: 15 },
+  respawn: new THREE.Vector3(0, 7.5, 0),
+};
 
 class LocalBrain implements Brain {
   constructor(private game: Game) {}
@@ -159,6 +173,8 @@ export class Game implements MobHost {
   local: Fighter | null = null;
 
   private sun = new THREE.DirectionalLight(0xffffff, 1.9);
+  /** Brawl mode is a side-view platform fight. */
+  readonly plat: boolean;
   private timers: { t: number; fn: () => void }[] = [];
   private time = 0;
   private timeScale = 1;
@@ -192,6 +208,7 @@ export class Game implements MobHost {
   constructor(canvas: HTMLCanvasElement, overlay: HTMLElement, cfg: GameConfig, net: Net | null) {
     this.cfg = cfg;
     this.net = net;
+    this.plat = cfg.mode === "brawl";
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -240,14 +257,62 @@ export class Game implements MobHost {
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
     tex.repeat.set(100, 100);
     tex.anisotropy = 8;
+    if (this.plat) { this.buildStage(); return; }
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshLambertMaterial({ map: tex }));
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     this.scene.add(ground);
-    const r = this.cfg.mode === "duel" ? DUEL_RADIUS : SURVIVAL_RADIUS;
+    const r = this.cfg.mode === "survival" ? SURVIVAL_RADIUS : DUEL_RADIUS;
     const ring = new THREE.Mesh(new THREE.TorusGeometry(r + 0.45, 0.07, 6, 128).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: "#e6c26e" }));
     ring.scale.y = 0.2;
     this.scene.add(ring);
+  }
+
+  /** Floating island stage with soft platforms, far islands and clouds behind it. */
+  private buildStage() {
+    const grass = M.toon("#8fd16a", { shade: "#6fae8a" });
+    const dirt = M.toon("#b07a52", { shade: "#8a6a8a" });
+    const rock = M.toon("#8c8496", { shade: "#6a6688" });
+    const trim = M.toon("#e6c26e", { rim: 0.6 });
+    const add = (geo: THREE.BufferGeometry, mat: M.MatPair, pos: [number, number, number], shadow = true) => {
+      const m = new THREE.Mesh(geo, mat.fill);
+      m.position.set(...pos);
+      m.receiveShadow = true;
+      m.castShadow = shadow;
+      if (mat.outline) m.add(new THREE.Mesh(geo, mat.outline));
+      this.scene.add(m);
+      return m;
+    };
+    const main = STAGE.plats[0];
+    const w = main.x1 - main.x0;
+    add(new THREE.BoxGeometry(w, 0.35, 4.2), grass, [0, -0.175, 0]);
+    add(new THREE.BoxGeometry(w - 0.2, 0.9, 4), dirt, [0, -0.8, 0]);
+    // Rocky underside tapering to a point.
+    const under = new THREE.ConeGeometry(w * 0.48, 4.2, 7, 1);
+    under.rotateX(Math.PI);
+    under.scale(1, 1, 0.32);
+    add(under, rock, [0, -3.2, 0]);
+    for (const x of [main.x0 + 0.15, main.x1 - 0.15]) add(new THREE.BoxGeometry(0.3, 0.12, 4.25), trim, [x, 0.0, 0], false);
+    for (const p of STAGE.plats.slice(1)) {
+      const pw = p.x1 - p.x0;
+      add(new THREE.BoxGeometry(pw, 0.16, 1.6), M.toon("#f2e6c8", { shade: "#b8a8c8" }), [(p.x0 + p.x1) / 2, p.y - 0.08, 0]);
+      add(new THREE.BoxGeometry(pw, 0.06, 1.62), trim, [(p.x0 + p.x1) / 2, p.y - 0.19, 0], false);
+    }
+    // Distant islands and clouds.
+    const far = M.toon("#9cc8a8", { outline: false, shade: "#8ab0c8" });
+    const farRock = M.toon("#a8a8c0", { outline: false, shade: "#9aa0c8" });
+    for (const [x, y, z, s] of [[-26, -2, -30, 4], [22, 3, -36, 5], [-8, 8, -45, 3], [34, -6, -28, 3]]) {
+      add(new THREE.CylinderGeometry(s, s * 0.9, 0.8, 9), far, [x, y, z], false);
+      add(new THREE.ConeGeometry(s * 0.9, s * 1.6, 9).rotateX(Math.PI), farRock, [x, y - s * 0.8 - 0.4, z], false);
+    }
+    const cloud = new THREE.MeshBasicMaterial({ color: "#ffffff", transparent: true, opacity: 0.85 });
+    for (let i = 0; i < 14; i++) {
+      const c = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), cloud);
+      c.scale.set(3 + Math.random() * 4, 1 + Math.random(), 1.5);
+      c.position.set(-40 + i * 6 + Math.random() * 3, -10 + Math.random() * 6, -20 - Math.random() * 15);
+      this.scene.add(c);
+    }
+    this.scene.fog = new THREE.Fog("#d8eeff", 40, 140);
   }
 
   // --- lifecycle ---------------------------------------------------------------------
@@ -305,14 +370,16 @@ export class Game implements MobHost {
     this.timeScale = 1;
     this.emit(["reset"]);
     const cfg = this.cfg;
-    if (cfg.mode === "duel") {
+    if (cfg.mode === "duel" || cfg.mode === "brawl") {
       const a = cfg.players[0];
       const b = cfg.players[1] ?? { peer: "cpu", name: "CPU", char: cfg.cpuChar ?? 0 };
-      const f1 = this.spawnFighter(a, 0, new THREE.Vector3(-2, 0, 0), Math.PI / 2);
-      const f2 = this.spawnFighter(b, 1, new THREE.Vector3(2, 0, 0), -Math.PI / 2);
+      const sx = this.plat ? 3 : 2;
+      const f1 = this.spawnFighter(a, 0, new THREE.Vector3(-sx, 0, 0), Math.PI / 2);
+      const f2 = this.spawnFighter(b, 1, new THREE.Vector3(sx, 0, 0), -Math.PI / 2);
+      if (b.peer === "cpu" && !this.plat) f2.autoApproach = !["mage", "bow"].includes(f2.kit);
       f1.opponent = f2;
       f2.opponent = f1;
-      if (b.peer === "cpu") f2.autoApproach = !["mage", "bow"].includes(f2.kit);
+
       const id = this.round;
       this.banner("READY", "#ffe9a8", "", 0.6);
       this.later(1.0, () => {
@@ -364,7 +431,13 @@ export class Game implements MobHost {
     f.team = team;
     f.owner = slot.peer;
     f.puppet = this.cfg.role === "client";
-    f.arenaRadius = this.cfg.mode === "duel" ? DUEL_RADIUS : SURVIVAL_RADIUS;
+    f.arenaRadius = this.cfg.mode === "survival" ? SURVIVAL_RADIUS : DUEL_RADIUS;
+    if (this.plat) {
+      f.stage = STAGE;
+      f.stocks = STOCKS;
+      f.facing = pos.x < 0 ? 1 : -1;
+      f.onBlast = (x) => this.onBlast(x);
+    }
     f.root.position.copy(pos);
     f.root.rotation.y = rotY;
     f.onSwing = (x) => this.onSwing(x);
@@ -457,7 +530,7 @@ export class Game implements MobHost {
 
   private retarget() {
     for (const f of this.fighters) {
-      if (this.cfg.mode === "duel") continue;
+      if (this.isDuel()) continue;
       let best: Entity | null = null, bd = this.cfg.mode === "team" ? 1e9 : 14;
       const foes: Entity[] = this.cfg.mode === "team" ? this.fighters.filter((o) => o.team !== f.team) : this.mobs;
       for (const m of foes) {
@@ -557,7 +630,7 @@ export class Game implements MobHost {
       to.y = 0;
       const dist = to.length();
       const dir = to.clone().divideScalar(Math.max(dist, 0.001));
-      if (d instanceof Fighter && this.cfg.mode === "duel" && d.state === S.ATTACK && d.atk?.type === "melee" &&
+      if (d instanceof Fighter && this.isDuel() && d.state === S.ATTACK && d.atk?.type === "melee" &&
         (d.atkPhase === 1 || (d.atkPhase === 0 && d.atk.wind - d.stateT <= 0.08)) && dist <= a.reach + 0.3 && dy < 0.8) {
         this.clash(f, d, f.root.position.clone().addScaledVector(dir, Math.min(dist * 0.5, 0.8)).add(new THREE.Vector3(0, 1.15, 0)));
         return;
@@ -610,7 +683,8 @@ export class Game implements MobHost {
         }
       }
       const flat = Math.hypot(p.pos.x, p.pos.z);
-      if (p.life <= 0 || p.pos.y < 0.05 || flat > 16) {
+      const gone = this.plat ? Math.abs(p.pos.x) > 20 || p.pos.y < -10 || this.hitsStage(p.pos) : p.pos.y < 0.05 || flat > 16;
+      if (p.life <= 0 || gone) {
         if (!p.visualOnly) this.fxp("sparks", p.pos.clone(), p.color, 8, 3);
         p.done = true;
       }
@@ -633,7 +707,7 @@ export class Game implements MobHost {
     const one = (i: number) => {
       if (round !== this.round || f.isDown()) return;
       const src: Entity = a.at === "self" || !f.opponent ? f : f.opponent;
-      const center = src.root.position.clone().setY(0);
+      const center = this.plat ? src.root.position.clone() : src.root.position.clone().setY(0);
       const wait = i === 0 ? a.delay : a.interval;
       const mark = { target: f.opponent, land: this.time + wait, id: this.nextId++ };
       this.strikeMarks.push(mark);
@@ -644,11 +718,13 @@ export class Game implements MobHost {
       this.later(wait, () => {
         this.strikeMarks = this.strikeMarks.filter((m) => m !== mark);
         if (round !== this.round) return;
-        const at = a.at === "self" ? f.root.position.clone().setY(0) : center;
+        const at = a.at === "self" ? (this.plat ? f.root.position.clone() : f.root.position.clone().setY(0)) : center;
         this.impactFx(a, at, color, a.radius);
         for (const d of this.enemiesOf(f)) {
-          const to = d.root.position.clone().sub(at).setY(0);
-          if (to.length() <= a.radius + d.radius * 0.5 && !d.airborne()) {
+          const to = d.root.position.clone().sub(at);
+          const dy = Math.abs(to.y);
+          to.setY(0);
+          if (to.length() <= a.radius + d.radius * 0.5 && (this.plat ? dy < 1.6 : !d.airborne())) {
             const dir = to.length() > 0.05 ? to.normalize() : d.root.position.clone().sub(f.root.position).setY(0).normalize();
             this.applyHit(f, d, a, power, d.chest(), dir, true);
           } else if (d instanceof Fighter && to.length() <= a.radius + 1) {
@@ -662,7 +738,7 @@ export class Game implements MobHost {
   }
 
   private impactFx(a: Attack, pos: THREE.Vector3, color: string, radius: number) {
-    const g = pos.clone().setY(0);
+    const g = this.plat ? pos.clone() : pos.clone().setY(0);
     switch (a.style) {
       case "explosion":
       case "meteor":
@@ -759,10 +835,11 @@ export class Game implements MobHost {
         this.fxp("sparks", hitPos, glow, heavy ? 30 : 18, heavy ? 8 : 6, dir);
         this.fxp("flash", hitPos, glow, heavy ? 0.45 : 0.3, 0.14, 0.8);
         if (a.heavy) this.fxp("ring", hitPos, glow, 2.2, 0.35, 0.9);
-        this.fxp("num", hitPos.clone().add(new THREE.Vector3(0, 0.5, 0)), `${Math.round(d.lastDamage)}${crit ? "!" : ""}`,
-          d.team === (this.local?.team ?? 0) && this.cfg.mode !== "duel" ? "#ff7b7b" : crit ? "#ffb347" : "#ffffff", crit ? 1.5 : 1);
+        const label = this.plat && d instanceof Fighter ? `${Math.round(d.lastDamage)}%` : `${Math.round(d.lastDamage)}`;
+        this.fxp("num", hitPos.clone().add(new THREE.Vector3(0, 0.5, 0)), `${label}${crit ? "!" : ""}`,
+          d.team === (this.local?.team ?? 0) && !this.isDuel() ? "#ff7b7b" : crit ? "#ffb347" : "#ffffff", crit ? 1.5 : 1);
         if (attacker instanceof Fighter && attacker.lifesteal > 0) attacker.heal(d.lastDamage * attacker.lifesteal);
-        const big = this.cfg.mode === "duel" || attacker instanceof Mob ? 1 : 0.5;
+        const big = this.isDuel() || attacker instanceof Mob ? 1 : 0.5;
         this.add_trauma((a.heavy ? 0.5 : heavy ? 0.3 : 0.18) * big);
         this.hitStop(a.heavy ? 0.11 : heavy ? 0.07 : 0.045);
         if (result === "ko" && d instanceof Mob) {
@@ -889,8 +966,32 @@ export class Game implements MobHost {
   }
 
   // --- rounds -----------------------------------------------------------------------------
+  /** A fighter crossed the blast zone: burst at the screen edge, shake, lose a stock. */
+  private onBlast(f: Fighter) {
+    const b = STAGE.blast;
+    const p = f.root.position;
+    const at = new THREE.Vector3(Math.max(b.l + 1.5, Math.min(b.r - 1.5, p.x)), Math.max(b.b + 1.5, Math.min(b.t - 1.5, p.y)), 0);
+    const dir = new THREE.Vector3(0, 0, 0).sub(at).normalize();
+    this.fxp("explosion", at, f.look.glow, 2.2);
+    this.fxp("sparks", at, f.look.glow, 50, 12, dir);
+    this.fxp("flash", at, "#ffffff", 1.2, 0.25, 0.95);
+    this.fxp("ring", at, f.look.glow, 4, 0.5, 0.9);
+    this.add_trauma(0.8);
+    this.hitStop(0.12, 0.15);
+    if (f.stocks > 1) this.fxp("num", new THREE.Vector3(at.x * 0.7, Math.min(at.y, 8) * 0.7 + 2, 0), `${f.look.name} -1`, "#ffd1a8", 1.1);
+  }
+
+  /** Projectiles stop on the main island (from the side or below). */
+  private hitsStage(p: THREE.Vector3) {
+    const m = STAGE.plats[0];
+    return p.x > m.x0 && p.x < m.x1 && p.y < m.y - 0.05 && p.y > m.y - 4;
+  }
+
+  /** 1v1 modes (3D duel and platform brawl). */
+  private isDuel() { return this.cfg.mode === "duel" || this.cfg.mode === "brawl"; }
+
   private onFighterKo(f: Fighter) {
-    if (this.cfg.mode === "duel") {
+    if (this.isDuel()) {
       if (this.roundOver) return;
       this.roundOver = true;
       const winner = this.fighters.find((x) => x !== f)!;
@@ -1092,7 +1193,21 @@ export class Game implements MobHost {
     let goal: THREE.Vector3, look: THREE.Vector3;
     const me = this.local ?? this.fighters[0];
     if (!me) { cam.position.set(0, 6, 10); cam.lookAt(0, 1, 0); return; }
-    if (this.cfg.mode === "duel" && this.fighters.length >= 2) {
+    if (this.plat) {
+      const live = this.fighters.filter((f) => !f.out && !f.isDown());
+      const pts = (live.length ? live : this.fighters).map((f) => f.root.position);
+      const box = new THREE.Box3().setFromPoints(pts);
+      const b = STAGE.blast;
+      const cx = THREE.MathUtils.clamp((box.min.x + box.max.x) / 2, b.l + 8, b.r - 8);
+      const cy = THREE.MathUtils.clamp((box.min.y + box.max.y) / 2, -1, 6);
+      const spread = Math.max(box.max.x - box.min.x, (box.max.y - box.min.y) * 1.6);
+      const narrow = Math.max(1, 1.5 / Math.max(this.camera.aspect, 0.3));
+      const dist = THREE.MathUtils.clamp(9 + spread * 0.75, 11, 26) * narrow;
+      goal = new THREE.Vector3(cx * 0.85, cy + 2.4 + dist * 0.08, dist);
+      look = new THREE.Vector3(cx * 0.85, cy + 1.1, 0);
+      // Turn bodies a little toward the camera so faces read.
+      for (const f of this.fighters) f.viewBias = -f.facing * 0.45;
+    } else if (this.cfg.mode === "duel" && this.fighters.length >= 2) {
       const other = this.fighters.find((f) => f !== me)!;
       const mid = me.root.position.clone().add(other.root.position).multiplyScalar(0.5);
       const d = other.root.position.clone().sub(me.root.position).setY(0);
@@ -1133,13 +1248,16 @@ export class Game implements MobHost {
   hud() {
     const me = this.local;
     const boss = this.mobs.find((m) => m.def.boss && !m.dead);
-    const other = this.cfg.mode === "duel" ? this.fighters.find((f) => f !== me) : null;
-    const info = (f: Fighter) => ({ id: CHARACTERS[f.charIndex].id, name: f.look.name, hp: f.hp, maxHp: f.maxHp, guard: f.guard, maxGuard: f.maxGuard, down: f.isDown(), glow: f.look.glow });
+    const other = this.isDuel() ? this.fighters.find((f) => f !== me) : null;
+    const info = (f: Fighter) => ({ id: CHARACTERS[f.charIndex].id, name: f.look.name, hp: f.hp, maxHp: f.maxHp, guard: f.guard, maxGuard: f.maxGuard, down: f.isDown(), glow: f.look.glow,
+      pct: f.pct, stocks: f.stocks, out: f.out, team: f.team });
     return {
       mode: this.cfg.mode,
+      plat: this.plat,
+      all: this.plat ? this.fighters.map((f) => ({ ...info(f), me: f === me, cpu: f.owner === "cpu" })) : [],
       me: me ? info(me) : null,
       other: other ? { ...info(other), tag: other.owner === "cpu" ? `CPU - ${LEVELS[this.cfg.difficulty ?? 1]}` : "" } : null,
-      team: this.cfg.mode !== "duel" ? this.fighters.filter((f) => f !== me && f.team === me?.team).map(info) : [],
+      team: !this.isDuel() ? this.fighters.filter((f) => f !== me && f.team === me?.team).map(info) : [],
       foes: this.cfg.mode === "team" ? this.fighters.filter((f) => f.team !== me?.team).map(info) : [],
       skills: me ? ["z", "x", "c"].map((k) => ({ key: k, id: me.attacks[k].id, name: me.attacks[k].name, cd: me.cooldowns[k], max: me.attacks[k].cd * me.cdMult })) : [],
       kit: me?.kit ?? "", element: me?.look.element ?? "",

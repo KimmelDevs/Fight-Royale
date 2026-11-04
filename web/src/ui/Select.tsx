@@ -153,7 +153,7 @@ export function CardRow({ current, onPick, allowRandom, showLocks }: { current: 
 }
 
 export default function Select({ purpose, onBack, onDone, onShop }: {
-  purpose: "duel" | "survival";
+  purpose: "duel" | "brawl" | "survival";
   onBack: () => void;
   onShop: () => void;
   onDone: (player: number, cpu?: number, difficulty?: number) => void;
@@ -173,7 +173,7 @@ export default function Select({ purpose, onBack, onDone, onShop }: {
     if (c === RANDOM) { const opts = CHARACTERS.map((_, i) => i).filter((i) => i !== me); c = opts[Math.floor(Math.random() * opts.length)]; }
     onDone(me, c, level);
   };
-  const next = () => (myLocked ? onShop() : purpose === "duel" && step === 0 ? setStep(1) : finish());
+  const next = () => (myLocked ? onShop() : purpose !== "survival" && step === 0 ? setStep(1) : finish());
 
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
@@ -209,7 +209,7 @@ export default function Select({ purpose, onBack, onDone, onShop }: {
           )}
           <div className="row">
             <button className="big ghost" onClick={() => (step === 1 ? setStep(0) : onBack())}>&lt; BACK</button>
-            <button className="big gold" onClick={next}>{myLocked ? "UNLOCK IN SHOP" : purpose === "duel" && step === 0 ? "NEXT >" : "FIGHT!"}</button>
+            <button className="big gold" onClick={next}>{myLocked ? "UNLOCK IN SHOP" : purpose !== "survival" && step === 0 ? "NEXT >" : "FIGHT!"}</button>
           </div>
         </div>
       </div>

@@ -8,10 +8,10 @@ import { account, useAccount } from "@/lib/account";
 import { CardRow, InfoPanel, Showcase } from "./Select";
 import { Icon, charIcon } from "./icons";
 
-type Mode = "survival" | "duel" | "team";
+type Mode = "survival" | "duel" | "brawl" | "team";
 type LobbySlot = PlayerSlot & { bet?: number };
 
-const MAX_PLAYERS: Record<Mode, number> = { survival: 4, duel: 2, team: 8 };
+const MAX_PLAYERS: Record<Mode, number> = { survival: 4, duel: 2, brawl: 2, team: 8 };
 const TEAM_COLORS = ["#5fa8ff", "#ff6b6b"];
 
 export default function Lobby({ name, onBack, onStart, onShop }: {
@@ -123,7 +123,7 @@ export default function Lobby({ name, onBack, onStart, onShop }: {
 
   const teamCounts = [0, 1].map((t) => players.filter((p) => p.team === t).length);
   const valid = mode === "survival" ? players.length >= 1 && players.length <= 4
-    : mode === "duel" ? players.length === 2
+    : mode === "duel" || mode === "brawl" ? players.length === 2
     : players.length >= 2 && teamCounts[0] >= 1 && teamCounts[1] >= 1 && Math.max(...teamCounts) <= 4;
   const canStart = net?.role === "host" && valid;
   const me = players.find((p) => p.peer === net?.myId);
@@ -167,9 +167,9 @@ export default function Lobby({ name, onBack, onStart, onShop }: {
       <div className="panel lobby-panel">
         <h3>Mode</h3>
         <div className="row">
-          {(["survival", "duel", "team"] as Mode[]).map((m) => (
-            <button key={m} className={"lvl" + (mode === m ? " on" : "")} style={{ ["--c" as any]: m === "survival" ? "#6fcf7f" : m === "duel" ? "#e8534a" : "#5fa8ff" }}
-              disabled={net.role !== "host"} onClick={() => changeMode(m)}>{m === "survival" ? "Co-op Survival" : m === "duel" ? "Duel (1v1)" : "Team Battle"}</button>
+          {(["survival", "duel", "brawl", "team"] as Mode[]).map((m) => (
+            <button key={m} className={"lvl" + (mode === m ? " on" : "")} style={{ ["--c" as any]: m === "survival" ? "#6fcf7f" : m === "duel" ? "#e8534a" : m === "brawl" ? "#ffb347" : "#5fa8ff" }}
+              disabled={net.role !== "host"} onClick={() => changeMode(m)}>{m === "survival" ? "Co-op Survival" : m === "duel" ? "Duel (1v1)" : m === "brawl" ? "Platform Brawl" : "Team Battle"}</button>
           ))}
         </div>
         {mode === "team" && (
@@ -200,7 +200,7 @@ export default function Lobby({ name, onBack, onStart, onShop }: {
             <span>{CHARACTERS[p.char].look.name}</span>
           </div>
         ))}
-        {!valid && <div className="error">{mode === "duel" ? "Duel needs exactly 2 players." : mode === "team" ? "Team battle needs at least 1 player per team, max 4 per team." : "Survival is up to 4 players."}</div>}
+        {!valid && <div className="error">{mode === "duel" || mode === "brawl" ? "Duel and Brawl need exactly 2 players." : mode === "team" ? "Team battle needs at least 1 player per team, max 4 per team." : "Survival is up to 4 players."}</div>}
         {error && <div className="error">{error}</div>}
         <InfoPanel index={myChar} editable />
       </div>

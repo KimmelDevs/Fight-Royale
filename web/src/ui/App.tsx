@@ -11,7 +11,7 @@ import { account, useAccount } from "@/lib/account";
 
 type Screen =
   | { s: "menu" }
-  | { s: "select"; purpose: "duel" | "survival" }
+  | { s: "select"; purpose: "duel" | "brawl" | "survival" }
   | { s: "online" }
   | { s: "account" }
   | { s: "shop"; tab?: "fighters" | "skills" | "emblems" | "diamonds" }
@@ -42,8 +42,8 @@ export default function App() {
         onShop={() => setScreen({ s: "shop" })}
         onDone={(player, cpu, difficulty) => {
           const me = { peer: "local", name, char: player, ...account.matchKit(player) };
-          const cfg: GameConfig = screen.purpose === "duel"
-            ? { mode: "duel", role: "offline", players: [me], localPeer: "local", cpuChar: cpu, difficulty }
+          const cfg: GameConfig = screen.purpose !== "survival"
+            ? { mode: screen.purpose, role: "offline", players: [me], localPeer: "local", cpuChar: cpu, difficulty }
             : { mode: "survival", role: "offline", players: [me], localPeer: "local" };
           setScreen({ s: "game", cfg, net: null });
         }}
@@ -74,6 +74,7 @@ export default function App() {
           </label>
         )}
         <button className="big gold" onClick={() => setScreen({ s: "select", purpose: "duel" })}>Duel vs CPU</button>
+        <button className="big brawl" onClick={() => setScreen({ s: "select", purpose: "brawl" })}>Platform Brawl vs CPU</button>
         <button className="big" onClick={() => setScreen({ s: "select", purpose: "survival" })}>Survival (solo)</button>
         <button className="big blue" onClick={() => setScreen({ s: "online" })}>Play Online with Friends</button>
         <div className="row two">
