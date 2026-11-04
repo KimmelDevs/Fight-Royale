@@ -6,6 +6,8 @@
 //   buff       - self effect (ward absorbs hits, counter auto-parries and strikes back)
 //   blink      - instant reposition (back / behind)
 
+import { STATUS, type StatusKind } from "./status";
+
 export type Vec3 = [number, number, number];
 export interface Pose {
   torso: Vec3; head: Vec3; arm_r: Vec3; hand_r: Vec3; arm_l: Vec3; hand_l: Vec3;
@@ -20,6 +22,8 @@ export interface Attack {
   at: string; delay: number; radius: number; repeat: number; interval: number;
   stagger: boolean; self_jump: number; mode: string; duration: number;
   cd: number; name: string; desc: string; element: string;
+  /** Status effect left on hit (see status.ts): kind, duration (s) and power (dmg/s or multiplier). */
+  effect: string; effect_t: number; effect_p: number;
 }
 
 export const STATS: Record<string, { hp: number; guard: number; move: number; walk: number; parry: number; jump: number }> = {
@@ -41,6 +45,7 @@ const DEFAULT: Omit<Attack, "id" | "element"> = {
   at: "target", delay: 0.4, radius: 1.5, repeat: 1, interval: 0.3,
   stagger: false, self_jump: 0, mode: "", duration: 0,
   cd: 0, name: "", desc: "",
+  effect: "", effect_t: 0, effect_p: 0,
 };
 
 const a = (d: Partial<Attack>): Attack => ({ ...DEFAULT, id: "", element: "", ...d }) as Attack;
@@ -61,7 +66,34 @@ export function attacks(kit: string, element: string): Record<string, Attack> {
     t[k].element = element;
     t[k].id = k;
   }
+  const fx = ELEMENT_EFFECT[element];
+  if (fx) for (const k of fx[3]) {
+    const s = t[k];
+    if (s && s.type !== "buff" && s.type !== "blink" && s.dmg > 0) { s.effect = fx[0]; s.effect_t = fx[1]; s.effect_p = fx[2]; }
+  }
   return t;
+}
+
+/** Which skills carry each element's status effect: [kind, seconds, power, skill keys]. */
+const ELEMENT_EFFECT: Record<string, [StatusKind, number, number, string[]]> = {
+  fire: ["burn", 4, 30, ["z", "x", "c", "v"]],        // Ember
+  flame: ["burn", 4, 25, ["c", "v"]],                 // Vesper: Blade Wave, Judgment
+  light: ["weaken", 4, 0.8, ["c", "v"]],              // Aster: Blade Wave, Judgment
+  electric: ["paralyze", 2.5, 0, ["x", "c", "v"]],    // Raven
+  water: ["slow", 3, 0.6, ["z", "x", "c"]],           // Marina
+  shadow: ["poison", 6, 10, ["x", "c", "v"]],         // Nyx: Shuriken Fan, Phantom Rush, Venom Fan
+  moon: ["bleed", 4, 20, ["x", "c", "v"]],            // Kaede
+  blood: ["bleed", 4, 22, ["x", "c"]],                // Ash: Arrow Rain, Hunter's Snare
+  earth: ["slow", 2.5, 0.65, ["z", "c"]],             // Garrick: Ground Slam, Titan Cleave
+};
+
+/** Short stat lines for a skill: stun time and status effect, for tooltips and skill lists. */
+export function skillTags(a: Attack): string[] {
+  const out: string[] = [];
+  if (a.type !== "buff" && a.type !== "blink" && a.dmg > 0 && a.stun >= 0.5) out.push(`Stun ${a.stun}s`);
+  const info = STATUS[a.effect as StatusKind];
+  if (info) out.push(info.text(a.effect_t, a.effect_p));
+  return out;
 }
 
 /** Each kit's locked bonus skill ("v"): unlock it in the shop, then slot it into the loadout. */
@@ -95,7 +127,7 @@ function knight(): Record<string, Attack> {
     l3: a({ wind: 0.2, active: 0.09, recover: 0.42, dmg: 112, guard: 30, reach: 1.85, lunge: 3, knock: 4.5, stun: 0.5, pose_w: "l3_w", pose_s: "l3_s" }),
     heavy: a({ wind: 0.12, active: 0.1, recover: 0.5, dmg: 190, guard: 55, reach: 2, lunge: 5, knock: 6, stun: 0.7, heavy: true, pose_w: "charge", pose_s: "heavy_s" }),
     z: a({ name: "Shield Bash", desc: "Ram the shield forward. Staggers and crushes guard.", cd: 5,
-      wind: 0.12, recover: 0.35, dmg: 55, guard: 60, reach: 1.5, lunge: 4, knock: 3, stagger: true, stun: 0.8, pose_w: "block", pose_s: "bash" }),
+      wind: 0.12, recover: 0.35, dmg: 55, guard: 60, reach: 1.5, lunge: 4, knock: 3, stagger: true, stun: 1.0, pose_w: "block", pose_s: "bash" }),
     x: a({ name: "Rising Slash", desc: "Leap upward with a soaring cut.", cd: 6,
       wind: 0.1, active: 0.1, recover: 0.4, dmg: 115, guard: 30, reach: 1.9, lunge: 2, knock: 4, stun: 0.55, self_jump: 6.5, pose_w: "charge", pose_s: "rise" }),
     c: a({ name: "Blade Wave", desc: "Fling a crescent of light across the arena.", cd: 9,

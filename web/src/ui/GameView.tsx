@@ -1,4 +1,5 @@
 "use client";
+import { STATUS, type StatusKind } from "@/game/status";
 import { useEffect, useRef, useState } from "react";
 import { label, type Action } from "@/game/keys";
 const SKILL_ACTION: Record<string, Action> = { z: "skill1", x: "skill2", c: "skill3" };
@@ -8,6 +9,15 @@ import { account } from "@/lib/account";
 import { Icon, skillIcon, charIcon } from "./icons";
 
 type Hud = ReturnType<Game["hud"]>;
+
+function StatusChips({ list, right }: { list?: StatusKind[]; right?: boolean }) {
+  if (!list?.length) return null;
+  return (
+    <div className={"status-chips" + (right ? " right" : "")}>
+      {list.map((k) => <span key={k} style={{ borderColor: STATUS[k].color, color: STATUS[k].color }}>{STATUS[k].label}</span>)}
+    </div>
+  );
+}
 
 function Bar({ v, color, right }: { v: number; color: string; right?: boolean }) {
   return (
@@ -111,6 +121,7 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
               <Bar v={me.hp / me.maxHp} color="#7fd65b" />
               <div className="guard"><Bar v={me.guard / me.maxGuard} color={me.guard / me.maxGuard > 0.25 ? "#f2c94c" : "#ff7043"} /></div>
               <div className="num">{Math.ceil(me.hp)} / {Math.round(me.maxHp)}</div>
+              <StatusChips list={me.status} />
             </div>
           )}
           {other && !hud.plat && (
@@ -118,6 +129,7 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
               <div className="nm">{other.name}{other.tag ? `  (${other.tag})` : ""}<Icon src={charIcon(other.id)} alt={other.name} size={44} /></div>
               <Bar v={other.hp / other.maxHp} color="#e8534a" right />
               <div className="guard"><Bar v={other.guard / other.maxGuard} color="#f2c94c" right /></div>
+              <StatusChips list={other.status} right />
             </div>
           )}
           {hud.mode === "team" && (

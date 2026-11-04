@@ -51,6 +51,15 @@ All numbers live in code; the tables in **Balance reference** below are generate
 **Hit reactions.** `Stun` = how long the target can't act. `Knock` = push-back speed. `heavy` / `staggers` attacks put the target in the longer stagger state.
 - **One stun per skill**: a multi-hit skill (Thousand Cuts, Hundred Kicks, Whirlwind...) stuns once; later ticks only deal damage.
 - **Diminishing stun**: each new stun within 3 s of the last is **x0.6** shorter (0.3 s, then 0.18 s, ... minimum 0.1 s), so no fighter can be stun-locked.
+- **Status effects** (`src/game/status.ts`): element skills leave an effect on a clean hit (not when blocked, parried or absorbed). The power number is damage per second, or a multiplier.
+  - **Burn** (Ember: all skills; Vesper: Blade Wave, Judgment): 4 s of fire damage.
+  - **Poison** (Nyx: Shuriken Fan, Phantom Rush, Venom Fan): 10 dmg/s for 6 s, stacks up to 3 times (each blade adds a stack).
+  - **Bleed** (Kaede: Crescent Wind, Thousand Cuts, Iaido Flash; Ash: Arrow Rain, Hunter's Snare): 4 s, x1.5 while the target is moving.
+  - **Paralyze** (Raven: Chain Lightning, Thunderstorm, Static Field): 2.5 s at 60% speed, jolted (0.25 s interrupt) every second.
+  - **Slow** (Marina: Tidal Ring, Ocean Requiem; Garrick: Ground Slam, Titan Cleave): move speed x0.6 / x0.65.
+  - **Weaken** (Aster: Blade Wave, Judgment): deals x0.8 damage for 4 s.
+  - Reapplying refreshes the duration. Effects end on KO and also work on survival mobs (damage-over-time kills still give gold).
+- **Shield Bash** (knights) stuns for 1 s.
 
 **Skills.** Z / X / C (any 3 of the kit's 4, V is unlocked in the Shop) each have a cooldown (`CD`). The Mage emblem shortens cooldowns. Skill types:
 - **melee**: hits everything in front within `reach`.
@@ -202,27 +211,27 @@ Z / X / C are the default loadout; V is the locked bonus skill (unlock: 2000 gol
 
 | Key | Name | Type | Dmg | Guard dmg | Wind / active / recover (s) | Knock | Stun (s) | CD | Notes |
 |---|---|---|---|---|---|---|---|---|---|
-| Z | Shield Bash | melee | 55 | 60 | 0.12 / 0.08 / 0.35 | 3 | 0.8 | 5s | reach 1.5, lunge 4, staggers |
+| Z | Shield Bash | melee | 55 | 60 | 0.12 / 0.08 / 0.35 | 3 | 1 | 5s | reach 1.5, lunge 4, staggers |
 | X | Rising Slash | melee | 115 | 30 | 0.1 / 0.1 / 0.4 | 4 | 0.55 | 6s | reach 1.9, lunge 2, self-launch 6.5 |
-| C | Blade Wave | projectile | 140 | 40 | 0.22 / 0.05 / 0.45 | 5 | 0.6 | 9s | 1 x proj, speed 17, pierces, heavy |
-| V | Judgment | strike | 220 | 60 | 0.2 / 0.08 / 0.5 | 5 | 0.7 | 10s | at target, radius 1.6, lands after 0.5s, heavy |
+| C | Blade Wave | projectile | 140 | 40 | 0.22 / 0.05 / 0.45 | 5 | 0.6 | 9s | 1 x proj, speed 17, pierces, **weaken** 4s (0.8), heavy |
+| V | Judgment | strike | 220 | 60 | 0.2 / 0.08 / 0.5 | 5 | 0.7 | 10s | at target, radius 1.6, lands after 0.5s, **weaken** 4s (0.8), heavy |
 
 #### Vesper (knight, flame)
 
 | Key | Name | Type | Dmg | Guard dmg | Wind / active / recover (s) | Knock | Stun (s) | CD | Notes |
 |---|---|---|---|---|---|---|---|---|---|
-| Z | Shield Bash | melee | 55 | 60 | 0.12 / 0.08 / 0.35 | 3 | 0.8 | 5s | reach 1.5, lunge 4, staggers |
+| Z | Shield Bash | melee | 55 | 60 | 0.12 / 0.08 / 0.35 | 3 | 1 | 5s | reach 1.5, lunge 4, staggers |
 | X | Rising Slash | melee | 115 | 30 | 0.1 / 0.1 / 0.4 | 4 | 0.55 | 6s | reach 1.9, lunge 2, self-launch 6.5 |
-| C | Blade Wave | projectile | 140 | 40 | 0.22 / 0.05 / 0.45 | 5 | 0.6 | 9s | 1 x proj, speed 17, pierces, heavy |
-| V | Judgment | strike | 220 | 60 | 0.2 / 0.08 / 0.5 | 5 | 0.7 | 10s | at target, radius 1.6, lands after 0.5s, heavy |
+| C | Blade Wave | projectile | 140 | 40 | 0.22 / 0.05 / 0.45 | 5 | 0.6 | 9s | 1 x proj, speed 17, pierces, **burn** 4s (25), heavy |
+| V | Judgment | strike | 220 | 60 | 0.2 / 0.08 / 0.5 | 5 | 0.7 | 10s | at target, radius 1.6, lands after 0.5s, **burn** 4s (25), heavy |
 
 #### Garrick (greatsword, earth)
 
 | Key | Name | Type | Dmg | Guard dmg | Wind / active / recover (s) | Knock | Stun (s) | CD | Notes |
 |---|---|---|---|---|---|---|---|---|---|
-| Z | Ground Slam | strike | 150 | 50 | 0.3 / 0.08 / 0.5 | 7 | 0.6 | 6s | around self, radius 2.6, lands after 0.05s |
+| Z | Ground Slam | strike | 150 | 50 | 0.3 / 0.08 / 0.5 | 7 | 0.6 | 6s | around self, radius 2.6, lands after 0.05s, **slow** 2.5s (0.65) |
 | X | Whirlwind | strike | 60 | 20 | 0.12 / 0.08 / 0.4 | 2 | 0.3 | 7s | around self, radius 2.1, lands after 0.05s, x4 every 0.18s |
-| C | Titan Cleave | strike | 340 | 90 | 0.4 / 0.08 / 0.7 | 9 | 1 | 12s | at target, radius 2, lands after 0.55s, heavy |
+| C | Titan Cleave | strike | 340 | 90 | 0.4 / 0.08 / 0.7 | 9 | 1 | 12s | at target, radius 2, lands after 0.55s, **slow** 2.5s (0.65), heavy |
 | V | Berserk | buff | - | - | 0.2 / 0.08 / 0.4 | - | - | 14s | rage 6s |
 
 #### Kaede (katana, moon)
@@ -230,26 +239,26 @@ Z / X / C are the default loadout; V is the locked bonus skill (unlock: 2000 gol
 | Key | Name | Type | Dmg | Guard dmg | Wind / active / recover (s) | Knock | Stun (s) | CD | Notes |
 |---|---|---|---|---|---|---|---|---|---|
 | Z | Counter Stance | buff | - | - | 0.04 / 0.08 / 0.9 | - | - | 6s | counter 0.9s |
-| X | Crescent Wind | projectile | 120 | 30 | 0.14 / 0.08 / 0.35 | 3 | 0.45 | 6s | 1 x proj, speed 20, pierces |
-| C | Thousand Cuts | strike | 48 | 12 | 0.2 / 0.08 / 0.6 | 1 | 0.3 | 11s | at target, radius 1.5, lands after 0.3s, x7 every 0.07s |
-| V | Iaido Flash | melee | 200 | 50 | 0.08 / 0.16 / 0.45 | 5 | 0.7 | 8s | reach 2.2, lunge 18, heavy |
+| X | Crescent Wind | projectile | 120 | 30 | 0.14 / 0.08 / 0.35 | 3 | 0.45 | 6s | 1 x proj, speed 20, pierces, **bleed** 4s (20) |
+| C | Thousand Cuts | strike | 48 | 12 | 0.2 / 0.08 / 0.6 | 1 | 0.3 | 11s | at target, radius 1.5, lands after 0.3s, x7 every 0.07s, **bleed** 4s (20) |
+| V | Iaido Flash | melee | 200 | 50 | 0.08 / 0.16 / 0.45 | 5 | 0.7 | 8s | reach 2.2, lunge 18, **bleed** 4s (20), heavy |
 
 #### Ember (mage, fire)
 
 | Key | Name | Type | Dmg | Guard dmg | Wind / active / recover (s) | Knock | Stun (s) | CD | Notes |
 |---|---|---|---|---|---|---|---|---|---|
-| Z | Flame Burst | strike | 120 | 40 | 0.12 / 0.08 / 0.4 | 7 | 0.5 | 6s | around self, radius 2.3, lands after 0.05s |
-| X | Fireball Volley | projectile | 40 | 12 | 0.2 / 0.08 / 0.4 | 2 | 0.32 | 7s | 5 x proj, speed 16, spread 0.45 rad |
-| C | Meteor | strike | 290 | 80 | 0.3 / 0.08 / 0.6 | 8 | 0.9 | 12s | at target, radius 2.1, lands after 0.9s, heavy |
-| V | Inferno Ring | strike | 165 | 45 | 0.15 / 0.08 / 0.45 | 6 | 0.5 | 9s | around self, radius 2.8, lands after 0.1s |
+| Z | Flame Burst | strike | 120 | 40 | 0.12 / 0.08 / 0.4 | 7 | 0.5 | 6s | around self, radius 2.3, lands after 0.05s, **burn** 4s (30) |
+| X | Fireball Volley | projectile | 40 | 12 | 0.2 / 0.08 / 0.4 | 2 | 0.32 | 7s | 5 x proj, speed 16, spread 0.45 rad, **burn** 4s (30) |
+| C | Meteor | strike | 290 | 80 | 0.3 / 0.08 / 0.6 | 8 | 0.9 | 12s | at target, radius 2.1, lands after 0.9s, **burn** 4s (30), heavy |
+| V | Inferno Ring | strike | 165 | 45 | 0.15 / 0.08 / 0.45 | 6 | 0.5 | 9s | around self, radius 2.8, lands after 0.1s, **burn** 4s (30) |
 
 #### Marina (mage, water)
 
 | Key | Name | Type | Dmg | Guard dmg | Wind / active / recover (s) | Knock | Stun (s) | CD | Notes |
 |---|---|---|---|---|---|---|---|---|---|
 | Z | Bubble Ward | buff | - | - | 0.1 / 0.08 / 0.25 | - | - | 10s | ward 4s |
-| X | Tidal Ring | strike | 105 | 35 | 0.14 / 0.08 / 0.45 | 7 | 0.5 | 7s | around self, radius 2.7, lands after 0.1s |
-| C | Ocean Requiem | strike | 270 | 80 | 0.35 / 0.08 / 0.6 | 8 | 0.9 | 12s | at target, radius 2.4, lands after 0.8s, heavy |
+| X | Tidal Ring | strike | 105 | 35 | 0.14 / 0.08 / 0.45 | 7 | 0.5 | 7s | around self, radius 2.7, lands after 0.1s, **slow** 3s (0.6) |
+| C | Ocean Requiem | strike | 270 | 80 | 0.35 / 0.08 / 0.6 | 8 | 0.9 | 12s | at target, radius 2.4, lands after 0.8s, **slow** 3s (0.6), heavy |
 | V | Healing Rain | buff | - | - | 0.2 / 0.08 / 0.4 | - | - | 14s | heal 0.25s |
 
 #### Nyx (assassin, shadow)
@@ -257,9 +266,9 @@ Z / X / C are the default loadout; V is the locked bonus skill (unlock: 2000 gol
 | Key | Name | Type | Dmg | Guard dmg | Wind / active / recover (s) | Knock | Stun (s) | CD | Notes |
 |---|---|---|---|---|---|---|---|---|---|
 | Z | Smoke Step | blink | - | - | 0.06 / 0.08 / 0.12 | - | - | 5s | blink behind |
-| X | Shuriken Fan | projectile | 48 | 14 | 0.12 / 0.08 / 0.3 | 1.5 | 0.35 | 6s | 3 x proj, speed 22, spread 0.3 rad |
-| C | Phantom Rush | melee | 260 | 70 | 0.18 / 0.18 / 0.55 | 6 | 0.9 | 10s | reach 2.2, lunge 16, heavy, staggers |
-| V | Venom Fan | projectile | 42 | 12 | 0.12 / 0.08 / 0.3 | 1.2 | 0.3 | 7s | 5 x proj, speed 24, spread 0.5 rad |
+| X | Shuriken Fan | projectile | 48 | 14 | 0.12 / 0.08 / 0.3 | 1.5 | 0.35 | 6s | 3 x proj, speed 22, spread 0.3 rad, **poison** 6s (10) |
+| C | Phantom Rush | melee | 260 | 70 | 0.18 / 0.18 / 0.55 | 6 | 0.9 | 10s | reach 2.2, lunge 16, **poison** 6s (10), heavy, staggers |
+| V | Venom Fan | projectile | 42 | 12 | 0.12 / 0.08 / 0.3 | 1.2 | 0.3 | 7s | 5 x proj, speed 24, spread 0.5 rad, **poison** 6s (10) |
 
 #### Rook (knuckles, force)
 
@@ -284,17 +293,17 @@ Z / X / C are the default loadout; V is the locked bonus skill (unlock: 2000 gol
 | Key | Name | Type | Dmg | Guard dmg | Wind / active / recover (s) | Knock | Stun (s) | CD | Notes |
 |---|---|---|---|---|---|---|---|---|---|
 | Z | Blink | blink | - | - | 0.04 / 0.08 / 0.15 | - | - | 4s | blink back |
-| X | Chain Lightning | projectile | 90 | 25 | 0.14 / 0.08 / 0.35 | 1 | 0.75 | 6s | 1 x proj, speed 42 |
-| C | Thunderstorm | strike | 110 | 35 | 0.3 / 0.08 / 0.6 | 3 | 0.6 | 12s | at target, radius 1.25, lands after 0.45s, x3 every 0.35s, heavy |
-| V | Static Field | strike | 75 | 22 | 0.12 / 0.08 / 0.5 | 2 | 0.5 | 10s | around self, radius 2.2, lands after 0.15s, x3 every 0.25s |
+| X | Chain Lightning | projectile | 90 | 25 | 0.14 / 0.08 / 0.35 | 1 | 0.75 | 6s | 1 x proj, speed 42, **paralyze** 2.5s |
+| C | Thunderstorm | strike | 110 | 35 | 0.3 / 0.08 / 0.6 | 3 | 0.6 | 12s | at target, radius 1.25, lands after 0.45s, x3 every 0.35s, **paralyze** 2.5s, heavy |
+| V | Static Field | strike | 75 | 22 | 0.12 / 0.08 / 0.5 | 2 | 0.5 | 10s | around self, radius 2.2, lands after 0.15s, x3 every 0.25s, **paralyze** 2.5s |
 
 #### Ash (bow, blood)
 
 | Key | Name | Type | Dmg | Guard dmg | Wind / active / recover (s) | Knock | Stun (s) | CD | Notes |
 |---|---|---|---|---|---|---|---|---|---|
 | Z | Leap Back | blink | - | - | 0.04 / 0.08 / 0.12 | - | - | 4s | blink back |
-| X | Arrow Rain | strike | 80 | 20 | 0.22 / 0.08 / 0.4 | 2 | 0.35 | 8s | at target, radius 1.8, lands after 0.7s, x3 every 0.25s |
-| C | Hunter's Snare | projectile | 100 | 30 | 0.2 / 0.08 / 0.4 | 0.5 | 1.6 | 10s | 1 x proj, speed 32, staggers |
+| X | Arrow Rain | strike | 80 | 20 | 0.22 / 0.08 / 0.4 | 2 | 0.35 | 8s | at target, radius 1.8, lands after 0.7s, x3 every 0.25s, **bleed** 4s (22) |
+| C | Hunter's Snare | projectile | 100 | 30 | 0.2 / 0.08 / 0.4 | 0.5 | 1.6 | 10s | 1 x proj, speed 32, **bleed** 4s (22), staggers |
 | V | Piercing Volley | projectile | 55 | 14 | 0.2 / 0.08 / 0.4 | 2 | 0.3 | 9s | 5 x proj, speed 32, spread 0.25 rad, pierces |
 
 ### Emblems

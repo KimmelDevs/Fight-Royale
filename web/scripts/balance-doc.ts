@@ -34,6 +34,7 @@ function extra(a: Attack): string {
   if (a.type === "blink") x.push(`blink ${a.mode}`);
   if (a.type === "melee") x.push(`reach ${n(a.reach)}`);
   if (a.lunge) x.push(`lunge ${n(a.lunge)}`);
+  if (a.effect) x.push(`**${a.effect}** ${n(a.effect_t)}s${a.effect_p ? ` (${n(a.effect_p)})` : ""}`);
   if (a.self_jump) x.push(`self-launch ${n(a.self_jump)}`);
   if (a.heavy) x.push("heavy");
   if (a.stagger) x.push("staggers");

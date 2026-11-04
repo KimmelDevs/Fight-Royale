@@ -15,6 +15,7 @@ import { CHARACTERS } from "./roster";
 import { MOB_GOLD, WIN_GOLD } from "./economy";
 import * as Kits from "./kits";
 import type { Attack } from "./kits";
+import { STATUS, type StatusKind } from "./status";
 import { Input, type RawInput } from "./input";
 import type { Net, Msg } from "./net";
 
@@ -455,6 +456,55 @@ export class Game implements MobHost {
    * sparkle at rest. Purely visual, so every peer runs it locally (no network events).
    */
   private moteT = new Map<Fighter, number>();
+  private statusT = new Map<Entity, number>();
+  private statusLabelAt = new Map<Entity, number>();
+
+  /** Particles on anyone with an active status (runs on every machine from the synced bitmask). */
+  private statusFx(dt: number) {
+    for (const e of [...this.fighters, ...this.mobs] as (Fighter | Mob)[]) {
+      const kinds = e.status.kinds();
+      if (!kinds.length || e.isDown() || !e.root.visible) { this.statusT.delete(e); continue; }
+      let t = (this.statusT.get(e) ?? 0) - dt;
+      if (t <= 0) {
+        t = 0.1;
+        const c = e.chest();
+        const feet = e.root.position.clone().add(new THREE.Vector3(0, 0.15, 0));
+        const jitter = () => new THREE.Vector3((Math.random() - 0.5) * 0.5, (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.5);
+        for (const k of kinds) {
+          const col = STATUS[k].color;
+          if (k === "burn") this.fx.embers(c.clone().add(jitter()), col, 3);
+          else if (k === "poison") this.fx.motes(c.clone().add(jitter()), col, 2);
+          else if (k === "bleed") this.fx.embers(c.clone().add(jitter()), col, 2);
+          else if (k === "paralyze") this.fx.sparks(c.clone().add(jitter()), col, 3, 3);
+          else if (k === "slow") this.fx.motes(feet.clone().add(jitter().setY(0)), col, 2);
+          else if (k === "weaken") this.fx.motes(c.clone().add(jitter()), col, 1);
+        }
+      }
+      this.statusT.set(e, t);
+    }
+  }
+
+  /** Host: show damage-over-time ticks and credit kills made by them. */
+  private drainDots() {
+    for (const e of [...this.fighters, ...this.mobs] as (Fighter | Mob)[]) {
+      if (!e.dots.length) continue;
+      e.dots.forEach((d, i) => {
+        this.fxp("num", e.chest().add(new THREE.Vector3((Math.random() - 0.5) * 0.5, 0.25, 0)), `${Math.round(d.dmg)}`, STATUS[d.kind].color, 0.75);
+        if (e instanceof Mob && e.dead && i === e.dots.length - 1) this.creditMobKill(d.src instanceof Fighter ? d.src : null, e);
+      });
+      e.dots.length = 0;
+    }
+  }
+
+  private creditMobKill(attacker: Fighter | null, d: Mob) {
+    this.kills++;
+    if (attacker) {
+      const g = (MOB_GOLD[d.type] ?? 2) * (d.elite ? 2 : 1);
+      this.earned.set(attacker.owner, (this.earned.get(attacker.owner) ?? 0) + g);
+      if (attacker.owner === this.cfg.localPeer) this.fxp("num", d.chest().add(new THREE.Vector3(0, 0.9, 0)), `+${g} gold`, "#ffd34d", 0.8);
+    }
+    this.fxp("smoke", d.root.position.clone(), d.def.color);
+  }
   private bladeLight(dt: number) {
     for (const f of this.fighters) {
       if (f.look.element !== "light" || f.out || f.isDown() || !f.root.visible || !f.model.visible) continue;
@@ -561,8 +611,10 @@ export class Game implements MobHost {
     for (const f of this.fighters) f.update(dt);
     this.bladeLight(dt);
     for (const m of this.mobs) m.update(dt);
+    this.statusFx(dt);
     this.updateProjectiles(dt);
     if (this.cfg.role !== "client") {
+      this.drainDots();
       for (const m of [...this.mobs]) {
         if (m.dead && m.deathT > 0.5) { this.removeEntity(m); this.mobs = this.mobs.filter((x) => x !== m); }
       }
@@ -924,14 +976,11 @@ export class Game implements MobHost {
         const big = this.isDuel() || attacker instanceof Mob ? 1 : 0.5;
         this.add_trauma((a.heavy ? 0.5 : heavy ? 0.3 : 0.18) * big);
         this.hitStop(a.heavy ? 0.11 : heavy ? 0.07 : 0.045);
-        if (result === "ko" && d instanceof Mob) {
-          this.kills++;
-          if (attacker instanceof Fighter) {
-            const g = (MOB_GOLD[d.type] ?? 2) * (d.elite ? 2 : 1);
-            this.earned.set(attacker.owner, (this.earned.get(attacker.owner) ?? 0) + g);
-            if (attacker.owner === this.cfg.localPeer) this.fxp("num", d.chest().add(new THREE.Vector3(0, 0.9, 0)), `+${g} gold`, "#ffd34d", 0.8);
-          }
-          this.fxp("smoke", d.root.position.clone(), d.def.color);
+        if (result === "ko" && d instanceof Mob) this.creditMobKill(attacker instanceof Fighter ? attacker : null, d);
+        const info = STATUS[a.effect as StatusKind];
+        if (info && result !== "ko" && this.time - (this.statusLabelAt.get(d) ?? -9) > 1.2) {
+          this.statusLabelAt.set(d, this.time);
+          this.fxp("num", d.chest().add(new THREE.Vector3(0, 0.95, 0)), info.label, info.color, 0.85);
         }
         break;
       }
@@ -1370,7 +1419,7 @@ export class Game implements MobHost {
     const boss = this.mobs.find((m) => m.def.boss && !m.dead);
     const other = this.isDuel() ? this.fighters.find((f) => f !== me) : null;
     const info = (f: Fighter) => ({ id: CHARACTERS[f.charIndex].id, name: f.look.name + (isCpu(f.owner) && f.owner !== "cpu" ? " (CPU)" : ""), hp: f.hp, maxHp: f.maxHp, guard: f.guard, maxGuard: f.maxGuard, down: f.isDown(), glow: f.look.glow,
-      pct: f.pct, stocks: f.stocks, out: f.out, team: f.team });
+      pct: f.pct, stocks: f.stocks, out: f.out, team: f.team, status: f.status.kinds() });
     return {
       mode: this.cfg.mode,
       plat: this.plat,

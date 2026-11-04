@@ -78,7 +78,7 @@ function LoadoutEditor({ index }: { index: number }) {
         const on = slots.includes(k);
         return (
           <button key={k} className={"skill-pick" + (on ? " on" : "") + (locked ? " locked" : "")} disabled={locked}
-            title={atks[k].desc} onClick={() => toggle(k)}>
+            title={[atks[k].desc, ...Kits.skillTags(atks[k])].join(" - ")} onClick={() => toggle(k)}>
             <Icon src={skillIcon(ch.look.kit, ch.look.element, k)} alt={atks[k].name} size={34} />
             <span><b>{atks[k].name}</b><em>{locked ? "Locked - Shop" : `${atks[k].cd}s`}</em></span>
           </button>
@@ -163,7 +163,9 @@ export function InfoPanel({ index, editable }: { index: number; editable?: boole
         const slots = editable && acc.owns(ch.id) ? acc.loadout(ch.id) : ["z", "x", "c"];
         return ["Z", "X", "C"].map((key, i) => {
           const a = atks[slots[i]];
-          return <div key={key} className="skill"><b>[{key}] {a.name}</b> - {a.desc} <em>({a.cd}s)</em></div>;
+          const tags = Kits.skillTags(a);
+          return <div key={key} className="skill"><b>[{key}] {a.name}</b> - {a.desc} <em>({a.cd}s)</em>
+            {tags.length > 0 && <small className="tags">{tags.join(" - ")}</small>}</div>;
         });
       })()}
       {editable && acc.owns(ch.id) && <LoadoutEditor index={index} />}

@@ -10,6 +10,7 @@
 // With a `stage` set (duel / team modes) it plays as a side-view platform fighter: moves on
 // the X axis, double jumps, lands on platforms, and takes damage % instead of losing HP. The
 // higher the %, the farther hits launch it; flying past the blast zone costs a stock.
+import { StatusSet, type StatusKind } from "./status";
 import * as THREE from "three";
 import { FighterModel } from "./model";
 import { Trail } from "./fx";
@@ -120,6 +121,9 @@ export class Fighter implements Entity {
 
   onSwing: (f: Fighter) => void = () => {};
   onKo: (f: Fighter) => void = () => {};
+  /** Status effects (burn, poison, paralyze...). Damage-over-time ticks queue in `dots` for the game. */
+  status = new StatusSet();
+  dots: { kind: StatusKind; dmg: number; src: unknown }[] = [];
   onLanded: (f: Fighter) => void = () => {};
 
   private stun = 0;
@@ -215,6 +219,7 @@ export class Fighter implements Entity {
     this.rageT = Math.max(this.rageT - dt, 0);
     this.counterT = Math.max(this.counterT - dt, 0);
     this.invulnT = Math.max(this.invulnT - dt, 0);
+    this.tickStatus(dt);
     this.readAttack(dt);
     this.readJump();
     this.readSkill();
@@ -324,7 +329,7 @@ export class Fighter implements Entity {
     }
     this.atkPower = 1;
     if (id === "heavy" && this.state === S.CHARGE) this.atkPower = 1 + 0.5 * Math.min(this.stateT / CHARGE_MAX, 1);
-    this.atkPower *= this.dmgMult * (this.rageT > 0 ? RAGE_MULT : 1);
+    this.atkPower *= this.dmgMult * (this.rageT > 0 ? RAGE_MULT : 1) * this.status.dmgMult();
     this.atkId = id;
     this.atk = this.attacks[id];
     this.atkPhase = 0;
@@ -420,7 +425,7 @@ export class Fighter implements Entity {
     let v = 0;
     let walking = false;
     // No brain yet = still in the READY countdown: stand still.
-    if (this.state === S.IDLE && this.autoApproach && this.brain && o && !o.isDown() && dist > ENGAGE) { v = this.walkSpeed; walking = true; }
+    if (this.state === S.IDLE && this.autoApproach && this.brain && o && !o.isDown() && dist > ENGAGE) { v = this.walkSpeed * this.status.speedMult(); walking = true; }
     if (this.state === S.ATTACK && this.atk && this.atkPhase <= 1 && dist > MIN_DIST + 0.15) v += this.atk.lunge;
     this.knock = Math.max(this.knock - 14 * dt, 0);
     v -= this.knock;
@@ -428,7 +433,7 @@ export class Fighter implements Entity {
     pos.addScaledVector(dir, v * dt);
     const steer = this.state === S.IDLE ? 1 : this.state === S.BLOCK ? 0.5 : this.state === S.CHARGE ? 0.4 : 0;
     if (steer > 0 && this.intent.move.lengthSq() > 0.0001) {
-      const step = this.intent.move.clone().normalize().multiplyScalar(this.moveSpeed * steer * dt);
+      const step = this.intent.move.clone().normalize().multiplyScalar(this.moveSpeed * this.status.speedMult() * steer * dt);
       if (dist < MIN_DIST && step.dot(dir) > 0) step.addScaledVector(dir, -step.dot(dir));
       pos.add(step);
       walking = this.onGround;
@@ -468,6 +473,21 @@ export class Fighter implements Entity {
     if (this.opponent) {
       const d = this.opponent.root.position.clone().sub(this.root.position);
       this.root.rotation.y = Math.atan2(d.x, d.z);
+    }
+  }
+
+  private tickStatus(dt: number) {
+    if (this.state === S.KO || this.state === S.WIN || this.stage) { this.status.clear(); return; }
+    const st = this.status.tick(dt, this.model.walk > 0.3);
+    for (const d of st.dots) {
+      this.hp = Math.max(this.hp - d.dmg, 0);
+      this.dots.push({ ...d, src: this.status.src });
+      if (this.hp <= 0) { this.ko(); return; }
+    }
+    if (st.jolt && this.state !== S.HITSTUN && this.state !== S.STAGGER) {
+      this.stun = 0.25; this.stunPose = "hit"; this.holding = false;
+      this.setState(S.HITSTUN);
+      this.model.flash("#ffe066", 0.12);
     }
   }
 
@@ -512,6 +532,7 @@ export class Fighter implements Entity {
     this.knock = a.knock;
     this.model.flash();
     if (this.hp <= 0) { this.ko(); return "ko"; }
+    if (a.effect) this.status.apply(a.effect as StatusKind, a.effect_t, a.effect_p, attacker);
     // Stun rules: one stun per skill use (multi-hit skills don't re-stun every tick), and
     // repeated stuns within a few seconds get shorter, so nobody can be locked forever.
     const src = attacker instanceof Fighter ? `${attacker.id}:${attacker.swingSerial}` : "";
@@ -546,6 +567,7 @@ export class Fighter implements Entity {
   heal(amount: number) { this.hp = Math.min(this.hp + amount, this.maxHp); }
 
   ko() {
+    this.status.clear();
     this.setState(S.KO);
     this.model.fall();
     this.onKo(this);
@@ -753,7 +775,7 @@ export class Fighter implements Entity {
       this.state, this.poseName, this.poseSpeed, Math.round(this.hp), Math.round(this.guard),
       +this.model.walk.toFixed(2), +this.model.charge.toFixed(2), this.trail.emitting ? 1 : 0,
       +this.model.recoil.toFixed(2), this.cooldowns.z, this.cooldowns.x, this.cooldowns.c, this.maxHp,
-      +this.pct.toFixed(1), this.stocks, this.out ? 1 : 0, +this.atkLock.toFixed(2), +this.dashCd.toFixed(2)];
+      +this.pct.toFixed(1), this.stocks, this.out ? 1 : 0, +this.atkLock.toFixed(2), +this.dashCd.toFixed(2), this.status.mask];
   }
 
   applySnapshot(s: any[]) {
@@ -772,7 +794,7 @@ export class Fighter implements Entity {
     this.cooldowns.z = s[14]; this.cooldowns.x = s[15]; this.cooldowns.c = s[16];
     this.maxHp = s[17];
     if (s.length > 18) {
-      this.pct = s[18]; this.stocks = s[19]; this.atkLock = s[21] ?? 0; this.dashCd = s[22] ?? 0;
+      this.pct = s[18]; this.stocks = s[19]; this.atkLock = s[21] ?? 0; this.dashCd = s[22] ?? 0; this.status.mask = s[23] ?? 0;
       const out = s[20] === 1;
       if (out !== this.out) { this.out = out; this.root.visible = !out; if (!out) this.root.position.copy(this.netPos); }
     }

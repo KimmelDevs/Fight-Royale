@@ -1,5 +1,6 @@
 // Survival enemies: data table, procedural toon models and simple per-type AI.
 // The arena owns combat resolution; mobs ask it to hit, shoot or drop area attacks.
+import { StatusSet, type StatusKind } from "./status";
 import * as THREE from "three";
 import * as M from "./mat";
 import { mesh, pivot, sphere, cyl, cap, box } from "./model";
@@ -50,6 +51,9 @@ export class Mob implements Entity {
   lastCrit = false;
   puppet = false;
   host: MobHost | null = null;
+  /** Status effects; damage-over-time ticks queue in `dots` for the game. */
+  status = new StatusSet();
+  dots: { kind: StatusKind; dmg: number; src: unknown }[] = [];
 
   state = MS.CHASE;
   stateT = 0;
@@ -220,6 +224,13 @@ export class Mob implements Entity {
     if (this.flashT > 0) { this.flashT -= dt; if (this.flashT <= 0) this.unflash(); }
     if (this.puppet) { this.updatePuppet(dt); return; }
     if (this.dead) { this.animate(dt); return; }
+    for (const d of this.status.tick(dt, true).dots) {
+      if (this.dead) break;
+      this.hp = Math.max(this.hp - d.dmg, 0);
+      this.dots.push({ ...d, src: this.status.src });
+      if (this.hp <= 0) this.die();
+    }
+    if (this.dead) return;
     this.stateT += dt;
     this.cdT -= dt;
     const pos = this.root.position;
@@ -253,14 +264,14 @@ export class Mob implements Entity {
           const want = d.keep ?? 5;
           const side = new THREE.Vector3(-dir.z, 0, dir.x).multiplyScalar(this.strafe * 0.6);
           const mv = dist > want + 1 ? dir.clone() : dist < want - 1.5 ? dir.clone().negate() : side;
-          pos.addScaledVector(mv.normalize(), d.speed * dt);
+          pos.addScaledVector(mv.normalize(), d.speed * this.status.speedMult() * dt);
           if (this.cdT <= 0 && dist < d.range) this.set(MS.WIND);
           if (Math.random() < dt * 0.4) this.strafe *= -1;
         } else if (d.attack === "boss") {
-          if (dist > 2.6) pos.addScaledVector(dir, d.speed * dt);
+          if (dist > 2.6) pos.addScaledVector(dir, d.speed * this.status.speedMult() * dt);
           if (this.cdT <= 0) this.set(MS.WIND);
         } else {
-          if (dist > reach * 0.8) pos.addScaledVector(dir, d.speed * dt);
+          if (dist > reach * 0.8) pos.addScaledVector(dir, d.speed * this.status.speedMult() * dt);
           if (this.cdT <= 0 && dist < reach + (d.attack === "blink" ? 6 : 0.2)) this.set(MS.WIND);
         }
         break;
@@ -344,6 +355,7 @@ export class Mob implements Entity {
       this.knockV.copy(away.normalize().multiplyScalar(a.knock * 1.6 * resist));
     }
     if (this.hp <= 0) { this.die(); return "ko"; }
+    if (a.effect) this.status.apply(a.effect as StatusKind, a.effect_t, a.effect_p, _attacker);
     if (!this.def.armor && (this.state !== MS.WIND || a.heavy)) this.set(MS.FLINCH);
     return this.lastCrit ? "crit" : "hit";
   }
@@ -412,7 +424,7 @@ export class Mob implements Entity {
   snapshot(): any[] {
     const p = this.root.position;
     return [this.id, +p.x.toFixed(3), +p.y.toFixed(3), +p.z.toFixed(3), +this.root.rotation.y.toFixed(3),
-      this.state, +this.stateT.toFixed(2), Math.round(this.hp), this.dead ? 1 : 0];
+      this.state, +this.stateT.toFixed(2), Math.round(this.hp), this.dead ? 1 : 0, this.status.mask];
   }
 
   applySnapshot(s: any[]) {
@@ -424,6 +436,7 @@ export class Mob implements Entity {
     if (hp < this.hp) this.flash();
     this.hp = hp;
     if (s[8] === 1 && !this.dead) this.die();
+    this.status.mask = s[9] ?? 0;
   }
 
   private updatePuppet(dt: number) {

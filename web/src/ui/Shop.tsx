@@ -74,7 +74,7 @@ export default function Shop({ onBack, onAccount, start = "fighters" }: { onBack
             return (
               <div key={ch.id} className="item" style={{ borderColor: ch.look.glow }}>
                 <div className="item-head"><Icon src={skillIcon(ch.look.kit, ch.look.element, "v")} alt={v.name} size={48} /><b>{v.name}</b></div>
-                <span>{ch.look.name}: {v.desc} ({v.cd}s)</span>
+                <span>{ch.look.name}: {v.desc} ({v.cd}s){Kits.skillTags(v).length > 0 && <small className="tags"> {Kits.skillTags(v).join(" - ")}</small>}</span>
                 {owned ? <em>Unlocked - equip it in character select</em> : (
                   <div className="row">
                     <button className="buy gold" onClick={() => run(() => account.buySkill(ch.id, "gold"), `${v.name} unlocked!`)}>{SKILL_PRICE.gold} gold</button>
