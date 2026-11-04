@@ -35,8 +35,8 @@ export const RANGED_COMBO_REST = 2;
 const PCT_PER_DMG = 0.07;
 
 export interface Intent { attack: boolean; block: boolean; jump: boolean; skill: string; move: THREE.Vector3; dash: THREE.Vector3 }
-export const DASH_CD = 6;
-const DASH_T = 0.2;
+export const DASH_CD = 3;
+const DASH_T = 0.3;
 const DASH_SPEED = 14;
 export interface Brain { think(f: Fighter, dt: number): void }
 

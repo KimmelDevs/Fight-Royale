@@ -103,7 +103,7 @@ export default function App() {
         <button className="big ghost" onClick={() => setScreen({ s: "settings" })}>Settings: Controls</button>
         <div className="controls">
           <b>Controls</b>
-          <span>{label("up")} {label("left")} {label("down")} {label("right")} move</span><span>{label("jump")} jump</span><span>Double-tap a direction: dash (6 s cooldown)</span>
+          <span>{label("up")} {label("left")} {label("down")} {label("right")} move</span><span>{label("jump")} jump</span><span>Double-tap a direction: dash (3 s cooldown)</span>
           <span>{label("attack")}: attack (tap) / charged attack (hold)</span>
           <span>{label("block")}: block (block just before a hit to PARRY)</span>
           <span>{label("skill1")} {label("skill2")} {label("skill3")} skills</span><span>Esc: leave match</span>
