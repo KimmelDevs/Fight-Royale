@@ -93,12 +93,17 @@ export class FighterModel extends THREE.Group {
   charge = 0;
   /** Attacking, charging, blocking or reeling (set by the fighter each frame). */
   combat = false;
+  /** Reeling from a hit (hitstun / stagger). */
+  hurt = false;
 
   private joints: Record<string, THREE.Group> = {};
   /** Procedural body meshes (hidden once a VRM body is attached) and the VRM rig. */
   private bodyMeshes: THREE.Object3D[] = [];
   private vrmRig: VrmRig | null = null;
   private disposed = false;
+  /** Resolves once the final body is showing (VRM attached, or it failed / timed out). */
+  ready: Promise<void> = Promise.resolve();
+  loading = false;
   private cur: Record<string, THREE.Vector3> = {};
   private hipsY = 0;
   private t = Math.random() * 10;
@@ -148,7 +153,17 @@ export class FighterModel extends THREE.Group {
     this.traverse((o) => { if ((o as THREE.Mesh).isMesh && !before.has(o)) weapons.add(o); });
     this.applyBody();
     this.traverse((o) => { if ((o as THREE.Mesh).isMesh && !weapons.has(o) && !o.userData.outline) this.bodyMeshes.push(o); });
-    if (look.vrm) loadVrm(look.vrm).then((v) => this.attachVrm(v)).catch((e) => console.warn("VRM body", e));
+    if (look.vrm) {
+      // Stay hidden while the VRoid body loads instead of flashing the old body; give up
+      // after 20 s and show the procedural body (the VRM still swaps in if it arrives later).
+      this.loading = true;
+      this.visible = false;
+      const load = loadVrm(look.vrm).then((v) => this.attachVrm(v)).catch((e) => console.warn("VRM body", e));
+      this.ready = Promise.race([load, new Promise<void>((r) => setTimeout(r, 20000))]).then(() => {
+        this.loading = false;
+        this.visible = true;
+      });
+    }
     this.joints = { torso: this.torso, head: this.head, arm_r: this.arm_r, hand_r: this.hand_r,
       arm_l: this.arm_l, hand_l: this.hand_l, leg_l: this.leg_l, leg_r: this.leg_r };
     for (const j of JOINTS) this.cur[j] = new THREE.Vector3();
@@ -767,7 +782,7 @@ export class FighterModel extends THREE.Group {
     this.cape.rotation.set(0.08 + 0.3 * this.walk + 0.3 * this.recoil + Math.sin(this.t * 2.1) * 0.03, 0, Math.sin(this.t * 1.7) * 0.03);
     this.hairSway.forEach((h, i) => { h.rotation.x = 0.1 * this.walk + 0.25 * this.recoil + Math.sin(this.t * 2 + i) * 0.05; });
     if (this.gripL) this.reachGrip();
-    this.vrmRig?.update(dt, { t: this.t, walk: this.walk, phase: this.walkPhase, crouch: this.hipsY, combat: this.combat });
+    this.vrmRig?.update(dt, { t: this.t, walk: this.walk, phase: this.walkPhase, crouch: this.hipsY, combat: this.combat, hurt: this.hurt });
     this.glowMat.color.copy(this.glowBase).lerp(new THREE.Color(1, 1, 1), this.charge * (0.5 + 0.3 * Math.sin(this.t * 30)));
     this.updateBlink(dt);
     this.updateFlash(dt);

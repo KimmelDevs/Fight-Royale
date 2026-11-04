@@ -18,6 +18,8 @@ export class Preview {
   private raf = 0;
   private last = performance.now();
   drag = 0;
+  /** Called with true while the shown fighter's 3D model is still loading. */
+  onLoading: (loading: boolean) => void = () => {};
 
   constructor(private canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
@@ -53,7 +55,10 @@ export class Preview {
     if (this.model) this.stand.remove(this.model);
     this.model = null;
     if (!look) return;
-    this.model = new FighterModel(look);
+    const model = new FighterModel(look);
+    this.model = model;
+    this.onLoading(model.loading);
+    model.ready.then(() => { if (this.model === model) this.onLoading(false); });
     this.model.traverse((o) => { if ((o as THREE.Mesh).isMesh) o.castShadow = !(o as any).userData.outline; });
     this.stand.add(this.model);
     this.poses = Kits.poses(look.kit);

@@ -8,6 +8,7 @@ import Shop from "./Shop";
 import Settings, { useBindings } from "./Settings";
 import { label } from "@/game/keys";
 import { CHARACTERS } from "@/game/roster";
+import { prefetchVrm } from "@/game/vrm";
 import { SHOW_BRAWL, type GameConfig } from "@/game/game";
 import type { Net } from "@/game/net";
 import { account, useAccount } from "@/lib/account";
@@ -29,6 +30,8 @@ export default function App() {
 
   useEffect(() => {
     try { const n = localStorage.getItem("fr-name"); if (n) setGuestName(n); } catch {}
+    // Start downloading every VRoid model now so fighters appear without a wait later.
+    for (const c of CHARACTERS) if (c.look.vrm) prefetchVrm(c.look.vrm);
     const q = new URLSearchParams(window.location.search).get("purchase");
     if (q) { setScreen({ s: "shop", tab: "diamonds" }); account.refresh(); window.history.replaceState(null, "", "/"); }
   }, []);

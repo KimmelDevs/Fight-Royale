@@ -26,8 +26,10 @@ const lum = (hex: string) => { const n = parseInt(hex.slice(1), 16); return (0.3
 export function Showcase({ index }: { index: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const prev = useRef<Preview | null>(null);
+  const [loading, setLoading] = useState(false);
   useEffect(() => {
     prev.current = new Preview(ref.current!);
+    prev.current.onLoading = setLoading;
     let down = false, lastX = 0;
     const el = ref.current!;
     const md = (e: PointerEvent) => { down = true; lastX = e.clientX; };
@@ -48,6 +50,7 @@ export function Showcase({ index }: { index: number }) {
     <div className="showcase">
       <canvas ref={ref} className="preview" />
       {index === RANDOM && <div className="question">?</div>}
+      {loading && index !== RANDOM && <div className="model-loading">Loading model...</div>}
     </div>
   );
 }

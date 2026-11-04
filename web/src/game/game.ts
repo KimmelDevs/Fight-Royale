@@ -396,11 +396,13 @@ export class Game implements MobHost {
       f2.opponent = f1;
 
       const id = this.round;
-      this.banner("READY", "#ffe9a8", "", 0.6);
-      this.later(1.0, () => {
-        if (id !== this.round) return;
-        this.banner("FIGHT!", "#ffffff", "", 0.5);
-        for (const f of [f1, f2]) f.brain = this.brainFor(f);
+      this.whenModelsReady(() => {
+        this.banner("READY", "#ffe9a8", "", 0.6);
+        this.later(1.0, () => {
+          if (id !== this.round) return;
+          this.banner("FIGHT!", "#ffffff", "", 0.5);
+          for (const f of [f1, f2]) f.brain = this.brainFor(f);
+        });
       });
     } else if (cfg.mode === "team") {
       // Two lines facing each other across the arena.
@@ -415,11 +417,13 @@ export class Game implements MobHost {
         spawned.push(f);
       });
       const id = this.round;
-      this.banner("READY", "#ffe9a8", `${counts[0]} vs ${counts[1]}`, 0.6);
-      this.later(1.0, () => {
-        if (id !== this.round) return;
-        this.banner("FIGHT!", "#ffffff", "", 0.5);
-        for (const f of spawned) f.brain = this.brainFor(f);
+      this.whenModelsReady(() => {
+        this.banner("READY", "#ffe9a8", `${counts[0]} vs ${counts[1]}`, 0.6);
+        this.later(1.0, () => {
+          if (id !== this.round) return;
+          this.banner("FIGHT!", "#ffffff", "", 0.5);
+          for (const f of spawned) f.brain = this.brainFor(f);
+        });
       });
     } else {
       cfg.players.forEach((p, i) => {
@@ -432,6 +436,18 @@ export class Game implements MobHost {
       this.phase = "intro";
       this.later(0.8, () => this.startWave());
     }
+  }
+
+  /** Runs `fn` once every fighter's 3D model is showing (shows LOADING if that takes a bit). */
+  private whenModelsReady(fn: () => void) {
+    const id = this.round;
+    let done = false;
+    const t = setTimeout(() => { if (!done && id === this.round) this.banner("LOADING", "#c9d3e6", "Getting the fighters ready", 30); }, 250);
+    Promise.all(this.fighters.map((f) => f.model.ready)).then(() => {
+      done = true;
+      clearTimeout(t);
+      if (id === this.round) fn();
+    });
   }
 
   private brainFor(f: Fighter): Brain {

@@ -8,6 +8,12 @@ import { VRMLoaderPlugin, VRMUtils, type VRM, type VRMHumanBoneName } from "@pix
 
 const files = new Map<string, Promise<ArrayBuffer>>();
 
+/** Starts downloading a VRM file so it's in memory before anyone picks the fighter. */
+export function prefetchVrm(id: string) {
+  if (!files.has(id)) files.set(id, fetch(`/models/${id}.vrm`).then((r) => { if (!r.ok) throw new Error(`${id}.vrm: ${r.status}`); return r.arrayBuffer(); }));
+  files.get(id)!.catch(() => files.delete(id));
+}
+
 /** Loads /models/<id>.vrm (file cached; each fighter gets its own parsed copy). */
 export async function loadVrm(id: string): Promise<VRM> {
   let f = files.get(id);
@@ -54,7 +60,7 @@ const rx = (a: number) => new THREE.Quaternion().setFromAxisAngle(new THREE.Vect
 const rz = (a: number) => new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), a);
 
 /** What the procedural model is doing, for the natural-motion layer. */
-export interface MotionInfo { t: number; walk: number; phase: number; crouch: number; combat?: boolean }
+export interface MotionInfo { t: number; walk: number; phase: number; crouch: number; combat?: boolean; hurt?: boolean }
 
 /** Per-bone follow-through speed (1/s): lower = more lag and overlap. */
 const RATE: Partial<Record<VRMHumanBoneName, number>> = {
@@ -111,6 +117,9 @@ export class VrmRig {
   private lastTip = new THREE.Vector3();
   private hasTip = false;
   private twist = 0;
+  private hurtW = 0;
+  /** Extra torso yaw that keeps a two-handed sword's hands in front of the chest. */
+  private followYaw = 0;
   /** 0..1 bladed (sword-side-forward) torso turn for two-handed weapons. */
   bladed = 0;
   private restW = 1;
@@ -195,7 +204,7 @@ export class VrmRig {
       this.hipsBone.position.copy(this.hipsBoneRest).addScaledVector(_v.copy(j.hips.position).sub(this.hipsRest), 1 / this.scale);
       this.hipsBone.position.x += (shift * S.hipSway * idle) / this.scale;
       this.hipsBone.position.y += (Math.abs(Math.sin(ph)) * 0.012 * walk - S.drop) / this.scale;
-      this.hipsBone.quaternion.setFromEuler(_e.set(0, Math.sin(ph) * S.walkYaw * walk - this.bladed * D(12), (Math.sin(ph) * S.walkRoll * walk + shift * S.hipRoll * idle), "YXZ"));
+      this.hipsBone.quaternion.setFromEuler(_e.set(0, Math.sin(ph) * S.walkYaw * walk - this.bladed * D(12) + this.followYaw * 0.3, (Math.sin(ph) * S.walkRoll * walk + shift * S.hipRoll * idle), "YXZ"));
       this.hipsBone.updateMatrixWorld(true);
     }
     const deltaOf = (joint: THREE.Object3D, rest: THREE.Quaternion) => quatIn(root, joint, new THREE.Quaternion()).multiply(_q2.copy(rest).invert());
@@ -227,7 +236,9 @@ export class VrmRig {
     const contra = new THREE.Quaternion().setFromEuler(_e.set(D(4) * walk, 0, -shift * S.contra * idle));
     // Two-handed weapons: a bladed stance, upper body turned toward the sword side so the left
     // shoulder comes forward to the grip instead of the arm reaching across the chest.
-    const blade = (k: number) => new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -this.bladed * D(28) * k);
+    // ...and for big swings the body turns with the sword: when the hands go more than ~35 deg
+    // to the side of the chest (windups, follow-throughs), hips and torso rotate toward them.
+    const blade = (k: number) => new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -this.bladed * D(28) * k + this.followYaw * k);
     set(B("spine"), blade(0.45).multiply(I.clone().slerp(T, 0.5)).multiply(contra).multiply(rx(S.lean)));
     set(B("chest"), blade(0.8).multiply(I.clone().slerp(T, 0.8)).multiply(counter).multiply(contra).multiply(rx(S.lean * 1.4 - breath * D(1.8) * S.breath)));
     set(B("upperChest"), blade(1).multiply(T.clone()).multiply(counter).multiply(contra).multiply(rx(S.lean * 1.1 - breath * D(2.2) * S.breath)));
@@ -341,8 +352,23 @@ export class VrmRig {
       const parentQ = quatIn(root, b.parent!, new THREE.Quaternion()).invert();
       ease(b, parentQ.multiply(target), 120);
     };
+    this.hurtW += ((m.hurt ? 1 : 0) - this.hurtW) * (1 - Math.exp(-(m.hurt ? 18 : 6) * dt));
     if (this.gripL || this.restSword) this.heavyBlade(dt, !!m.combat, set, setNow);
+    else if (this.hurtW > 0.02) this.handsForward(set);
     if (this.blade) this.edgeAlign(dt);
+    if (this.bladed > 0) {
+      // Where are the sword hands around the chest? (0 = straight ahead, negative = his right)
+      const hb = B("rightHand"), ch = B("upperChest") ?? B("chest");
+      if (hb && ch) {
+        const p = root.worldToLocal(hb.getWorldPosition(new THREE.Vector3())).sub(root.worldToLocal(ch.getWorldPosition(new THREE.Vector3())));
+        const ang = Math.atan2(p.x, p.z) - this.followYaw * 0.0; // angle in the root frame
+        const rel = ang - this.followYaw - (-this.bladed * D(28));
+        const over = rel - THREE.MathUtils.clamp(rel, -D(30), D(30));
+        const want = THREE.MathUtils.clamp(this.followYaw + over, -D(100), D(100));
+        this.followYaw += (want - this.followYaw) * (1 - Math.exp(-16 * dt));
+        if (!m.combat) this.followYaw *= Math.exp(-4 * dt);
+      }
+    }
     this.first = false;
 
     vrm.update(dt);
@@ -422,6 +448,15 @@ export class VrmRig {
         j.hand_r.quaternion.copy(parentRoot().multiply(now.slerp(rest, this.restW)));
       }
     }
+    if (this.hurtW > 0.01) {
+      // Hit: keep the sword up in front as a guard (hands before the chest, blade up and
+      // forward) while the torso recoils, instead of flinging arms and blade behind.
+      const guardPos = P(chest).add(new THREE.Vector3(-0.08, -0.16, 0.34));
+      this.solveArm("right", P(handR).lerp(guardPos, this.hurtW), new THREE.Vector3(-0.9, -0.7, 0.15), set);
+      const guard = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(-0.15, 0.75, 0.62).normalize());
+      const now = quatIn(root, j.hand_r, new THREE.Quaternion());
+      j.hand_r.quaternion.copy(parentRoot().multiply(now.slerp(guard, this.hurtW)));
+    }
     // Weight: the blade's orientation trails the hands and settles.
     const target = quatIn(root, j.hand_r, new THREE.Quaternion());
     if (this.swordQ.lengthSq() === 0 || this.first) this.swordQ.copy(target);
@@ -431,6 +466,25 @@ export class VrmRig {
     j.hand_r.position.copy(j.arm_r.worldToLocal(handR.getWorldPosition(new THREE.Vector3())));
     j.hand_r.updateMatrixWorld(true);
     if (this.gripL) this.solveArm("left", P(this.gripL), new THREE.Vector3(0.9, -0.6, 0.25), setNow);
+  }
+
+  /** Hit reactions: hands never end up behind or inside the torso. */
+  private handsForward(set: (b: THREE.Object3D | null, q: THREE.Quaternion) => void) {
+    const root = this.j.root, h = this.vrm.humanoid;
+    const chest = h.getNormalizedBoneNode("upperChest") ?? h.getNormalizedBoneNode("chest");
+    if (!chest) return;
+    const P = (o: THREE.Object3D) => root.worldToLocal(o.getWorldPosition(new THREE.Vector3()));
+    const front = P(chest).z + 0.16;
+    for (const side of ["left", "right"] as const) {
+      if (side === "left" && this.shield) continue; // the shield arm has its own guard
+      const hand = h.getNormalizedBoneNode(`${side}Hand`);
+      if (!hand) continue;
+      const p = P(hand);
+      if (p.z >= front) continue;
+      const T = p.clone();
+      T.z += (front - p.z) * this.hurtW;
+      this.solveArm(side, T, new THREE.Vector3(side === "left" ? 0.8 : -0.8, -0.8, 0.1), set);
+    }
   }
 
   /**
