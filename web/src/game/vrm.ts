@@ -60,7 +60,7 @@ const rx = (a: number) => new THREE.Quaternion().setFromAxisAngle(new THREE.Vect
 const rz = (a: number) => new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), a);
 
 /** What the procedural model is doing, for the natural-motion layer. */
-export interface MotionInfo { t: number; walk: number; phase: number; crouch: number; combat?: boolean; hurt?: boolean; draw?: number }
+export interface MotionInfo { t: number; walk: number; phase: number; crouch: number; combat?: boolean; hurt?: boolean; draw?: number; knee?: [number, number] }
 
 /** Per-bone follow-through speed (1/s): lower = more lag and overlap. */
 const RATE: Partial<Record<VRMHumanBoneName, number>> = {
@@ -356,7 +356,10 @@ export class VrmRig {
       const stagger = this.boxer ? (side === "left" ? -D(14) : D(10)) * (1 - walk) : 0;
       const stance = new THREE.Quaternion().setFromEuler(_e.set(-knee * 0.5 + stagger, sg * S.toeOut, sg * S.stance * (1 - 0.4 * walk), "YXZ"));
       set(B(`${side}UpperLeg`), stance.multiply(deltaOf(lk.joint, lk.rest)));
-      setLocal(B(`${side}LowerLeg`), knee, 0, 0);
+      // A leg raised for a kick drops the crouch/idle bend so the extension can go straight;
+      // the pose's own knee value (chamber, recoil) is added on top.
+      const lift = THREE.MathUtils.clamp(-lk.joint.rotation.x / 1.2, 0, 1);
+      setLocal(B(`${side}LowerLeg`), knee * (1 - lift) + (m.knee?.[side === "left" ? 0 : 1] ?? 0), 0, 0);
       const foot = B(`${side}Foot`);
       if (foot) {
         const parentQ = quatIn(root, foot.parent!, new THREE.Quaternion());

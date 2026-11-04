@@ -94,6 +94,8 @@ export class FighterModel extends THREE.Group {
   charge = 0;
   /** Bow draw 0..1 (string pulled back to the anchor). */
   draw = 0;
+  /** Extra knee bend from the pose (smoothed). */
+  private knee: [number, number] = [0, 0];
   private bowPivot: THREE.Group | null = null;
   private bowString: THREE.Mesh[] | null = null;
   private bowArrow: THREE.Group | null = null;
@@ -852,6 +854,9 @@ export class FighterModel extends THREE.Group {
       this.cur[j].lerp(new THREE.Vector3(t[0], t[1], t[2]), k);
     }
     this.hipsY += (pose.hips_y - this.hipsY) * k;
+    const kn = pose.knee ?? [0, 0];
+    this.knee[0] += (kn[0] - this.knee[0]) * k;
+    this.knee[1] += (kn[1] - this.knee[1]) * k;
     this.t += dt;
     this.walkPhase += dt * 11 * this.walk;
     const s = Math.sin(this.walkPhase);
@@ -864,7 +869,7 @@ export class FighterModel extends THREE.Group {
     this.cape.rotation.set(0.08 + 0.3 * this.walk + 0.3 * this.recoil + Math.sin(this.t * 2.1) * 0.03, 0, Math.sin(this.t * 1.7) * 0.03);
     this.hairSway.forEach((h, i) => { h.rotation.x = 0.1 * this.walk + 0.25 * this.recoil + Math.sin(this.t * 2 + i) * 0.05; });
     if (this.gripL) this.reachGrip();
-    this.vrmRig?.update(dt, { t: this.t, walk: this.walk, phase: this.walkPhase, crouch: this.hipsY, combat: this.combat, hurt: this.hurt, draw: this.draw });
+    this.vrmRig?.update(dt, { t: this.t, walk: this.walk, phase: this.walkPhase, crouch: this.hipsY, combat: this.combat, hurt: this.hurt, draw: this.draw, knee: this.knee });
     if (this.bowPivot) this.updateBow();
     this.glowMat.color.copy(this.glowBase).lerp(new THREE.Color(1, 1, 1), this.charge * (0.5 + 0.3 * Math.sin(this.t * 30)));
     this.updateBlink(dt);
@@ -924,6 +929,8 @@ export class FighterModel extends THREE.Group {
     }
     if (this.kit === "greatsword") { this.vrmRig.restSword = true; this.vrmRig.grip.left = true; }
     if (this.kit === "knuckles") { this.vrmRig.boxer = true; this.vrmRig.bladed = 0.65; }
+    // Kicker: bouncing side-on guard with loose fists by the chin.
+    if (this.kit === "kicks") { this.vrmRig.boxer = true; this.vrmRig.grip = { left: true, right: true }; }
     // A longbow is about 85-90% of body height.
     if (this.kit === "bow") { this.vrmRig.archer = true; this.vrmRig.followArm = 0; this.bowPivot?.scale.setScalar(1.45); }
     for (const h of [this.hand_l, this.hand_r]) h.scale.multiplyScalar(VRM_WEAPON_SCALE);

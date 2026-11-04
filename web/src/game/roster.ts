@@ -79,7 +79,7 @@ export const CHARACTERS: Character[] = [
   { id: "kira", title: "Tempest Kicker", role: "Martial Artist - Kicks",
     desc: "Fights with her legs: snap kicks, roundhouses, an axe kick and a flying kick, all lightning fast.",
     stats: { power: 4, speed: 5, range: 2, defense: 3 },
-    look: { name: "Kira", body: "f", kit: "kicks", element: "chi", outfit: "martial", style: "ponytail", hat: "headband",
+    look: { name: "Kira", body: "f", vrm: "kira", kit: "kicks", element: "chi", outfit: "martial", style: "ponytail", hat: "headband",
       hair: "#2a2420", hair_shade: "#b8a8c8", iris_top: "#16736b", iris_bottom: "#7af0d6", eye_dark: "#0e2a28",
       tunic: "#f2f0ea", band: "#1f6f6b", pants: "#22313a", boots: "#e9d8c8", metal: "#c9d6d6", trim: "#e6c26e",
       cape: "#1f6f6b", cape_bottom: "#4dbfae", glow: "#4dffd2", shield: "#22313a", emblem: "#1f6f6b" } },
