@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Net } from "@/game/net";
 import { CHARACTERS } from "@/game/roster";
-import type { GameConfig, PlayerSlot } from "@/game/game";
+import { SHOW_BRAWL, type GameConfig, type PlayerSlot } from "@/game/game";
 import { MAX_BET } from "@/game/economy";
 import { account, useAccount } from "@/lib/account";
 import { CardRow, EmblemPicker, InfoPanel, Showcase } from "./Select";
@@ -147,7 +147,7 @@ export default function Lobby({ name, onBack, onStart, onShop }: {
       <div className="menu">
         <div className="menu-card">
           <h1 className="logo small">PLAY ONLINE</h1>
-          <p className="tag">Co-op survival (up to 4), a 1v1 duel or brawl, or team battles from 2v2 to 4v4. Peer-to-peer, no server needed. You can join a survival run that has already started.</p>
+          <p className="tag">Co-op survival (up to 4), a 1v1 duel, or team battles from 2v2 to 4v4. Peer-to-peer, no server needed. You can join a survival run that has already started.</p>
           <button className="big gold" disabled={!!busy} onClick={host}>Host a room</button>
           <div className="join">
             <input placeholder="ROOM CODE" value={joinCode} maxLength={5} onChange={(e) => setJoinCode(e.target.value.toUpperCase())} onKeyDown={(e) => e.key === "Enter" && join()} />
@@ -171,7 +171,7 @@ export default function Lobby({ name, onBack, onStart, onShop }: {
       <div className="panel lobby-panel">
         <h3>Mode</h3>
         <div className="row">
-          {(["survival", "duel", "brawl", "team"] as Mode[]).map((m) => (
+          {(["survival", "duel", "brawl", "team"] as Mode[]).filter((m) => SHOW_BRAWL || m !== "brawl").map((m) => (
             <button key={m} className={"lvl" + (mode === m ? " on" : "")} style={{ ["--c" as any]: m === "survival" ? "#6fcf7f" : m === "duel" ? "#e8534a" : m === "brawl" ? "#ffb347" : "#5fa8ff" }}
               disabled={net.role !== "host"} onClick={() => changeMode(m)}>{m === "survival" ? "Co-op Survival" : m === "duel" ? "Duel (1v1)" : m === "brawl" ? "Platform Brawl" : "Team Battle"}</button>
           ))}

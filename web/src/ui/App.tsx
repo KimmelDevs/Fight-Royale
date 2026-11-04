@@ -8,7 +8,7 @@ import Shop from "./Shop";
 import Settings, { useBindings } from "./Settings";
 import { label } from "@/game/keys";
 import { CHARACTERS } from "@/game/roster";
-import type { GameConfig } from "@/game/game";
+import { SHOW_BRAWL, type GameConfig } from "@/game/game";
 import type { Net } from "@/game/net";
 import { account, useAccount } from "@/lib/account";
 
@@ -92,7 +92,7 @@ export default function App() {
           </label>
         )}
         <button className="big gold" onClick={() => setScreen({ s: "select", purpose: "duel" })}>Duel vs CPU</button>
-        <button className="big brawl" onClick={() => setScreen({ s: "select", purpose: "brawl" })}>Platform Brawl vs CPU</button>
+        {SHOW_BRAWL && <button className="big brawl" onClick={() => setScreen({ s: "select", purpose: "brawl" })}>Platform Brawl vs CPU</button>}
         <button className="big blue" onClick={() => setScreen({ s: "select", purpose: "team" })}>Team Battle vs CPU (2v2 - 4v4)</button>
         <button className="big" onClick={() => setScreen({ s: "select", purpose: "survival" })}>Survival (solo)</button>
         <button className="big blue" onClick={() => setScreen({ s: "online" })}>Play Online with Friends</button>

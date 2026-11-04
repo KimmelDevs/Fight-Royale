@@ -61,6 +61,9 @@ const DUEL_RADIUS = 7;
 const SURVIVAL_RADIUS = 11;
 
 /** The floating stage for duel and team fights: a main island plus three soft platforms. */
+/** Platform Brawl is hidden from menus for now (the mode itself still works). */
+export const SHOW_BRAWL = false;
+
 export const STAGE: Stage = {
   plats: [
     { x0: -7.5, x1: 7.5, y: 0, solid: true },
