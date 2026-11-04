@@ -4,7 +4,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { useEffect, useState } from "react";
 import {
-  CHARACTER_PRICE, SKILL_PRICE, EMBLEM_MAX, emblemCost, guestProfile, type Profile,
+  CHARACTER_PRICE, SKILL_PRICE, EMBLEM_MAX, emblemCost, guestProfile, START_CHARACTERS, type Profile,
 } from "@/game/economy";
 import { CHARACTERS } from "@/game/roster";
 
@@ -79,6 +79,7 @@ class Account {
     try {
       const raw = localStorage.getItem(GUEST_KEY);
       this.profile = raw ? { ...guestProfile(), ...JSON.parse(raw) } : guestProfile();
+      this.profile.characters = [...new Set([...START_CHARACTERS, ...this.profile.characters])];
     } catch { this.profile = guestProfile(); }
   }
 

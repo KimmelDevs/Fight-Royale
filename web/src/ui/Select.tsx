@@ -178,7 +178,9 @@ export function CardRow({ current, onPick, allowRandom, showLocks }: { current: 
   const acc = useAccount();
   return (
     <div className="cards">
-      {CHARACTERS.map((ch, i) => (
+      {CHARACTERS.map((ch, i) => ({ ch, i }))
+        .sort((a, b) => Number(acc.owns(b.ch.id)) - Number(acc.owns(a.ch.id)))
+        .map(({ ch, i }) => (
         <button key={ch.id} tabIndex={-1} onMouseDown={(e) => e.preventDefault()} className={"card" + (i === current ? " on" : "")} style={{ background: lum(ch.look.tunic) > 0.7 ? ch.look.cape : ch.look.tunic }} onClick={() => onPick(i)}>
           <Icon src={charIcon(ch.id)} alt={ch.look.name} size={40} />
           <b>{ch.look.name}</b>

@@ -1,7 +1,7 @@
 // Economy rules shared by the UI, the match and (mirrored in SQL) the server.
 // Keep these numbers in sync with supabase/migrations/*_economy.sql.
 
-export const START_CHARACTERS = ["aster", "vesper", "ember"];
+export const START_CHARACTERS = ["aster", "ember", "garrick"];
 export const CHARACTER_PRICE = { gold: 5000, diamonds: 250 };
 export const SKILL_PRICE = { gold: 2000, diamonds: 100 };
 export const WIN_GOLD = 250;

@@ -358,11 +358,13 @@ export class VrmRig {
     else if (this.hurtW > 0.02) this.handsForward(set);
     if (this.blade) this.edgeAlign(dt);
     if (this.bladed > 0) {
-      // Where are the sword hands around the chest? (0 = straight ahead, negative = his right)
-      const hb = B("rightHand"), ch = B("upperChest") ?? B("chest");
-      if (hb && ch) {
-        const p = root.worldToLocal(hb.getWorldPosition(new THREE.Vector3())).sub(root.worldToLocal(ch.getWorldPosition(new THREE.Vector3())));
-        const ang = Math.atan2(p.x, p.z) - this.followYaw * 0.0; // angle in the root frame
+      // Where does the POSE put the sword hand around the body? Measured on the procedural rig
+      // (shoulder + arm direction), which the VRM torso turn doesn't move, so no feedback loop.
+      {
+        const sh = root.worldToLocal(j.arm_r.getWorldPosition(new THREE.Vector3()));
+        const armDir = new THREE.Vector3(0, -1, 0).applyQuaternion(quatIn(root, j.arm_r, new THREE.Quaternion()));
+        const p = sh.addScaledVector(armDir, 0.55).sub(root.worldToLocal(j.torso.getWorldPosition(new THREE.Vector3())));
+        const ang = Math.atan2(p.x, p.z); // angle in the root frame
         const rel = ang - this.followYaw - (-this.bladed * D(28));
         const over = rel - THREE.MathUtils.clamp(rel, -D(30), D(30));
         const want = THREE.MathUtils.clamp(this.followYaw + over, -D(100), D(100));
