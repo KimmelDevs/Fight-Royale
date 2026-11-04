@@ -8,8 +8,7 @@ import {
 } from "@/game/economy";
 import { CHARACTERS } from "@/game/roster";
 
-const URL_ = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-const KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+import { SUPABASE_URL as URL_, SUPABASE_ANON_KEY as KEY } from "./config";
 const GUEST_KEY = "fr-guest-profile";
 
 export const supabase: SupabaseClient | null = URL_ && KEY ? createClient(URL_, KEY) : null;
