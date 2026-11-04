@@ -8,7 +8,7 @@
 import * as THREE from "three";
 import * as M from "./mat";
 import { Fx } from "./fx";
-import { Fighter, S, STOCKS, RANGED_COMBO_REST, type Entity, type Brain, type Stage } from "./fighter";
+import { Fighter, S, STOCKS, RANGED_COMBO_REST, DASH_CD, type Entity, type Brain, type Stage } from "./fighter";
 import { Mob, waveRoster, MOB_TYPES, type MobHost } from "./mobs";
 import { AiBrain, LEVELS, type Threats } from "./ai";
 import { CHARACTERS } from "./roster";
@@ -80,9 +80,12 @@ class LocalBrain implements Brain {
 class RemoteBrain implements Brain {
   last: RawInput = { attack: false, block: false, jump: false, skill: "", mx: 0, mz: 0 };
   skills: string[] = [];
+  dashes: [number, number][] = [];
   think(f: Fighter) {
-    applyRaw(f, this.last);
+    applyRaw(f, { ...this.last, dx: 0, dz: 0 });
     f.intent.skill = this.skills.shift() ?? "";
+    const d = this.dashes.shift();
+    if (d) f.intent.dash.set(d[0], 0, d[1]);
   }
 }
 
@@ -92,7 +95,11 @@ function applyRaw(f: Fighter, r: RawInput) {
   f.intent.jump = r.jump;
   if (r.skill) f.intent.skill = r.skill;
   f.intent.move.set(r.mx, 0, r.mz);
+  if (r.dx || r.dz) f.intent.dash.set(r.dx ?? 0, 0, r.dz ?? 0);
 }
+
+/** CPU-controlled slots: "cpu" (duel opponent) and "cpu-1", "cpu-2"... (team battles). */
+export const isCpu = (peer: string) => peer === "cpu" || peer.startsWith("cpu-");
 
 /** Flying spell or thrown weapon. Host projectiles hit; guest copies are visual only. */
 class Projectile {
@@ -398,7 +405,9 @@ export class Game implements MobHost {
         const team = p.team ?? i % 2;
         const k = counts[team]++;
         const z = (k - 1.5) * 1.8;
-        spawned.push(this.spawnFighter(p, team, new THREE.Vector3(team === 0 ? -5 : 5, 0, z), team === 0 ? Math.PI / 2 : -Math.PI / 2));
+        const f = this.spawnFighter(p, team, new THREE.Vector3(team === 0 ? -5 : 5, 0, z), team === 0 ? Math.PI / 2 : -Math.PI / 2);
+        if (isCpu(p.peer)) f.autoApproach = !["mage", "bow"].includes(f.kit);
+        spawned.push(f);
       });
       const id = this.round;
       this.banner("READY", "#ffe9a8", `${counts[0]} vs ${counts[1]}`, 0.6);
@@ -421,7 +430,7 @@ export class Game implements MobHost {
   }
 
   private brainFor(f: Fighter): Brain {
-    if (f.owner === "cpu") return new AiBrain(this.threats, this.cfg.difficulty ?? 1);
+    if (isCpu(f.owner)) return new AiBrain(this.threats, this.cfg.difficulty ?? 1);
     if (f.owner === this.cfg.localPeer) return new LocalBrain(this);
     let b = this.remoteBrains.get(f.owner);
     if (!b) { b = new RemoteBrain(); this.remoteBrains.set(f.owner, b); }
@@ -446,6 +455,10 @@ export class Game implements MobHost {
     f.onSwing = (x) => this.onSwing(x);
     f.onKo = (x) => this.onFighterKo(x);
     f.onLanded = (x) => this.fx.ring(x.root.position, "#ffffff", 0.8, 0.25, 0.5);
+    f.onDash = (x) => {
+      this.fxp("smoke", x.root.position.clone(), x.look.glow);
+      this.fxp("ring", x.root.position.clone().add(new THREE.Vector3(0, 0.1, 0)), x.look.glow, 1.2, 0.2, 0.7);
+    };
     this.scene.add(f.root, f.trail.mesh);
     this.fighters.push(f);
     this.entities.set(f.id, f);
@@ -486,7 +499,7 @@ export class Game implements MobHost {
 
     if (this.cfg.role === "client") {
       this.sendT -= realDt;
-      if (this.sendT <= 0 || this.localInput.skill) {
+      if (this.sendT <= 0 || this.localInput.skill || this.localInput.dx || this.localInput.dz) {
         this.sendT = 1 / 30;
         this.net?.send({ t: "in", i: this.localInput });
       }
@@ -1005,7 +1018,7 @@ export class Game implements MobHost {
         winner.win();
         const iWon = winner.owner === this.cfg.localPeer;
         const name = winner.look.name;
-        if (winner.owner !== "cpu") this.sendReward(winner.owner, "duel", WIN_GOLD);
+        if (!isCpu(winner.owner)) this.sendReward(winner.owner, "duel", WIN_GOLD);
         const text = this.cfg.role === "offline" ? (iWon ? "VICTORY" : "DEFEAT") : `${name.toUpperCase()} WINS`;
         this.over(text, this.cfg.role === "client" ? "" : "Press R or click Rematch", iWon || this.cfg.role !== "offline" ? "#ffe08a" : "#ff7b7b");
         this.canRestart = true;
@@ -1018,7 +1031,7 @@ export class Game implements MobHost {
       for (const x of this.fighters) x.brain = null;
       this.hitStop(0.9, 0.25);
       this.later(0.5, () => {
-        for (const x of this.fighters) if (x.team === winner) { x.win(); this.sendReward(x.owner, "team", WIN_GOLD); }
+        for (const x of this.fighters) if (x.team === winner) { x.win(); if (!isCpu(x.owner)) this.sendReward(x.owner, "team", WIN_GOLD); }
         this.onEvent({ type: "result", winner });
         this.emit(["result", winner]);
         const mine = this.local?.team ?? 0;
@@ -1138,6 +1151,7 @@ export class Game implements MobHost {
         if (!b) { b = new RemoteBrain(); this.remoteBrains.set(from, b); }
         b.last = msg.i;
         if (msg.i.skill) b.skills.push(msg.i.skill);
+        if (msg.i.dx || msg.i.dz) b.dashes.push([msg.i.dx, msg.i.dz]);
       } else if (msg.t === "perk") {
         const opts = this.perkWait.get(from);
         if (opts) { this.applyPerk(from, opts[msg.i] ?? opts[0]); this.perkWait.delete(from); }
@@ -1289,17 +1303,18 @@ export class Game implements MobHost {
     const me = this.local;
     const boss = this.mobs.find((m) => m.def.boss && !m.dead);
     const other = this.isDuel() ? this.fighters.find((f) => f !== me) : null;
-    const info = (f: Fighter) => ({ id: CHARACTERS[f.charIndex].id, name: f.look.name, hp: f.hp, maxHp: f.maxHp, guard: f.guard, maxGuard: f.maxGuard, down: f.isDown(), glow: f.look.glow,
+    const info = (f: Fighter) => ({ id: CHARACTERS[f.charIndex].id, name: f.look.name + (isCpu(f.owner) && f.owner !== "cpu" ? " (CPU)" : ""), hp: f.hp, maxHp: f.maxHp, guard: f.guard, maxGuard: f.maxGuard, down: f.isDown(), glow: f.look.glow,
       pct: f.pct, stocks: f.stocks, out: f.out, team: f.team });
     return {
       mode: this.cfg.mode,
       plat: this.plat,
-      all: this.plat ? this.fighters.map((f) => ({ ...info(f), me: f === me, cpu: f.owner === "cpu" })) : [],
+      all: this.plat ? this.fighters.map((f) => ({ ...info(f), me: f === me, cpu: isCpu(f.owner) })) : [],
       me: me ? info(me) : null,
-      other: other ? { ...info(other), tag: other.owner === "cpu" ? `CPU - ${LEVELS[this.cfg.difficulty ?? 1]}` : "" } : null,
+      other: other ? { ...info(other), tag: isCpu(other.owner) ? `CPU - ${LEVELS[this.cfg.difficulty ?? 1]}` : "" } : null,
       team: !this.isDuel() ? this.fighters.filter((f) => f !== me && f.team === me?.team).map(info) : [],
       foes: this.cfg.mode === "team" ? this.fighters.filter((f) => f.team !== me?.team).map(info) : [],
       atkLock: me && me.attacks.l1.type !== "melee" ? { t: me.atkLock, max: RANGED_COMBO_REST } : null,
+      dash: me ? { t: me.dashCd, max: DASH_CD } : null,
       skills: me ? ["z", "x", "c"].map((k) => ({ key: k, id: me.attacks[k].id, name: me.attacks[k].name, cd: me.cooldowns[k], max: me.attacks[k].cd * me.cdMult })) : [],
       kit: me?.kit ?? "", element: me?.look.element ?? "",
       wave: this.wave, kills: this.kills, phase: this.phase,

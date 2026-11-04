@@ -155,6 +155,17 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
             </>
           )}
           <div className="skills">
+            {hud.dash && (
+              <div className={"sk atk" + (hud.dash.t > 0.05 ? " locked" : "")}>
+                <div className="icon" style={{ borderColor: me?.glow }}>
+                  <div className="atk-glyph dash-glyph">DASH</div>
+                  <div className="cool" style={{ height: `${Math.min(hud.dash.t / hud.dash.max, 1) * 100}%` }} />
+                  <b>2x</b>
+                  {hud.dash.t > 0.05 && <em>{hud.dash.t.toFixed(1)}</em>}
+                </div>
+                <span>Dash</span>
+              </div>
+            )}
             {hud.atkLock && (
               <div className={"sk atk" + (hud.atkLock.t > 0.05 ? " locked" : "")}>
                 <div className="icon" style={{ borderColor: me?.glow }}>
@@ -207,7 +218,7 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
           <div className="txt" style={{ color: over?.color ?? "#ff7b7b" }}>{lost ? "DISCONNECTED" : over!.text}</div>
           <div className="bsub">{lost ? "The host left the match." : over!.sub}</div>
           <div className="row">
-            {hud?.canRestart && !lost && <button className="big gold" onClick={rematch}>{cfg.mode === "duel" || cfg.mode === "brawl" ? "Rematch" : "Try Again"}</button>}
+            {hud?.canRestart && !lost && <button className="big gold" onClick={rematch}>{cfg.mode === "survival" ? "Try Again" : "Rematch"}</button>}
             <button className="big ghost" onClick={onExit}>Menu</button>
           </div>
         </div>

@@ -4,7 +4,12 @@
 import * as THREE from "three";
 import { actionFor, type Action } from "./keys";
 
-export interface RawInput { attack: boolean; block: boolean; jump: boolean; skill: string; mx: number; mz: number }
+/** dx/dz: dash direction in world space this frame (0, 0 = no dash). */
+export interface RawInput { attack: boolean; block: boolean; jump: boolean; skill: string; mx: number; mz: number; dx?: number; dz?: number }
+
+/** Two taps of the same movement key within this many ms = dash. */
+const DOUBLE_TAP_MS = 260;
+const MOVE_DIR: Partial<Record<Action, [number, number]>> = { right: [1, 0], left: [-1, 0], up: [0, 1], down: [0, -1] };
 
 const SKILL_KEY: Partial<Record<Action, string>> = { skill1: "z", skill2: "x", skill3: "c" };
 
@@ -12,6 +17,8 @@ export class Input {
   /** Pressed codes: keyboard codes and "Mouse0".."Mouse4". */
   private down = new Set<string>();
   private skills: string[] = [];
+  private lastTap: Partial<Record<Action, number>> = {};
+  private dash: [number, number] | null = null;
   private el: HTMLElement | null = null;
 
   private press(code: string, on: boolean) {
@@ -19,6 +26,12 @@ export class Input {
       const a = actionFor(code);
       const s = a && SKILL_KEY[a];
       if (s) this.skills.push(s);
+      const dir = a && MOVE_DIR[a];
+      if (a && dir) {
+        const now = performance.now();
+        if (now - (this.lastTap[a] ?? -1e9) < DOUBLE_TAP_MS) { this.dash = dir; this.lastTap[a] = -1e9; }
+        else this.lastTap[a] = now;
+      }
     }
     if (on) this.down.add(code); else this.down.delete(code);
   }
@@ -67,15 +80,15 @@ export class Input {
     if (this.held("left")) x -= 1;
     if (this.held("up")) y += 1;
     if (this.held("down")) y -= 1;
+    const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+    const fwd = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 2).negate();
+    right.y = 0; fwd.y = 0;
+    right.normalize(); fwd.normalize();
+    const world = (a: number, b: number) => right.clone().multiplyScalar(a).addScaledVector(fwd, b).normalize();
     let mx = 0, mz = 0;
-    if (x || y) {
-      const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
-      const fwd = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 2).negate();
-      right.y = 0; fwd.y = 0;
-      right.normalize(); fwd.normalize();
-      const m = right.multiplyScalar(x).addScaledVector(fwd, y).normalize();
-      mx = m.x; mz = m.z;
-    }
-    return { attack: this.held("attack"), block: this.held("block"), jump: this.held("jump"), skill: this.skills.shift() ?? "", mx, mz };
+    if (x || y) { const m = world(x, y); mx = m.x; mz = m.z; }
+    let dx = 0, dz = 0;
+    if (this.dash) { const d = world(this.dash[0], this.dash[1]); dx = d.x; dz = d.z; this.dash = null; }
+    return { attack: this.held("attack"), block: this.held("block"), jump: this.held("jump"), skill: this.skills.shift() ?? "", mx, mz, dx, dz };
   }
 }

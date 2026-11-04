@@ -153,22 +153,25 @@ export function CardRow({ current, onPick, allowRandom, showLocks }: { current: 
 }
 
 export default function Select({ purpose, onBack, onDone, onShop }: {
-  purpose: "duel" | "brawl" | "survival";
+  purpose: "duel" | "brawl" | "survival" | "team";
   onBack: () => void;
   onShop: () => void;
-  onDone: (player: number, cpu?: number, difficulty?: number) => void;
+  onDone: (player: number, cpu?: number, difficulty?: number, teamSize?: number) => void;
 }) {
+  const [size, setSize] = useState(3);
+  const team = purpose === "team";
   const [step, setStep] = useState(0);
   const [me, setMe] = useState(0);
   const [cpu, setCpu] = useState(RANDOM);
   const [level, setLevel] = useState(1);
-  const shown = step === 0 ? me : cpu;
+  const shown = step === 0 || purpose === "team" ? me : cpu;
   const n = CHARACTERS.length;
   const acc = useAccount();
   const myLocked = !acc.owns(CHARACTERS[me].id);
 
   const finish = () => {
     if (purpose === "survival") return onDone(me);
+    if (team) return onDone(me, undefined, level, size);
     let c = cpu;
     if (c === RANDOM) { const opts = CHARACTERS.map((_, i) => i).filter((i) => i !== me); c = opts[Math.floor(Math.random() * opts.length)]; }
     onDone(me, c, level);
@@ -190,13 +193,25 @@ export default function Select({ purpose, onBack, onDone, onShop }: {
     <div className="select">
       <Showcase index={shown} />
       <div className="header">
-        <h1 style={{ color: step === 1 ? "#ffb3a8" : "#fff" }}>{step === 0 ? "CHOOSE YOUR FIGHTER" : "CHOOSE YOUR OPPONENT"}</h1>
-        <div className="sub">{step === 0 ? "Click a card or use Left / Right. Drag to rotate. Enter: next." : `You: ${CHARACTERS[me].look.name}. Pick the CPU's fighter and difficulty.`}</div>
+        <h1 style={{ color: step === 1 ? "#ffb3a8" : "#fff" }}>{step === 0 ? "CHOOSE YOUR FIGHTER" : team ? "TEAM BATTLE VS CPU" : "CHOOSE YOUR OPPONENT"}</h1>
+        <div className="sub">{step === 0 ? "Click a card or use Left / Right. Drag to rotate. Enter: next."
+          : team ? `You: ${CHARACTERS[me].look.name}. CPU teammates join you against a CPU team. Pick the size and difficulty.`
+          : `You: ${CHARACTERS[me].look.name}. Pick the CPU's fighter and difficulty.`}</div>
       </div>
-      <InfoPanel index={shown} editable={step === 0} />
+      {!(team && step === 1) && <InfoPanel index={shown} editable={step === 0} />}
       <div className="bottom">
-        <CardRow current={shown} onPick={(i) => (step === 0 ? setMe(i) : setCpu(i))} allowRandom={step === 1} showLocks={step === 0} />
+        {!(team && step === 1) && <CardRow current={shown} onPick={(i) => (step === 0 ? setMe(i) : setCpu(i))} allowRandom={step === 1} showLocks={step === 0} />}
         <div className="actions">
+          {team && step === 1 && (
+            <div className="levels">
+              <span>Team size</span>
+              <div>
+                {[2, 3, 4].map((n2) => (
+                  <button key={n2} className={"lvl" + (n2 === size ? " on" : "")} style={{ ["--c" as any]: "#5fa8ff" }} onClick={() => setSize(n2)}>{n2}v{n2}</button>
+                ))}
+              </div>
+            </div>
+          )}
           {step === 1 && (
             <div className="levels">
               <span>CPU difficulty</span>

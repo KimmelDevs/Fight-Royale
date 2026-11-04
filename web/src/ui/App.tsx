@@ -7,13 +7,14 @@ import AccountScreen, { Wallet } from "./Account";
 import Shop from "./Shop";
 import Settings, { useBindings } from "./Settings";
 import { label } from "@/game/keys";
+import { CHARACTERS } from "@/game/roster";
 import type { GameConfig } from "@/game/game";
 import type { Net } from "@/game/net";
 import { account, useAccount } from "@/lib/account";
 
 type Screen =
   | { s: "menu" }
-  | { s: "select"; purpose: "duel" | "brawl" | "survival" }
+  | { s: "select"; purpose: "duel" | "brawl" | "survival" | "team" }
   | { s: "online" }
   | { s: "account" }
   | { s: "settings" }
@@ -44,8 +45,20 @@ export default function App() {
         purpose={screen.purpose}
         onBack={toMenu}
         onShop={() => setScreen({ s: "shop" })}
-        onDone={(player, cpu, difficulty) => {
+        onDone={(player, cpu, difficulty, teamSize) => {
           const me = { peer: "local", name, char: player, ...account.matchKit(player) };
+          if (screen.purpose === "team") {
+            // You + CPU allies on Blue vs a CPU team on Red; fighters drawn without repeats when possible.
+            const n = teamSize ?? 3;
+            const pool = CHARACTERS.map((_, i) => i).filter((i) => i !== player).sort(() => Math.random() - 0.5);
+            const slots = [{ ...me, team: 0 }];
+            for (let i = 0; i < n * 2 - 1; i++) {
+              const char = pool[i % pool.length];
+              slots.push({ peer: `cpu-${i + 1}`, name: CHARACTERS[char].look.name, char, team: i < n - 1 ? 0 : 1 } as any);
+            }
+            setScreen({ s: "game", cfg: { mode: "team", role: "offline", players: slots, localPeer: "local", difficulty }, net: null });
+            return;
+          }
           const cfg: GameConfig = screen.purpose !== "survival"
             ? { mode: screen.purpose, role: "offline", players: [me], localPeer: "local", cpuChar: cpu, difficulty }
             : { mode: "survival", role: "offline", players: [me], localPeer: "local" };
@@ -80,6 +93,7 @@ export default function App() {
         )}
         <button className="big gold" onClick={() => setScreen({ s: "select", purpose: "duel" })}>Duel vs CPU</button>
         <button className="big brawl" onClick={() => setScreen({ s: "select", purpose: "brawl" })}>Platform Brawl vs CPU</button>
+        <button className="big blue" onClick={() => setScreen({ s: "select", purpose: "team" })}>Team Battle vs CPU (2v2 - 4v4)</button>
         <button className="big" onClick={() => setScreen({ s: "select", purpose: "survival" })}>Survival (solo)</button>
         <button className="big blue" onClick={() => setScreen({ s: "online" })}>Play Online with Friends</button>
         <div className="row two">
@@ -89,7 +103,7 @@ export default function App() {
         <button className="big ghost" onClick={() => setScreen({ s: "settings" })}>Settings: Controls</button>
         <div className="controls">
           <b>Controls</b>
-          <span>{label("up")} {label("left")} {label("down")} {label("right")} move</span><span>{label("jump")} jump</span>
+          <span>{label("up")} {label("left")} {label("down")} {label("right")} move</span><span>{label("jump")} jump</span><span>Double-tap a direction: dash (6 s cooldown)</span>
           <span>{label("attack")}: attack (tap) / charged attack (hold)</span>
           <span>{label("block")}: block (block just before a hit to PARRY)</span>
           <span>{label("skill1")} {label("skill2")} {label("skill3")} skills</span><span>Esc: leave match</span>

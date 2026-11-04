@@ -223,3 +223,4 @@ input:focus { border-color: #e6c26e; }
   border: none; background: rgba(0,0,0,0.35); color: #c9d3e6; font-size: 11px; line-height: 18px; cursor: pointer; }
 @keyframes pulse { from { opacity: 0.75; } to { opacity: 1; } }
 @media (max-width: 600px) { .bind-row { grid-template-columns: 1fr 96px 96px; } .bind-row .act { font-size: 11px; } }
+.sk.atk .atk-glyph.dash-glyph { font-size: 14px; background: radial-gradient(circle at 50% 35%, #3d8a7a, #123a34); }

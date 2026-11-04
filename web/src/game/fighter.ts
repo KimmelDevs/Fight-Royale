@@ -34,7 +34,10 @@ export const STOCKS = 3;
 export const RANGED_COMBO_REST = 2;
 const PCT_PER_DMG = 0.07;
 
-export interface Intent { attack: boolean; block: boolean; jump: boolean; skill: string; move: THREE.Vector3 }
+export interface Intent { attack: boolean; block: boolean; jump: boolean; skill: string; move: THREE.Vector3; dash: THREE.Vector3 }
+export const DASH_CD = 6;
+const DASH_T = 0.2;
+const DASH_SPEED = 14;
 export interface Brain { think(f: Fighter, dt: number): void }
 
 /** Anything that can be hit: fighters and mobs. */
@@ -65,7 +68,11 @@ export class Fighter implements Entity {
   /** Network peer id that controls this fighter ("" = host / local). */
   owner = "";
 
-  intent: Intent = { attack: false, block: false, jump: false, skill: "", move: new THREE.Vector3() };
+  intent: Intent = { attack: false, block: false, jump: false, skill: "", move: new THREE.Vector3(), dash: new THREE.Vector3() };
+  dashCd = 0;
+  private dashT = 0;
+  private dashDir = new THREE.Vector3();
+  onDash: (f: Fighter) => void = () => {};
 
   maxHp: number; maxGuard: number; moveSpeed: number; walkSpeed: number; parryWindow: number; jumpV: number;
   attacks: Record<string, Attack>;
@@ -182,13 +189,16 @@ export class Fighter implements Entity {
   update(dt: number) {
     if (this.puppet) { this.updatePuppet(dt); return; }
     const it = this.intent;
-    it.attack = false; it.block = false; it.jump = false; it.skill = ""; it.move.set(0, 0, 0);
+    it.attack = false; it.block = false; it.jump = false; it.skill = ""; it.move.set(0, 0, 0); it.dash.set(0, 0, 0);
     if (this.out) { this.waitRespawn(dt); return; }
     if (this.brain && this.state !== S.KO && this.state !== S.WIN) this.brain.think(this, dt);
     if (!this.onGround) it.block = false;
     this.stateT += dt;
     for (const k in this.cooldowns) this.cooldowns[k] = Math.max(this.cooldowns[k] - dt, 0);
     this.atkLock = Math.max(this.atkLock - dt, 0);
+    this.dashCd = Math.max(this.dashCd - dt, 0);
+    this.dashT = Math.max(this.dashT - dt, 0);
+    this.readDash();
     this.wardT = Math.max(this.wardT - dt, 0);
     this.rageT = Math.max(this.rageT - dt, 0);
     this.counterT = Math.max(this.counterT - dt, 0);
@@ -230,6 +240,23 @@ export class Fighter implements Entity {
   }
 
   // --- input -> actions ---------------------------------------------------------
+  /** Double-tapped direction: a quick burst that dodges hits (6 s cooldown). */
+  private readDash() {
+    const d = this.intent.dash;
+    if (d.lengthSq() < 0.01 || this.dashCd > 0) return;
+    if (![S.IDLE, S.BLOCK, S.CHARGE, S.ATTACK].includes(this.state)) return; // dash cancels attacks, not hitstun
+    const dir = d.clone().setY(0);
+    if (this.stage) { if (Math.abs(dir.x) < 0.3) return; dir.set(Math.sign(dir.x), 0, 0); this.facing = dir.x; }
+    dir.normalize();
+    if (this.state !== S.IDLE) { if (this.state === S.ATTACK) this.finishAttack(); this.holding = false; this.setState(S.IDLE); }
+    this.dashDir.copy(dir);
+    this.dashT = DASH_T;
+    this.dashCd = DASH_CD;
+    this.invulnT = Math.max(this.invulnT, DASH_T + 0.05);
+    this.onDash(this);
+  }
+  dashing() { return this.dashT > 0; }
+
   private readAttack(dt: number) {
     const on = this.intent.attack;
     const pressed = on && !this.atkPrev;
@@ -336,6 +363,13 @@ export class Fighter implements Entity {
       let d = target - this.root.rotation.y;
       d = Math.atan2(Math.sin(d), Math.cos(d));
       this.root.rotation.y += d * (1 - Math.exp(-12 * dt));
+    }
+    if (this.dashT > 0) {
+      pos.addScaledVector(this.dashDir, DASH_SPEED * dt);
+      const fl = Math.hypot(pos.x, pos.z);
+      if (fl > this.arenaRadius) { pos.x *= this.arenaRadius / fl; pos.z *= this.arenaRadius / fl; }
+      if (this.state !== S.KO) this.model.rotation.y = this.viewBias;
+      return;
     }
     let v = 0;
     let walking = false;
@@ -533,6 +567,7 @@ export class Fighter implements Entity {
       else if (!mx) this.vx *= Math.exp(-1.2 * dt);
       if (this.state === S.ATTACK && this.atk && this.atkPhase <= 1 && this.atk.lunge > 3) this.vx = this.facing * Math.max(Math.abs(this.vx), this.atk.lunge * 0.6);
     }
+    if (this.dashT > 0) { this.vx = this.dashDir.x * DASH_SPEED * 1.1; if (!this.onGround) this.velY = Math.max(this.velY, 0.5); }
     pos.x += this.vx * dt;
     // Main stage walls: can't pass through its sides.
     for (const p of this.stage!.plats) {
@@ -656,7 +691,7 @@ export class Fighter implements Entity {
       this.state, this.poseName, this.poseSpeed, Math.round(this.hp), Math.round(this.guard),
       +this.model.walk.toFixed(2), +this.model.charge.toFixed(2), this.trail.emitting ? 1 : 0,
       +this.model.recoil.toFixed(2), this.cooldowns.z, this.cooldowns.x, this.cooldowns.c, this.maxHp,
-      +this.pct.toFixed(1), this.stocks, this.out ? 1 : 0, +this.atkLock.toFixed(2)];
+      +this.pct.toFixed(1), this.stocks, this.out ? 1 : 0, +this.atkLock.toFixed(2), +this.dashCd.toFixed(2)];
   }
 
   applySnapshot(s: any[]) {
@@ -675,7 +710,7 @@ export class Fighter implements Entity {
     this.cooldowns.z = s[14]; this.cooldowns.x = s[15]; this.cooldowns.c = s[16];
     this.maxHp = s[17];
     if (s.length > 18) {
-      this.pct = s[18]; this.stocks = s[19]; this.atkLock = s[21] ?? 0;
+      this.pct = s[18]; this.stocks = s[19]; this.atkLock = s[21] ?? 0; this.dashCd = s[22] ?? 0;
       const out = s[20] === 1;
       if (out !== this.out) { this.out = out; this.root.visible = !out; if (!out) this.root.position.copy(this.netPos); }
     }
@@ -692,6 +727,7 @@ export class Fighter implements Entity {
     this.root.rotation.y += d * k;
     for (const key in this.cooldowns) this.cooldowns[key] = Math.max(this.cooldowns[key] - dt, 0);
     this.atkLock = Math.max(this.atkLock - dt, 0);
+    this.dashCd = Math.max(this.dashCd - dt, 0);
     if (this.state !== S.KO) this.model.rotation.y = this.viewBias;
     this.model.setBarrier(this.state === S.BLOCK && this.kit === "mage");
     this.model.blend(this.poses[this.poseName] ?? this.poses.idle, dt, this.poseSpeed);
