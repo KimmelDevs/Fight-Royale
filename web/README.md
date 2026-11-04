@@ -98,7 +98,6 @@ _Generated from the game code by `npm run balance` — edit the code, then re-ru
 | Nyx | Shadow Blade | Assassin - Twin Daggers | assassin | shadow | female | `#3a3550` | `#b3a8e6` | `#7b2cbf` / `#e0aaff` | `#bf66ff` | - |
 | Rook | Iron Fist | Brawler - Knuckles | knuckles | force | male | `#ff8a3d` | `#e0a6a6` | `#b34a12` / `#ffd27a` | `#ffbf4d` | - |
 | Kira | Tempest Kicker | Martial Artist - Kicks | kicks | chi | female | `#2a2420` | `#b8a8c8` | `#16736b` / `#7af0d6` | `#4dffd2` | - |
-| Leon | Dawn Paladin | Paladin - Greatsword | greatsword | light | male | `#e8c45a` | `#d8b8a0` | `#b8860b` / `#ffe680` | `#ffe680` | - |
 | Raven | Hex Weaver | Mage - Electric | mage | electric | female | `#2a2a3a` | `#a8a8c8` | `#1aa874` / `#5dffc0` | `#5dffc0` | - |
 | Ash | Crimson Hunter | Archer - Longbow | bow | blood | male | `#b8bcc8` | `#a8a8c0` | `#b01a2a` / `#ff7a7a` | `#ff4d4d` | - |
 
@@ -107,7 +106,7 @@ _Generated from the game code by `npm run balance` — edit the code, then re-ru
 | Kit | HP | Guard | Run speed | Walk speed | Parry window (s) | Jump | Fighters | Light combo dmg | Combo time (s) | Combo DPS | Charged dmg (x1.5 at full) |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | knight | 2500 | 100 | 3.2 | 2.6 | 0.16 | 7 | Aster, Vesper | 244 | 1.63 | 150 | 190 -> 285 |
-| greatsword | 2750 | 120 | 2.9 | 2.3 | 0.14 | 6.5 | Garrick, Leon | 420 | 2.56 | 164 | 320 -> 480 |
+| greatsword | 2750 | 120 | 2.9 | 2.3 | 0.14 | 6.5 | Garrick | 420 | 2.56 | 164 | 320 -> 480 |
 | katana | 2200 | 80 | 3.8 | 3 | 0.2 | 7.5 | Kaede | 243 | 1.32 | 184 | 230 -> 345 |
 | mage | 2100 | 80 | 3.4 | 2.6 | 0.16 | 7 | Ember, Marina, Raven | 241 | 1.67 | 144 | 210 -> 315 |
 | assassin | 2000 | 60 | 4.2 | 3.4 | 0.22 | 8.2 | Nyx | 219 | 1.54 | 142 | 170 -> 255 |
@@ -279,15 +278,6 @@ Z / X / C are the default loadout; V is the locked bonus skill (unlock: 2000 gol
 | X | Crescent Gale | projectile | 110 | 30 | 0.14 / 0.08 / 0.35 | 3 | 0.45 | 6s | 1 x proj, speed 20, pierces |
 | C | Hundred Kicks | strike | 40 | 10 | 0.15 / 0.08 / 0.6 | 0.8 | 0.3 | 10s | at target, radius 1.5, lands after 0.2s, x8 every 0.06s |
 | V | Dragon Ascent | melee | 170 | 40 | 0.08 / 0.12 / 0.4 | 5 | 0.7 | 8s | reach 1.9, lunge 3, self-launch 8, staggers |
-
-#### Leon (greatsword, light)
-
-| Key | Name | Type | Dmg | Guard dmg | Wind / active / recover (s) | Knock | Stun (s) | CD | Notes |
-|---|---|---|---|---|---|---|---|---|---|
-| Z | Ground Slam | strike | 150 | 50 | 0.3 / 0.08 / 0.5 | 7 | 0.6 | 6s | around self, radius 2.6, lands after 0.05s |
-| X | Whirlwind | strike | 60 | 20 | 0.12 / 0.08 / 0.4 | 2 | 0.3 | 7s | around self, radius 2.1, lands after 0.05s, x4 every 0.18s |
-| C | Titan Cleave | strike | 340 | 90 | 0.4 / 0.08 / 0.7 | 9 | 1 | 12s | at target, radius 2, lands after 0.55s, heavy |
-| V | Berserk | buff | - | - | 0.2 / 0.08 / 0.4 | - | - | 14s | rage 6s |
 
 #### Raven (mage, electric)
 
