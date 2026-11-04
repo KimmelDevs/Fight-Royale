@@ -86,7 +86,7 @@ export const CHARACTERS: Character[] = [
   { id: "rook", title: "Iron Fist", role: "Brawler - Knuckles",
     desc: "Closes the gap and never stops punching. Five-hit combos and a crater-making slam.",
     stats: { power: 4, speed: 5, range: 1, defense: 3 },
-    look: { name: "Rook", body: "m", kit: "knuckles", element: "force", outfit: "brawler", style: "short", hat: "none",
+    look: { name: "Rook", body: "m", vrm: "rook", kit: "knuckles", element: "force", outfit: "brawler", style: "short", hat: "none",
       hair: "#ff8a3d", hair_shade: "#e0a6a6", iris_top: "#b34a12", iris_bottom: "#ffd27a", eye_dark: "#331405",
       tunic: "#c8312c", band: "#f5d06b", pants: "#2a2a33", boots: "#2a2a33", metal: "#e0c066", trim: "#f5d06b",
       cape: "#c8312c", cape_bottom: "#ff8a3d", glow: "#ffbf4d", shield: "#c8312c", emblem: "#f5d06b" } },

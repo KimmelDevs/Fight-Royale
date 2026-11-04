@@ -112,7 +112,7 @@ export default function App() {
           <span>{label("skill1")} {label("skill2")} {label("skill3")} skills</span><span>Esc: pause</span>
           <span>Win a 1v1: +250 gold. Survival: gold for every mob.</span>
         </div>
-        <p className="credits">3D characters made with VRoid Studio. Aster, Vesper, Garrick, Kaede, Raven and Ember models by Fruit.</p>
+        <p className="credits">3D characters made with VRoid Studio. Aster, Vesper, Garrick, Kaede, Rook, Raven and Ember models by Fruit.</p>
       </div>
     </div>
   );
