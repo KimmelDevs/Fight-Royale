@@ -51,7 +51,7 @@ export const CHARACTERS: Character[] = [
   { id: "ember", title: "Flame Witch", role: "Mage - Fire",
     desc: "Fireballs at range, explosive charged blasts, and a meteor to end the fight.",
     stats: { power: 5, speed: 3, range: 5, defense: 2 },
-    look: { name: "Ember", body: "f", kit: "mage", element: "fire", outfit: "mage", style: "twintails", hat: "witch",
+    look: { name: "Ember", body: "f", vrm: "ember", kit: "mage", element: "fire", outfit: "mage", style: "twintails", hat: "witch",
       hair: "#ff7448", hair_shade: "#d99eb3", iris_top: "#c0392b", iris_bottom: "#ffd166", eye_dark: "#4a1410",
       tunic: "#7a1f1f", band: "#fff2e0", pants: "#2a1414", boots: "#3a1a12", metal: "#c9b8a6", trim: "#e6c26e",
       cape: "#c0392b", cape_bottom: "#ffb347", glow: "#ff8026", shield: "#7a1f1f", emblem: "#c0392b" } },
