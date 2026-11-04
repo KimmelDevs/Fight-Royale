@@ -810,6 +810,8 @@ export class FighterModel extends THREE.Group {
     // Left hand grips for shields, paired weapons, bows and two-handed swords; mages and
     // kickers keep it free and relaxed.
     this.vrmRig.grip = { left: !["mage", "kicks"].includes(this.kit), right: this.kit !== "kicks" };
+    // Staffs and bows follow the arm a lot (natural tilt); blades less, to keep swing arcs.
+    this.vrmRig.followArm = this.kit === "mage" ? 0.7 : this.kit === "bow" ? 0.5 : 0.3;
     for (const h of [this.hand_l, this.hand_r]) h.scale.multiplyScalar(VRM_WEAPON_SCALE);
     JN.forEach((n, i) => this.joints[n].quaternion.copy(save[i]));
     this.hips.position.copy(hipsPos);

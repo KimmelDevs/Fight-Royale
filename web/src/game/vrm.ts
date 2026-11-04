@@ -51,6 +51,7 @@ const _e = new THREE.Euler();
 const TAU = Math.PI * 2;
 const D = (deg: number) => (deg * Math.PI) / 180;
 const rx = (a: number) => new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), a);
+const rz = (a: number) => new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), a);
 
 /** What the procedural model is doing, for the natural-motion layer. */
 export interface MotionInfo { t: number; walk: number; phase: number; crouch: number }
@@ -80,6 +81,8 @@ export class VrmRig {
   private nameOf = new Map<THREE.Object3D, string>();
   /** Which hands hold a weapon (curl into a grip) vs hang free (relaxed curl). */
   grip = { left: false, right: true };
+  /** 0 = hands keep the pose angle exactly, 1 = hands follow the forearm. */
+  followArm = 0.35;
   private hipsBone: THREE.Object3D | null;
   private hipsRest = new THREE.Vector3();
   private hipsBoneRest = new THREE.Vector3();
@@ -213,7 +216,21 @@ export class VrmRig {
       const flex = Math.min(D(16) + elev * 0.3 + Math.sin(t * TAU / 3.8 + 1) * D(2) * idle, D(75));
       // Forearm bends toward the front of the arm (around the arm's local Y).
       setLocal(B(`${side}LowerArm`), 0, -sgn * flex, 0);
-      set(B(`${side}Hand`), deltaOf(hk.joint, hk.rest).multiply(hk.cal));
+      // Hand: blend the pose's absolute hand angle with "follow the forearm", so held weapons
+      // tilt and sway with the arm instead of staying rigidly at the pose angle.
+      const handAbs = deltaOf(hk.joint, hk.rest).multiply(hk.cal);
+      const fore = B(`${side}LowerArm`);
+      const handB = B(`${side}Hand`);
+      if (fore && handB) {
+        const follow = quatIn(root, fore, new THREE.Quaternion()).multiply(rz(-sgn * D(10)));
+        set(handB, handAbs.clone().slerp(follow, this.followArm));
+        // Weapon mount (procedural hand) takes the VRM hand's final orientation.
+        const vrmHandRoot = quatIn(root, handB, new THREE.Quaternion());
+        const procRoot = vrmHandRoot.multiply(_q2.copy(hk.cal).invert()).multiply(hk.rest);
+        const parentRoot = quatIn(root, hk.joint.parent!, new THREE.Quaternion()).invert();
+        hk.joint.quaternion.copy(parentRoot.multiply(procRoot));
+        hk.joint.updateMatrixWorld(true);
+      }
       // Fingers: a closed grip around a weapon, a soft natural curl on a free hand.
       const g = this.grip[side];
       FINGERS.forEach((f, fi) => SEGS.forEach((seg, si) => {
