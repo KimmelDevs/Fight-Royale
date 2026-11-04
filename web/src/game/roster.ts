@@ -44,7 +44,7 @@ export const CHARACTERS: Character[] = [
   { id: "kaede", title: "Moonlit Blade", role: "Samurai - Katana",
     desc: "Lightning-quick draws, a counter stance that punishes, and a storm of cuts.",
     stats: { power: 4, speed: 4, range: 3, defense: 3 },
-    look: { name: "Kaede", body: "f", kit: "katana", element: "moon", outfit: "samurai", style: "ponytail", hat: "none",
+    look: { name: "Kaede", body: "f", vrm: "kaede", kit: "katana", element: "moon", outfit: "samurai", style: "ponytail", hat: "none",
       hair: "#1f2235", hair_shade: "#a9a6d6", iris_top: "#b3243a", iris_bottom: "#ff9aa8", eye_dark: "#2a0d16",
       tunic: "#f2efe8", band: "#b3243a", pants: "#1f2235", boots: "#1f2235", metal: "#cfd4e6", trim: "#e6c26e",
       cape: "#2a2d4a", cape_bottom: "#4a5080", glow: "#ff5a73", shield: "#2a2d4a", emblem: "#b3243a" } },

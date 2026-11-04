@@ -450,6 +450,27 @@ export class Game implements MobHost {
     });
   }
 
+  /**
+   * Light-element blades shed glowing motes: a stream while swinging, an occasional soft
+   * sparkle at rest. Purely visual, so every peer runs it locally (no network events).
+   */
+  private moteT = new Map<Fighter, number>();
+  private bladeLight(dt: number) {
+    for (const f of this.fighters) {
+      if (f.look.element !== "light" || f.out || f.isDown() || !f.root.visible || !f.model.visible) continue;
+      let t = (this.moteT.get(f) ?? 0) - dt;
+      if (t <= 0) {
+        const base = f.model.bladeBase.getWorldPosition(new THREE.Vector3());
+        const tip = f.model.bladeTip.getWorldPosition(new THREE.Vector3());
+        const at = base.lerp(tip, 0.3 + Math.random() * 0.7);
+        const swinging = f.trail.emitting;
+        this.fx.motes(at, Math.random() < 0.6 ? "#fff3c4" : f.look.glow, swinging ? 4 : 2);
+        t = swinging ? 0.025 : 0.1 + Math.random() * 0.08;
+      }
+      this.moteT.set(f, t);
+    }
+  }
+
   private brainFor(f: Fighter): Brain {
     if (isCpu(f.owner)) return new AiBrain(this.threats, this.cfg.difficulty ?? 1);
     if (f.owner === this.cfg.localPeer) return new LocalBrain(this);
@@ -511,7 +532,7 @@ export class Game implements MobHost {
 
   // --- frame ---------------------------------------------------------------------------
   private frame(now: number, render: boolean) {
-    const realDt = Math.min((now - this.last) / 1000, 0.05);
+    const realDt = Math.max(0, Math.min((now - this.last) / 1000, 0.05)); // never negative
     this.last = now;
     if (this.stopUntil > 0 && now >= this.stopUntil) { this.stopUntil = 0; this.timeScale = 1; }
     const frozen = this.paused && this.cfg.role === "offline";
@@ -538,6 +559,7 @@ export class Game implements MobHost {
       if (this.cfg.mode === "survival") this.updateSurvival(dt);
     }
     for (const f of this.fighters) f.update(dt);
+    this.bladeLight(dt);
     for (const m of this.mobs) m.update(dt);
     this.updateProjectiles(dt);
     if (this.cfg.role !== "client") {
@@ -631,6 +653,7 @@ export class Game implements MobHost {
       case "slashes": fx.slashes(v3(a[0]), a[1]); break;
       case "arrows": fx.arrowRain(v3(a[0]), a[1], a[2], a[3]); break;
       case "embers": fx.embers(v3(a[0]), a[1], a[2]); break;
+      case "rocks": fx.rocks(v3(a[0]), a[1], a[2]); break;
       case "num": fx.number(v3(a[0]), a[1], a[2], a[3]); break;
       case "bubble": { const e = this.entities.get(a[0]); if (e) fx.bubble(e.root, a[1]); break; }
     }
@@ -653,6 +676,19 @@ export class Game implements MobHost {
   // --- attack resolution ----------------------------------------------------------------
   private onSwing(f: Fighter) {
     const a = f.atk!;
+    const el = f.look.element;
+    const big = ["z", "x", "c", "v", "heavy", "l3"].includes(f.atkId);
+    if (el === "earth" && big) {
+      // Earth skills and heavy blows crack the ground in front of the fighter.
+      const fwd = new THREE.Vector3(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
+      this.fxp("rocks", f.root.position.clone().addScaledVector(fwd, 1.1).setY(f.root.position.y), f.atkId === "heavy" || f.atkId === "v" ? 24 : 16, f.atkId === "heavy" ? 1.35 : 1);
+      this.add_trauma(f.atkId === "heavy" ? 0.4 : 0.25);
+    } else if (el === "light" && a.type === "melee") {
+      // Light: a bright flash and a burst of motes at the blade tip on every strike.
+      const tip = f.model.bladeTip.getWorldPosition(new THREE.Vector3());
+      this.fxp("flash", tip, "#fff6c8", big ? 0.26 : 0.18, 0.14, 0.7);
+      this.fxp("sparks", tip, "#fff2b0", big ? 18 : 8, 4);
+    }
     switch (a.type) {
       case "projectile": this.fireProjectiles(f, a); break;
       case "strike": this.runStrike(f, a, f.atkPower); break;
@@ -879,6 +915,7 @@ export class Game implements MobHost {
         this.fxp("num", hitPos.clone().add(new THREE.Vector3(0, 0.5, 0)), `${label}${crit ? "!" : ""}`,
           d.team === (this.local?.team ?? 0) && !this.isDuel() ? "#ff7b7b" : crit ? "#ffb347" : "#ffffff", crit ? 1.5 : 1);
         if (attacker instanceof Fighter && attacker.lifesteal > 0) attacker.heal(d.lastDamage * attacker.lifesteal);
+        if (attacker instanceof Fighter && attacker.look.element === "earth") this.fxp("rocks", d.root.position.clone(), heavy ? 12 : 6, heavy ? 0.9 : 0.6);
         const big = this.isDuel() || attacker instanceof Mob ? 1 : 0.5;
         this.add_trauma((a.heavy ? 0.5 : heavy ? 0.3 : 0.18) * big);
         this.hitStop(a.heavy ? 0.11 : heavy ? 0.07 : 0.045);

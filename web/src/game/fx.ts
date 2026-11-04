@@ -17,6 +17,11 @@ const RING = new THREE.TorusGeometry(0.95, 0.05, 6, 48).rotateX(Math.PI / 2);
 const WRING = new THREE.TorusGeometry(0.91, 0.09, 8, 48).rotateX(Math.PI / 2);
 const GEY = new THREE.CylinderGeometry(0.08, 0.22, 1, 16).translate(0, 0.5, 0);
 const DISC = new THREE.CylinderGeometry(1, 1, 0.01, 40);
+const ROCK = new THREE.DodecahedronGeometry(0.07, 0);
+const MOTE = new THREE.OctahedronGeometry(0.03, 0);
+const rockMats = ["#8a6a48", "#6e5a46", "#a08060", "#5c4a3a"].map((c) => new THREE.MeshLambertMaterial({ color: c }));
+const moteMats = new Map<string, THREE.Material>();
+const dustMat = new THREE.MeshBasicMaterial({ color: "#b89a74", transparent: true, opacity: 0.45, depthWrite: false });
 
 export class Fx {
   scene: THREE.Scene;
@@ -107,6 +112,24 @@ export class Fx {
 
   splash(pos: THREE.Vector3, amount = 16, size = 1, color = "#3a8cff") {
     this.burst(pos, DROP, M.additive(color, 0.85), amount, 5 * size, null, 0.6, 15, 0.8, size, false);
+  }
+
+  /** Earth: chunky rocks thrown up, a dust cloud and a ground crack ring. */
+  rocks(pos: THREE.Vector3, amount = 16, power = 1) {
+    const g = new THREE.Vector3(pos.x, Math.max(pos.y, 0.05), pos.z);
+    for (let k = 0; k < 2; k++) {
+      this.burst(g, ROCK, rockMats[(Math.random() * rockMats.length) | 0], Math.ceil(amount / 2), 6.5 * power, UP, 0.75, 20, 0.95, 1.5 * power, false);
+    }
+    this.burst(g, SPH, dustMat, 9, 2.2 * power, UP, 1.4, -0.6, 1.0, 0.32 * power, false);
+    this.ring(g, "#6a4a2a", 1.5 * power, 0.45, 0.85);
+    this.flash(g.clone().setY(g.y + 0.25), "#c8a070", 0.6 * power, 0.2, 0.5);
+  }
+
+  /** Light: small glowing motes that drift upward and fade. */
+  motes(pos: THREE.Vector3, color: string, amount = 4) {
+    let mat = moteMats.get(color);
+    if (!mat) { mat = M.additive(color, 0.95); moteMats.set(color, mat); }
+    this.burst(pos, MOTE, mat, amount, 1.1, UP, 1.2, -1.2, 0.7, 2.2, false);
   }
 
   embers(pos: THREE.Vector3, color: string, amount = 20) {

@@ -189,6 +189,7 @@ export class VrmRig {
    */
   update(dt: number, m: MotionInfo) {
     const j = this.j, root = j.root, vrm = this.vrm;
+    dt = Math.max(0, Math.min(dt, 0.1)); // smoothing below assumes a sane step
     const B = (n: VRMHumanBoneName) => vrm.humanoid.getNormalizedBoneNode(n);
     root.updateMatrixWorld(true);
     const t = m.t, walk = m.walk, idle = 1 - walk, ph = m.phase;
