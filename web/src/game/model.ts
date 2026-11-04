@@ -6,6 +6,7 @@ import * as M from "./mat";
 import { coneSheet, strand } from "./meshgen";
 import type { Look } from "./roster";
 import type { Pose } from "./kits";
+import { loadVrm, VrmRig } from "./vrm";
 
 const PI = Math.PI;
 const TAU = PI * 2;
@@ -90,6 +91,10 @@ export class FighterModel extends THREE.Group {
   charge = 0;
 
   private joints: Record<string, THREE.Group> = {};
+  /** Procedural body meshes (hidden once a VRM body is attached) and the VRM rig. */
+  private bodyMeshes: THREE.Object3D[] = [];
+  private vrmRig: VrmRig | null = null;
+  private disposed = false;
   private cur: Record<string, THREE.Vector3> = {};
   private hipsY = 0;
   private t = Math.random() * 10;
@@ -123,6 +128,8 @@ export class FighterModel extends THREE.Group {
       this.knightLegs(); this.knightSkirt(); this.knightTorso(); this.knightArms();
     }
     this.buildHead();
+    const before = new Set<THREE.Object3D>();
+    this.traverse((o) => { if ((o as THREE.Mesh).isMesh) before.add(o); });
     switch (look.kit) {
       case "mage": this.buildStaff(); break;
       case "assassin": this.buildDaggers(); break;
@@ -133,7 +140,11 @@ export class FighterModel extends THREE.Group {
       case "kicks": this.buildKicks(); break;
       default: this.buildSword(); this.buildShield();
     }
+    const weapons = new Set<THREE.Object3D>();
+    this.traverse((o) => { if ((o as THREE.Mesh).isMesh && !before.has(o)) weapons.add(o); });
     this.applyBody();
+    this.traverse((o) => { if ((o as THREE.Mesh).isMesh && !weapons.has(o) && !o.userData.outline) this.bodyMeshes.push(o); });
+    if (look.vrm) loadVrm(look.vrm).then((v) => this.attachVrm(v)).catch((e) => console.warn("VRM body", e));
     this.joints = { torso: this.torso, head: this.head, arm_r: this.arm_r, hand_r: this.hand_r,
       arm_l: this.arm_l, hand_l: this.hand_l, leg_l: this.leg_l, leg_r: this.leg_r };
     for (const j of JOINTS) this.cur[j] = new THREE.Vector3();
@@ -752,6 +763,7 @@ export class FighterModel extends THREE.Group {
     this.cape.rotation.set(0.08 + 0.3 * this.walk + 0.3 * this.recoil + Math.sin(this.t * 2.1) * 0.03, 0, Math.sin(this.t * 1.7) * 0.03);
     this.hairSway.forEach((h, i) => { h.rotation.x = 0.1 * this.walk + 0.25 * this.recoil + Math.sin(this.t * 2 + i) * 0.05; });
     if (this.gripL) this.reachGrip();
+    this.vrmRig?.update(dt);
     this.glowMat.color.copy(this.glowBase).lerp(new THREE.Color(1, 1, 1), this.charge * (0.5 + 0.3 * Math.sin(this.t * 30)));
     this.updateBlink(dt);
     this.updateFlash(dt);
@@ -772,6 +784,33 @@ export class FighterModel extends THREE.Group {
     this.hand_l.rotation.set(0, 0, 0);
   }
 
+  /** Swaps the procedural body for a VRM driven by the same joints (weapons stay). */
+  private attachVrm(vrm: import("@pixiv/three-vrm").VRM) {
+    if (this.vrmRig || this.disposed) return;
+    const JN = ["torso", "head", "arm_r", "hand_r", "arm_l", "hand_l", "leg_l", "leg_r"] as const;
+    const save = JN.map((n) => this.joints[n].quaternion.clone());
+    const hipsPos = this.hips.position.clone();
+    const rootQ = this.quaternion.clone();
+    const rootP = this.position.clone();
+    JN.forEach((n) => this.joints[n].quaternion.identity());
+    this.hips.position.set(0, HIP, 0);
+    this.quaternion.identity();
+    this.updateMatrixWorld(true);
+    const box = new THREE.Box3();
+    const inv = this.matrixWorld.clone().invert();
+    for (const m of this.bodyMeshes) box.union(new THREE.Box3().setFromObject(m).applyMatrix4(inv));
+    this.vrmRig = new VrmRig(vrm, {
+      root: this, hips: this.hips, torso: this.torso, head: this.head, arm_l: this.arm_l, hand_l: this.hand_l,
+      arm_r: this.arm_r, hand_r: this.hand_r, leg_l: this.leg_l, leg_r: this.leg_r,
+    }, (box.max.y - Math.max(box.min.y, 0)) * 1.08);
+    for (const m of this.bodyMeshes) m.visible = false;
+    JN.forEach((n, i) => this.joints[n].quaternion.copy(save[i]));
+    this.hips.position.copy(hipsPos);
+    this.quaternion.copy(rootQ);
+    this.position.copy(rootP);
+    this.updateMatrixWorld(true);
+  }
+
   setBarrier(on: boolean) { if (this.barrier) this.barrier.visible = on; }
 
   private updateBlink(dt: number) {
@@ -782,10 +821,12 @@ export class FighterModel extends THREE.Group {
     }
     this.blinkT += dt / 0.14;
     this.faceMat.uniforms.blink.value = Math.sin(Math.min(this.blinkT, 1) * PI);
+    this.vrmRig?.setBlink(this.faceMat.uniforms.blink.value);
     if (this.blinkT >= 1) {
       this.blinkT = -1;
       this.blinkWait = 1.8 + Math.random() * 2.7;
       this.faceMat.uniforms.blink.value = 0;
+      this.vrmRig?.setBlink(0);
     }
   }
 

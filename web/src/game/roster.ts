@@ -8,6 +8,8 @@ export interface Look {
   cape: string; cape_bottom: string; glow: string; shield: string; emblem: string;
   /** Body type: "m" or "f" (proportions, eye size). */
   body?: "m" | "f";
+  /** VRoid VRM body in /models/<vrm>.vrm; replaces the procedural body once loaded. */
+  vrm?: string;
   ears?: boolean; cloak?: boolean;
 }
 
@@ -112,7 +114,7 @@ export const CHARACTERS: Character[] = [
   { id: "raven", title: "Hex Weaver", role: "Mage - Electric",
     desc: "A dark witch who bends green lightning to her will.",
     stats: { power: 5, speed: 3, range: 5, defense: 2 },
-    look: { name: "Raven", body: "f", kit: "mage", element: "electric", outfit: "mage", style: "bob", hat: "witch",
+    look: { name: "Raven", body: "f", vrm: "raven", kit: "mage", element: "electric", outfit: "mage", style: "bob", hat: "witch",
       hair: "#2a2a3a", hair_shade: "#a8a8c8", iris_top: "#1aa874", iris_bottom: "#5dffc0", eye_dark: "#0a2a1a",
       tunic: "#1a1a2a", band: "#e8e8f0", pants: "#1a1a2a", boots: "#1a1a2a", metal: "#c8c8d8", trim: "#9a7aff",
       cape: "#3a2a5a", cape_bottom: "#3dffb0", glow: "#5dffc0", shield: "#1a1a2a", emblem: "#3a2a5a" } },
