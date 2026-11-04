@@ -831,7 +831,7 @@ export class FighterModel extends THREE.Group {
     const L = this.look;
     for (const c of [...this.shieldNode.children]) c.visible = false;
     const k = 1 / VRM_WEAPON_SCALE;
-    const W = 0.5 * k, H = 0.78 * k;
+    const W = 0.42 * k, H = 0.66 * k;
     const heater = (w: number, h: number) => {
       const s = new THREE.Shape();
       s.moveTo(-w / 2, h * 0.42);

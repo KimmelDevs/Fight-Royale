@@ -102,6 +102,8 @@ export class VrmRig {
   staff = false;
   /** Left hand carries a big shield that always faces front. */
   shield = false;
+  private shieldRaise = 0;
+  private shieldPos = new THREE.Vector3();
   private staffDir = new THREE.Vector3();
   private staffVel = new THREE.Vector3();
   private hipsBone: THREE.Object3D | null;
@@ -237,7 +239,11 @@ export class VrmRig {
       set(B(`${side}UpperArm`), target);
       const dir = new THREE.Vector3(sgn, 0, 0).applyQuaternion(target);
       const elev = dir.angleTo(new THREE.Vector3(0, -1, 0));
-      const flex = Math.min(D(16) + elev * 0.3 + Math.sin(t * TAU / 3.8 + 1) * D(2) * idle, D(75));
+      // A shield arm stays bent (~90 deg), holding the shield close instead of reaching out.
+      if (this.shield && side === "left") this.shieldRaise = THREE.MathUtils.clamp((elev - D(45)) / D(50), 0, 1);
+      const flex = this.shield && side === "left"
+        ? D(55)
+        : Math.min(D(16) + elev * 0.3 + Math.sin(t * TAU / 3.8 + 1) * D(2) * idle, D(75));
       // Forearm bends toward the front of the arm (around the arm's local Y).
       setLocal(B(`${side}LowerArm`), 0, -sgn * flex, 0);
       // Hand: blend the pose's absolute hand angle with "follow the forearm", so held weapons
@@ -312,11 +318,54 @@ export class VrmRig {
         set(foot, parentQ.clone().slerp(I, 0.75));
       }
     }
+    if (this.shield) this.shieldArm(dt, set);
     this.first = false;
 
     vrm.update(dt);
     this.pinHand(j.hand_r, j.arm_r, "rightHand", "rightLowerArm");
-    this.pinHand(j.hand_l, j.arm_l, "leftHand", "leftLowerArm");
+    if (this.shield) {
+      // Shield mount (procedural hand) at the guard spot.
+      j.hand_l.position.copy(j.arm_l.worldToLocal(root.localToWorld(this.shieldPos.clone())));
+      j.hand_l.updateMatrixWorld(true);
+    } else this.pinHand(j.hand_l, j.arm_l, "leftHand", "leftLowerArm");
+  }
+
+  /**
+   * Shield arm. The shield sits at a guard spot in front of the chest and belly, a little
+   * to the left (top near the chin), rising to the face only while the pose blocks. Two-bone
+   * IK puts the VRM hand on the grip behind the shield, elbow down and out.
+   */
+  private shieldArm(dt: number, set: (b: THREE.Object3D | null, q: THREE.Quaternion) => void) {
+    const root = this.j.root, h = this.vrm.humanoid;
+    const N = (n: VRMHumanBoneName) => h.getNormalizedBoneNode(n);
+    const chest = N("upperChest") ?? N("chest"), up = N("leftUpperArm"), lo = N("leftLowerArm"), hand = N("leftHand");
+    if (!chest || !up || !lo || !hand) return;
+    const P = (o: THREE.Object3D) => root.worldToLocal(o.getWorldPosition(new THREE.Vector3()));
+    const r = this.shieldRaise;
+    const want = P(chest).add(new THREE.Vector3(0.14 - 0.04 * r, -0.2 + 0.2 * r, 0.27 + 0.06 * r));
+    if (this.shieldPos.lengthSq() === 0) this.shieldPos.copy(want);
+    else this.shieldPos.lerp(want, 1 - Math.exp(-14 * dt));
+
+    // Grip is just behind the shield face.
+    const T = this.shieldPos.clone().add(new THREE.Vector3(0, 0, -0.06));
+    const S = P(up), E0 = P(lo), H0 = P(hand);
+    const L1 = S.distanceTo(E0), L2 = E0.distanceTo(H0);
+    const toT = T.clone().sub(S);
+    const d = Math.min(toT.length(), (L1 + L2) * 0.999);
+    const dir = toT.normalize();
+    const pole = new THREE.Vector3(0.6, -1, -0.35).normalize(); // elbow out, down, back
+    const n = new THREE.Vector3().crossVectors(dir, pole).normalize();
+    const a = Math.acos(THREE.MathUtils.clamp((L1 * L1 + d * d - L2 * L2) / (2 * L1 * d), -1, 1));
+    const e = dir.clone().applyAxisAngle(n, -a);
+    if (e.dot(pole) < 0) e.copy(dir).applyAxisAngle(n, a);
+    const elbow = S.clone().addScaledVector(e, L1);
+    const f = T.clone().sub(elbow).normalize();
+    const X = new THREE.Vector3(1, 0, 0); // left arm bones point +X in the T-pose
+    const qUp = new THREE.Quaternion().setFromUnitVectors(X, e);
+    const qLo = new THREE.Quaternion().setFromUnitVectors(e, f).multiply(qUp);
+    set(up, qUp);
+    set(lo, qLo);
+    set(hand, qLo.clone());
   }
 
   /** Moves the procedural hand (weapon mount) onto the VRM palm. */
