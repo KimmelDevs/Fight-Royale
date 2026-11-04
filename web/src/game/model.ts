@@ -30,6 +30,7 @@ const BODY = {
 
 type V3 = [number, number, number];
 const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+const _up = new THREE.Vector3(0, 1, 0);
 const col = (c: string) => new THREE.Color(c);
 
 const geoCache = new Map<string, THREE.BufferGeometry>();
@@ -91,6 +92,13 @@ export class FighterModel extends THREE.Group {
   walk = 0;
   recoil = 0;
   charge = 0;
+  /** Bow draw 0..1 (string pulled back to the anchor). */
+  draw = 0;
+  private bowPivot: THREE.Group | null = null;
+  private bowString: THREE.Mesh[] | null = null;
+  private bowArrow: THREE.Group | null = null;
+  private bowNockTop: THREE.Vector3 | null = null;
+  private bowNockBot: THREE.Vector3 | null = null;
   /** Attacking, charging, blocking or reeling (set by the fighter each frame). */
   combat = false;
   /** Reeling from a hit (hitstun / stagger). */
@@ -675,21 +683,95 @@ export class FighterModel extends THREE.Group {
     mesh(this.torso, cyl(0.022, 0.022, 0.9, 10), this.tn(L.pants), [0.15, -0.05, -0.05], [0.4, 0, 1.25]);
   }
 
+  /**
+   * Recurve longbow in the left hand. Limbs run along local +-Z (vertical when the arm points
+   * forward); +Y is the archer's side. Thick riser with a leather grip and metal collars,
+   * tapered limbs that curve toward the archer and flick away at the recurve tips, glowing
+   * runes on the back, and a string (two segments) that the draw hand pulls back.
+   */
   private buildBow() {
     const L = this.look;
     const b = pivot(this.hand_l, [0, 0, 0]);
-    // Limbs run along local +-Z (vertical when the arm points forward), curving toward the archer.
-    mesh(b, cyl(0.022, 0.022, 0.12, 10), this.tn(BROWN));
-    mesh(b, cyl(0.01, 0.019, 0.52, 8), this.tn(L.band), [0, 0.05, 0.29], [1.373, 0, 0]);
-    mesh(b, cyl(0.01, 0.019, 0.52, 8), this.tn(L.band), [0, 0.05, -0.29], [-1.373, 0, 0]);
-    for (const z of [0.55, -0.55]) mesh(b, sphere(0.018, 8), this.tn(L.trim), [0, 0.1, z]);
-    const string = mesh(b, cyl(0.003, 0.003, 1.1, 4), M.glow("#f4f0e0"), [0, 0.1, 0], [PI / 2, 0, 0]);
-    string.castShadow = false;
-    mesh(b, sphere(0.02, 10), this.gem(), [0, -0.02, 0]);
+    this.bowPivot = b;
+    const wood = this.tn(L.band);
+    const dark = this.tn("#2a1712");
+    const metal = this.metal();
+    // Riser: a solid, slightly sculpted center section.
+    mesh(b, box(0.05, 0.055, 0.3), this.tn(L.tunic), [0, -0.012, 0]);
+    mesh(b, cyl(0.027, 0.027, 0.13, 12), dark, [0, 0, 0], [PI / 2, 0, 0], [1, 1, 1.15]);
+    for (const z of [0.075, -0.075]) mesh(b, cyl(0.031, 0.031, 0.016, 12), metal, [0, 0, z], [PI / 2, 0, 0]);
+    mesh(b, box(0.03, 0.02, 0.025), metal, [0, 0.03, 0.09]); // arrow shelf
+    mesh(b, sphere(0.02, 10), this.gem(), [0, -0.045, 0]);
+    // Limb profile (z, y) from the riser to the tip; mirrored for the lower limb.
+    const prof: [number, number][] = [[0.15, 0], [0.27, 0.026], [0.39, 0.065], [0.5, 0.105], [0.59, 0.135], [0.65, 0.14], [0.69, 0.12], [0.72, 0.09]];
+    const rad = (i: number) => 0.019 - (0.011 * i) / (prof.length - 1);
+    for (const sg of [1, -1]) {
+      for (let i = 0; i < prof.length - 1; i++) {
+        const p = v(0, prof[i][1], prof[i][0] * sg), q = v(0, prof[i + 1][1], prof[i + 1][0] * sg);
+        const d = q.clone().sub(p);
+        const len = d.length() + 0.004;
+        const rot: V3 = [Math.atan2(d.z, d.y), 0, 0];
+        mesh(b, cyl(rad(i + 1), rad(i), len, 8), wood, p.clone().add(q).multiplyScalar(0.5), rot, [1.7, 1, 0.7]);
+        if (i > 0 && i < prof.length - 3) {
+          const rune = mesh(b, box(0.012, len * 0.8, 0.004), this.glowMat, p.clone().add(q).multiplyScalar(0.5).add(v(0, -0.012, 0)), rot);
+          rune.castShadow = false;
+        }
+      }
+      const tip = prof[prof.length - 1];
+      mesh(b, cyl(0, 0.012, 0.05, 6), this.tn(L.trim), [0, tip[1] - 0.012, (tip[0] + 0.018) * sg], [sg > 0 ? 0.6 : PI - 0.6, 0, 0]);
+    }
+    // String: leaves the limbs where the recurve flips; nock point follows the draw hand.
+    this.bowNockTop = v(0, 0.14, 0.655);
+    this.bowNockBot = v(0, 0.14, -0.655);
+    const strMat = M.glow("#f4f0e0");
+    this.bowString = [0, 1].map(() => {
+      const m = mesh(b, cyl(0.0035, 0.0035, 1, 4), strMat);
+      m.castShadow = false;
+      return m;
+    });
+    // Nocked arrow, shown while drawing.
+    const ar = pivot(b, [0, 0.14, 0]);
+    mesh(ar, cyl(0.006, 0.006, 0.78, 6), this.tn(BROWN), [0, 0.39, 0]);
+    mesh(ar, cyl(0, 0.018, 0.07, 6), metal, [0, 0.81, 0]);
+    for (const a of [0, PI / 2]) mesh(ar, box(0.04, 0.09, 0.003), this.tn(L.trim), [0, 0.06, 0], [0, a, 0]);
+    ar.visible = false;
+    this.bowArrow = ar;
+    this.layoutBowString(this.bowNockTop.clone().setZ(0));
     this.bladeBase = this.hand_l;
     this.bladeTip = pivot(this.hand_l, [0, -0.12, 0]);
     this.shieldNode = this.hand_l;
     this.castPoint = this.hand_l;
+  }
+
+  /** String from tip to nock to tip; the nocked arrow points from the nock past the grip. */
+  private layoutBowString(nock: THREE.Vector3) {
+    const seg = (m: THREE.Mesh, a: THREE.Vector3, c: THREE.Vector3) => {
+      const d = c.clone().sub(a);
+      m.position.copy(a).add(c).multiplyScalar(0.5);
+      m.quaternion.setFromUnitVectors(_up, d.clone().normalize());
+      m.scale.set(1, d.length(), 1);
+    };
+    seg(this.bowString![0], this.bowNockTop!, nock);
+    seg(this.bowString![1], nock, this.bowNockBot!);
+    const ar = this.bowArrow!;
+    ar.position.copy(nock);
+    ar.quaternion.setFromUnitVectors(_up, v(0, -0.05, 0).sub(nock).normalize());
+  }
+
+  /** Pull the string toward the draw hand while drawing (0..1). */
+  private updateBow() {
+    const b = this.bowPivot!;
+    const rest = v(0, 0.14, 0);
+    let nock = rest;
+    if (this.draw > 0.01) {
+      b.updateWorldMatrix(true, false);
+      const hand = b.worldToLocal(this.hand_r.getWorldPosition(new THREE.Vector3()));
+      const pull = hand.sub(rest);
+      if (pull.length() > 0.85) pull.setLength(0.85);
+      nock = rest.clone().addScaledVector(pull, this.draw);
+    }
+    this.layoutBowString(nock);
+    this.bowArrow!.visible = this.draw > 0.25;
   }
 
   private buildDaggers() {
@@ -782,7 +864,8 @@ export class FighterModel extends THREE.Group {
     this.cape.rotation.set(0.08 + 0.3 * this.walk + 0.3 * this.recoil + Math.sin(this.t * 2.1) * 0.03, 0, Math.sin(this.t * 1.7) * 0.03);
     this.hairSway.forEach((h, i) => { h.rotation.x = 0.1 * this.walk + 0.25 * this.recoil + Math.sin(this.t * 2 + i) * 0.05; });
     if (this.gripL) this.reachGrip();
-    this.vrmRig?.update(dt, { t: this.t, walk: this.walk, phase: this.walkPhase, crouch: this.hipsY, combat: this.combat, hurt: this.hurt });
+    this.vrmRig?.update(dt, { t: this.t, walk: this.walk, phase: this.walkPhase, crouch: this.hipsY, combat: this.combat, hurt: this.hurt, draw: this.draw });
+    if (this.bowPivot) this.updateBow();
     this.glowMat.color.copy(this.glowBase).lerp(new THREE.Color(1, 1, 1), this.charge * (0.5 + 0.3 * Math.sin(this.t * 30)));
     this.updateBlink(dt);
     this.updateFlash(dt);
@@ -841,6 +924,8 @@ export class FighterModel extends THREE.Group {
     }
     if (this.kit === "greatsword") { this.vrmRig.restSword = true; this.vrmRig.grip.left = true; }
     if (this.kit === "knuckles") { this.vrmRig.boxer = true; this.vrmRig.bladed = 0.65; }
+    // A longbow is about 85-90% of body height.
+    if (this.kit === "bow") { this.vrmRig.archer = true; this.vrmRig.followArm = 0; this.bowPivot?.scale.setScalar(1.45); }
     for (const h of [this.hand_l, this.hand_r]) h.scale.multiplyScalar(VRM_WEAPON_SCALE);
     JN.forEach((n, i) => this.joints[n].quaternion.copy(save[i]));
     this.hips.position.copy(hipsPos);

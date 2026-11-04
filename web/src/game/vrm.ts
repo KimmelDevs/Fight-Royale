@@ -60,7 +60,7 @@ const rx = (a: number) => new THREE.Quaternion().setFromAxisAngle(new THREE.Vect
 const rz = (a: number) => new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), a);
 
 /** What the procedural model is doing, for the natural-motion layer. */
-export interface MotionInfo { t: number; walk: number; phase: number; crouch: number; combat?: boolean; hurt?: boolean }
+export interface MotionInfo { t: number; walk: number; phase: number; crouch: number; combat?: boolean; hurt?: boolean; draw?: number }
 
 /** Per-bone follow-through speed (1/s): lower = more lag and overlap. */
 const RATE: Partial<Record<VRMHumanBoneName, number>> = {
@@ -114,6 +114,9 @@ export class VrmRig {
   restSword = false;
   /** Fist fighter: high guard with bent elbows, staggered bladed stance, bounce and head weave. */
   boxer = false;
+  /** Archer: bow held upright across the aim line, string hand drawn to the jaw by IK. */
+  archer = false;
+  private drawW = 0;
   /** Sword reference points (base, tip, and a point off the cutting edge) for edge alignment. */
   blade: { base: THREE.Object3D; tip: THREE.Object3D; edge: THREE.Object3D } | null = null;
   private lastTip = new THREE.Vector3();
@@ -361,6 +364,7 @@ export class VrmRig {
       }
     }
     if (this.shield) this.shieldArm(dt, set);
+    if (this.archer) this.archerArms(dt, m.draw ?? 0, set);
     const setNow = (b: THREE.Object3D | null, target: THREE.Quaternion) => {
       if (!b) return;
       const parentQ = quatIn(root, b.parent!, new THREE.Quaternion()).invert();
@@ -423,6 +427,41 @@ export class VrmRig {
     set(up, qUp);
     set(lo, qLo);
     set(hand, qLo.clone());
+  }
+
+  /**
+   * Archer. The bow stands across the aim line (limbs up, canted ~10 degrees, string toward
+   * the archer), so it tips back for a sky volley. While drawing, IK pulls the string hand
+   * from the nock to an anchor beside the jaw with the elbow driving back and out.
+   */
+  private archerArms(dt: number, draw: number, set: (b: THREE.Object3D | null, q: THREE.Quaternion) => void) {
+    const j = this.j, root = j.root, h = this.vrm.humanoid;
+    const N = (n: VRMHumanBoneName) => h.getNormalizedBoneNode(n);
+    const P = (o: THREE.Object3D) => root.worldToLocal(o.getWorldPosition(new THREE.Vector3()));
+    const shL = N("leftUpperArm"), handL = N("leftHand"), head = N("head");
+    if (!shL || !handL || !head) return;
+    root.updateMatrixWorld(true);
+    const hl = P(handL);
+    const aim = hl.clone().sub(P(shL)).normalize();
+    // Bow mount: local Z (limbs) up and canted, local +Y toward the archer.
+    const up = new THREE.Vector3(-0.17, 1, 0).normalize();
+    const zAx = up.clone().addScaledVector(aim, -up.dot(aim)).normalize();
+    const yAx = aim.clone().negate();
+    const xAx = new THREE.Vector3().crossVectors(yAx, zAx).normalize();
+    const mount = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(xAx, yAx, zAx));
+    const parentRoot = quatIn(root, j.hand_l.parent!, new THREE.Quaternion()).invert();
+    j.hand_l.quaternion.copy(parentRoot.multiply(mount));
+    j.hand_l.updateMatrixWorld(true);
+    // Draw: nock (on the string, in front of the bow hand) to the anchor beside the jaw.
+    this.drawW += ((draw > 0.01 ? 1 : 0) - this.drawW) * (1 - Math.exp(-(draw > 0.01 ? 30 : 10) * dt));
+    if (this.drawW < 0.01) return;
+    const nock = hl.clone().addScaledVector(aim, -0.2);
+    const anchor = P(head).add(new THREE.Vector3(-0.07, -0.09, 0.05));
+    const e = draw * draw * (3 - 2 * draw);
+    const target = nock.lerp(anchor, e);
+    const handR = N("rightHand");
+    const from = handR ? P(handR) : target;
+    this.solveArm("right", from.lerp(target, this.drawW), new THREE.Vector3(-0.8, 0.15, -1), set);
   }
 
   /**

@@ -255,7 +255,15 @@ export class Fighter implements Entity {
     this.model.charge = this.state === S.CHARGE ? Math.min(this.stateT / CHARGE_MAX, 1) : Math.max(this.model.charge - dt * 4, 0);
     this.computePose();
     this.model.blend(this.poses[this.poseName] ?? this.poses.idle, dt, this.poseSpeed);
+    this.bowDraw(dt);
     this.trail.update(dt);
+  }
+
+  /** Archer: the string comes back during the wind-up / charge and snaps forward on release. */
+  private bowDraw(dt: number) {
+    if (this.kit !== "bow") return;
+    const drawing = this.poseName === "bow_w" || this.poseName === "rain_w" || this.poseName === "charge";
+    this.model.draw = drawing ? Math.min(this.model.draw + dt * 8, 1) : 0;
   }
 
   // --- input -> actions ---------------------------------------------------------
@@ -817,6 +825,7 @@ export class Fighter implements Entity {
     this.model.combat = [S.ATTACK, S.CHARGE, S.BLOCK, S.HITSTUN, S.STAGGER].includes(this.state);
     this.model.hurt = this.state === S.HITSTUN || this.state === S.STAGGER;
     this.model.blend(this.poses[this.poseName] ?? this.poses.idle, dt, this.poseSpeed);
+    this.bowDraw(dt);
     this.trail.update(dt);
   }
 }
