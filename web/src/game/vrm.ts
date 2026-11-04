@@ -75,7 +75,11 @@ export class VrmRig {
     vrm.scene.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(vrm.scene);
     box.applyMatrix4(root.matrixWorld.clone().invert());
-    this.scale = height / Math.max(box.max.y - box.min.y, 1e-3);
+    // Keep the VRoid model's real height (VRM is in meters, 1 game unit = 1 m), undoing the
+    // procedural body-type scale on the root. `height` only guards against broken files.
+    const rootScale = root.getWorldScale(new THREE.Vector3()).y || 1;
+    const h = box.max.y - box.min.y;
+    this.scale = h > 0.8 && h < 2.6 ? 1 / rootScale : height / Math.max(h, 1e-3);
     vrm.scene.scale.setScalar(this.scale);
     vrm.scene.position.y = -box.min.y * this.scale;
     vrm.scene.updateMatrixWorld(true);
