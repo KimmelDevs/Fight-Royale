@@ -4,6 +4,8 @@ import { CHARACTERS } from "@/game/roster";
 import * as Kits from "@/game/kits";
 import { LEVELS } from "@/game/ai";
 import { Preview } from "@/game/preview";
+import { account, useAccount } from "@/lib/account";
+import { CHARACTER_PRICE } from "@/game/economy";
 
 const CONTROLS: Record<string, string> = {
   knight: "Tap: 3-hit sword combo  -  Hold: charged slash  -  Block: shield",
@@ -49,7 +51,41 @@ export function Showcase({ index }: { index: number }) {
   );
 }
 
-export function InfoPanel({ index }: { index: number }) {
+/** Pick which 3 of the 4 skills go on Z / X / C. The bonus skill must be unlocked first. */
+function LoadoutEditor({ index }: { index: number }) {
+  const acc = useAccount();
+  const ch = CHARACTERS[index];
+  const atks = Kits.attacks(ch.look.kit, ch.look.element);
+  const slots = acc.loadout(ch.id);
+  const [msg, setMsg] = useState("");
+  const toggle = async (k: string) => {
+    setMsg("");
+    let next = slots.includes(k) ? slots.filter((s) => s !== k) : [...slots, k];
+    if (next.length > 3) next = next.slice(1);
+    if (next.length < 3) { setMsg("Pick exactly 3 skills"); return; }
+    try { await account.setLoadout(ch.id, ["z", "x", "c", "v"].filter((s) => next.includes(s))); }
+    catch (e: any) { setMsg(e.message); }
+  };
+  return (
+    <div className="loadout">
+      <div className="small">Loadout - click to swap (3 of 4):</div>
+      {(["z", "x", "c", "v"] as const).map((k) => {
+        const locked = k === "v" && !acc.ownsSkill(ch.id);
+        const on = slots.includes(k);
+        return (
+          <button key={k} className={"skill-pick" + (on ? " on" : "") + (locked ? " locked" : "")} disabled={locked}
+            title={atks[k].desc} onClick={() => toggle(k)}>
+            <b>{atks[k].name}</b><em>{locked ? "Locked - Shop" : `${atks[k].cd}s`}</em>
+          </button>
+        );
+      })}
+      {msg && <div className="error">{msg}</div>}
+    </div>
+  );
+}
+
+export function InfoPanel({ index, editable }: { index: number; editable?: boolean }) {
+  const acc = useAccount();
   if (index === RANDOM) {
     return (
       <div className="panel">
@@ -77,20 +113,30 @@ export function InfoPanel({ index }: { index: number }) {
       </div>
       <div className="small">{CONTROLS[ch.look.kit]}</div>
       <div className="small">HP {Kits.STATS[ch.look.kit].hp}</div>
-      {(["z", "x", "c"] as const).map((k) => (
-        <div key={k} className="skill"><b>[{k.toUpperCase()}] {atks[k].name}</b> - {atks[k].desc} <em>({atks[k].cd}s)</em></div>
-      ))}
+      {(() => {
+        const slots = editable && acc.owns(ch.id) ? acc.loadout(ch.id) : ["z", "x", "c"];
+        return ["Z", "X", "C"].map((key, i) => {
+          const a = atks[slots[i]];
+          return <div key={key} className="skill"><b>[{key}] {a.name}</b> - {a.desc} <em>({a.cd}s)</em></div>;
+        });
+      })()}
+      {editable && acc.owns(ch.id) && <LoadoutEditor index={index} />}
+      {editable && !acc.owns(ch.id) && (
+        <div className="locknote">Locked - unlock for {CHARACTER_PRICE.gold} gold or {CHARACTER_PRICE.diamonds} diamonds in the Shop.</div>
+      )}
     </div>
   );
 }
 
-export function CardRow({ current, onPick, allowRandom }: { current: number; onPick: (i: number) => void; allowRandom?: boolean }) {
+export function CardRow({ current, onPick, allowRandom, showLocks }: { current: number; onPick: (i: number) => void; allowRandom?: boolean; showLocks?: boolean }) {
+  const acc = useAccount();
   return (
     <div className="cards">
       {CHARACTERS.map((ch, i) => (
         <button key={ch.id} tabIndex={-1} onMouseDown={(e) => e.preventDefault()} className={"card" + (i === current ? " on" : "")} style={{ background: lum(ch.look.tunic) > 0.7 ? ch.look.cape : ch.look.tunic }} onClick={() => onPick(i)}>
           <b>{ch.look.name}</b>
           <span>{ch.role.split(" - ")[1] ?? ch.role}</span>
+          {showLocks && !acc.owns(ch.id) && <i className="lock">LOCKED</i>}
         </button>
       ))}
       {allowRandom && (
@@ -102,9 +148,10 @@ export function CardRow({ current, onPick, allowRandom }: { current: number; onP
   );
 }
 
-export default function Select({ purpose, onBack, onDone }: {
+export default function Select({ purpose, onBack, onDone, onShop }: {
   purpose: "duel" | "survival";
   onBack: () => void;
+  onShop: () => void;
   onDone: (player: number, cpu?: number, difficulty?: number) => void;
 }) {
   const [step, setStep] = useState(0);
@@ -113,6 +160,8 @@ export default function Select({ purpose, onBack, onDone }: {
   const [level, setLevel] = useState(1);
   const shown = step === 0 ? me : cpu;
   const n = CHARACTERS.length;
+  const acc = useAccount();
+  const myLocked = !acc.owns(CHARACTERS[me].id);
 
   const finish = () => {
     if (purpose === "survival") return onDone(me);
@@ -120,7 +169,7 @@ export default function Select({ purpose, onBack, onDone }: {
     if (c === RANDOM) { const opts = CHARACTERS.map((_, i) => i).filter((i) => i !== me); c = opts[Math.floor(Math.random() * opts.length)]; }
     onDone(me, c, level);
   };
-  const next = () => (purpose === "duel" && step === 0 ? setStep(1) : finish());
+  const next = () => (myLocked ? onShop() : purpose === "duel" && step === 0 ? setStep(1) : finish());
 
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
@@ -140,9 +189,9 @@ export default function Select({ purpose, onBack, onDone }: {
         <h1 style={{ color: step === 1 ? "#ffb3a8" : "#fff" }}>{step === 0 ? "CHOOSE YOUR FIGHTER" : "CHOOSE YOUR OPPONENT"}</h1>
         <div className="sub">{step === 0 ? "Click a card or use Left / Right. Drag to rotate. Enter: next." : `You: ${CHARACTERS[me].look.name}. Pick the CPU's fighter and difficulty.`}</div>
       </div>
-      <InfoPanel index={shown} />
+      <InfoPanel index={shown} editable={step === 0} />
       <div className="bottom">
-        <CardRow current={shown} onPick={(i) => (step === 0 ? setMe(i) : setCpu(i))} allowRandom={step === 1} />
+        <CardRow current={shown} onPick={(i) => (step === 0 ? setMe(i) : setCpu(i))} allowRandom={step === 1} showLocks={step === 0} />
         <div className="actions">
           {step === 1 && (
             <div className="levels">
@@ -156,7 +205,7 @@ export default function Select({ purpose, onBack, onDone }: {
           )}
           <div className="row">
             <button className="big ghost" onClick={() => (step === 1 ? setStep(0) : onBack())}>&lt; BACK</button>
-            <button className="big gold" onClick={next}>{purpose === "duel" && step === 0 ? "NEXT >" : "FIGHT!"}</button>
+            <button className="big gold" onClick={next}>{myLocked ? "UNLOCK IN SHOP" : purpose === "duel" && step === 0 ? "NEXT >" : "FIGHT!"}</button>
           </div>
         </div>
       </div>

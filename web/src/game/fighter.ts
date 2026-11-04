@@ -13,6 +13,7 @@ import { Trail } from "./fx";
 import * as Kits from "./kits";
 import type { Attack, Pose } from "./kits";
 import type { Look } from "./roster";
+import { emblemBonus, DEFAULT_LOADOUT } from "./economy";
 
 export enum S { IDLE, ATTACK, CHARGE, BLOCK, HITSTUN, STAGGER, KO, WIN }
 
@@ -106,7 +107,13 @@ export class Fighter implements Entity {
   private netPos = new THREE.Vector3();
   private netRot = 0;
 
-  constructor(look: Look, charIndex: number) {
+  /** Damage multiplier from Berserk, while rageT > 0. */
+  rageT = 0;
+
+  /**
+   * `loadout` picks which 3 of the kit's 4 skills sit on Z/X/C; `emblem` applies its stat bonus.
+   */
+  constructor(look: Look, charIndex: number, loadout: string[] = DEFAULT_LOADOUT, emblem?: { id: string; level: number }) {
     this.look = look;
     this.charIndex = charIndex;
     this.kit = look.kit;
@@ -116,6 +123,18 @@ export class Fighter implements Entity {
     this.hp = this.maxHp;
     this.guard = this.maxGuard;
     this.attacks = Kits.attacks(this.kit, look.element);
+    const pool = { z: this.attacks.z, x: this.attacks.x, c: this.attacks.c, v: this.attacks.v } as Record<string, Attack>;
+    const slots = loadout.length === 3 && new Set(loadout).size === 3 && loadout.every((k) => pool[k]) ? loadout : DEFAULT_LOADOUT;
+    ["z", "x", "c"].forEach((key, i) => { this.attacks[key] = pool[slots[i]]; });
+    if (emblem) {
+      const b = emblemBonus(emblem.id, emblem.level);
+      this.maxHp *= 1 + b.hp;
+      this.maxGuard *= 1 + b.guard;
+      this.dmgMult *= 1 + b.dmg;
+      this.critChance += b.crit;
+      this.cdMult *= 1 - b.cd;
+      this.moveSpeed *= 1 + b.speed;
+    }
     this.poses = Kits.poses(this.kit);
     this.root.rotation.order = "YXZ";
     this.model = new FighterModel(look);
@@ -136,6 +155,7 @@ export class Fighter implements Entity {
     this.stateT += dt;
     for (const k in this.cooldowns) this.cooldowns[k] = Math.max(this.cooldowns[k] - dt, 0);
     this.wardT = Math.max(this.wardT - dt, 0);
+    this.rageT = Math.max(this.rageT - dt, 0);
     this.counterT = Math.max(this.counterT - dt, 0);
     this.invulnT = Math.max(this.invulnT - dt, 0);
     this.readAttack(dt);
@@ -221,7 +241,7 @@ export class Fighter implements Entity {
   private startAttack(id: string) {
     this.atkPower = 1;
     if (id === "heavy" && this.state === S.CHARGE) this.atkPower = 1 + 0.5 * Math.min(this.stateT / CHARGE_MAX, 1);
-    this.atkPower *= this.dmgMult;
+    this.atkPower *= this.dmgMult * (this.rageT > 0 ? 1.4 : 1);
     this.atkId = id;
     this.atk = this.attacks[id];
     this.atkPhase = 0;

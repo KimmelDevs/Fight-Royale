@@ -10,14 +10,22 @@ import { Fighter, S, type Entity, type Brain } from "./fighter";
 import { Mob, waveRoster, MOB_TYPES, type MobHost } from "./mobs";
 import { AiBrain, LEVELS, type Threats } from "./ai";
 import { CHARACTERS } from "./roster";
+import { MOB_GOLD, WIN_GOLD } from "./economy";
 import * as Kits from "./kits";
 import type { Attack } from "./kits";
 import { Input, type RawInput } from "./input";
 import type { Net, Msg } from "./net";
 
-export interface PlayerSlot { peer: string; name: string; char: number }
+export interface PlayerSlot {
+  peer: string; name: string; char: number;
+  /** Which 3 of the character's 4 skills go on Z/X/C. */
+  loadout?: string[];
+  emblem?: { id: string; level: number };
+  /** Team mode only: 0 or 1. */
+  team?: number;
+}
 export interface GameConfig {
-  mode: "duel" | "survival";
+  mode: "duel" | "survival" | "team";
   role: "offline" | "host" | "client";
   players: PlayerSlot[];
   localPeer: string;
@@ -40,7 +48,9 @@ export const PERKS: Perk[] = [
 export type UiEvent =
   | { type: "banner"; text: string; color: string; sub?: string; hold?: number }
   | { type: "perks"; options: Perk[] }
-  | { type: "over"; text: string; sub: string; color: string };
+  | { type: "over"; text: string; sub: string; color: string }
+  | { type: "reward"; reason: "duel" | "team" | "survival"; gold: number }
+  | { type: "result"; winner: number };
 
 const v3 = (a: any) => a instanceof THREE.Vector3 ? a : new THREE.Vector3(a.x ?? a[0], a.y ?? a[1], a.z ?? a[2]);
 const DUEL_RADIUS = 7;
@@ -234,7 +244,7 @@ export class Game implements MobHost {
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     this.scene.add(ground);
-    const r = this.cfg.mode === "survival" ? SURVIVAL_RADIUS : DUEL_RADIUS;
+    const r = this.cfg.mode === "duel" ? DUEL_RADIUS : SURVIVAL_RADIUS;
     const ring = new THREE.Mesh(new THREE.TorusGeometry(r + 0.45, 0.07, 6, 128).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: "#e6c26e" }));
     ring.scale.y = 0.2;
     this.scene.add(ring);
@@ -310,6 +320,23 @@ export class Game implements MobHost {
         this.banner("FIGHT!", "#ffffff", "", 0.5);
         for (const f of [f1, f2]) f.brain = this.brainFor(f);
       });
+    } else if (cfg.mode === "team") {
+      // Two lines facing each other across the arena.
+      const counts = [0, 0];
+      const spawned: Fighter[] = [];
+      cfg.players.forEach((p, i) => {
+        const team = p.team ?? i % 2;
+        const k = counts[team]++;
+        const z = (k - 1.5) * 1.8;
+        spawned.push(this.spawnFighter(p, team, new THREE.Vector3(team === 0 ? -5 : 5, 0, z), team === 0 ? Math.PI / 2 : -Math.PI / 2));
+      });
+      const id = this.round;
+      this.banner("READY", "#ffe9a8", `${counts[0]} vs ${counts[1]}`, 0.6);
+      this.later(1.0, () => {
+        if (id !== this.round) return;
+        this.banner("FIGHT!", "#ffffff", "", 0.5);
+        for (const f of spawned) f.brain = this.brainFor(f);
+      });
     } else {
       cfg.players.forEach((p, i) => {
         const a = (i / Math.max(cfg.players.length, 1)) * Math.PI * 2;
@@ -332,12 +359,12 @@ export class Game implements MobHost {
   }
 
   private spawnFighter(slot: PlayerSlot, team: number, pos: THREE.Vector3, rotY: number, id = 0): Fighter {
-    const f = new Fighter(CHARACTERS[slot.char].look, slot.char);
+    const f = new Fighter(CHARACTERS[slot.char].look, slot.char, slot.loadout, slot.emblem);
     f.id = id || this.nextId++;
     f.team = team;
     f.owner = slot.peer;
     f.puppet = this.cfg.role === "client";
-    f.arenaRadius = this.cfg.mode === "survival" ? SURVIVAL_RADIUS : DUEL_RADIUS;
+    f.arenaRadius = this.cfg.mode === "duel" ? DUEL_RADIUS : SURVIVAL_RADIUS;
     f.root.position.copy(pos);
     f.root.rotation.y = rotY;
     f.onSwing = (x) => this.onSwing(x);
@@ -347,7 +374,7 @@ export class Game implements MobHost {
     this.fighters.push(f);
     this.entities.set(f.id, f);
     if (slot.peer === this.cfg.localPeer) this.local = f;
-    this.emit(["spawnF", f.id, slot.char, team, slot.peer, slot.name, +pos.x.toFixed(2), +pos.z.toFixed(2), rotY]);
+    this.emit(["spawnF", f.id, slot.char, team, slot.peer, slot.name, +pos.x.toFixed(2), +pos.z.toFixed(2), rotY, slot.loadout ?? null, slot.emblem ?? null]);
     return f;
   }
 
@@ -431,9 +458,10 @@ export class Game implements MobHost {
   private retarget() {
     for (const f of this.fighters) {
       if (this.cfg.mode === "duel") continue;
-      let best: Entity | null = null, bd = 14;
-      for (const m of this.mobs) {
-        if (m.dead) continue;
+      let best: Entity | null = null, bd = this.cfg.mode === "team" ? 1e9 : 14;
+      const foes: Entity[] = this.cfg.mode === "team" ? this.fighters.filter((o) => o.team !== f.team) : this.mobs;
+      for (const m of foes) {
+        if (m.isDown()) continue;
         const d = m.root.position.distanceTo(f.root.position);
         if (d < bd) { bd = d; best = m; }
       }
@@ -692,6 +720,16 @@ export class Game implements MobHost {
       f.wardT = a.duration;
       this.fxp("bubble", f.id, a.duration);
       this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.9, 0)), "WARD", "#8fe6ff", 0.9);
+    } else if (a.mode === "heal") {
+      f.heal(f.maxHp * 0.25);
+      this.fxp("splash", f.chest(), 30, 1.2, "#7fe0ff");
+      this.fxp("ring", f.root.position.clone(), "#9dff9a", 1.6, 0.4, 0.9);
+      this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.9, 0)), `+${Math.round(f.maxHp * 0.25)}`, "#9dff9a", 1.1);
+    } else if (a.mode === "rage") {
+      f.rageT = a.duration;
+      this.fxp("flash", f.chest(), "#ff5a3d", 0.7, 0.3, 0.8);
+      this.fxp("embers", f.chest(), "#ff7a33", 30);
+      this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.9, 0)), "BERSERK", "#ff8a50", 1.0);
     } else if (a.mode === "counter") {
       f.counterT = a.duration;
       this.fxp("flash", f.chest(), f.look.glow, 0.5, 0.2, 0.6);
@@ -722,13 +760,18 @@ export class Game implements MobHost {
         this.fxp("flash", hitPos, glow, heavy ? 0.45 : 0.3, 0.14, 0.8);
         if (a.heavy) this.fxp("ring", hitPos, glow, 2.2, 0.35, 0.9);
         this.fxp("num", hitPos.clone().add(new THREE.Vector3(0, 0.5, 0)), `${Math.round(d.lastDamage)}${crit ? "!" : ""}`,
-          d.team === 0 && this.cfg.mode === "survival" ? "#ff7b7b" : crit ? "#ffb347" : "#ffffff", crit ? 1.5 : 1);
+          d.team === (this.local?.team ?? 0) && this.cfg.mode !== "duel" ? "#ff7b7b" : crit ? "#ffb347" : "#ffffff", crit ? 1.5 : 1);
         if (attacker instanceof Fighter && attacker.lifesteal > 0) attacker.heal(d.lastDamage * attacker.lifesteal);
         const big = this.cfg.mode === "duel" || attacker instanceof Mob ? 1 : 0.5;
         this.add_trauma((a.heavy ? 0.5 : heavy ? 0.3 : 0.18) * big);
         this.hitStop(a.heavy ? 0.11 : heavy ? 0.07 : 0.045);
         if (result === "ko" && d instanceof Mob) {
           this.kills++;
+          if (attacker instanceof Fighter) {
+            const g = (MOB_GOLD[d.type] ?? 2) * (d.elite ? 2 : 1);
+            this.earned.set(attacker.owner, (this.earned.get(attacker.owner) ?? 0) + g);
+            if (attacker.owner === this.cfg.localPeer) this.fxp("num", d.chest().add(new THREE.Vector3(0, 0.9, 0)), `+${g} gold`, "#ffd34d", 0.8);
+          }
           this.fxp("smoke", d.root.position.clone(), d.def.color);
         }
         break;
@@ -858,13 +901,30 @@ export class Game implements MobHost {
         winner.win();
         const iWon = winner.owner === this.cfg.localPeer;
         const name = winner.look.name;
+        if (winner.owner !== "cpu") this.sendReward(winner.owner, "duel", WIN_GOLD);
         const text = this.cfg.role === "offline" ? (iWon ? "VICTORY" : "DEFEAT") : `${name.toUpperCase()} WINS`;
         this.over(text, this.cfg.role === "client" ? "" : "Press R or click Rematch", iWon || this.cfg.role !== "offline" ? "#ffe08a" : "#ff7b7b");
+        this.canRestart = true;
+      });
+    } else if (this.cfg.mode === "team") {
+      this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.8, 0)), "DOWN!", "#ff7b7b", 1.1);
+      if (this.roundOver || !this.fighters.filter((x) => x.team === f.team).every((x) => x.isDown())) return;
+      this.roundOver = true;
+      const winner = 1 - f.team;
+      for (const x of this.fighters) x.brain = null;
+      this.hitStop(0.9, 0.25);
+      this.later(0.5, () => {
+        for (const x of this.fighters) if (x.team === winner) { x.win(); this.sendReward(x.owner, "team", WIN_GOLD); }
+        this.onEvent({ type: "result", winner });
+        this.emit(["result", winner]);
+        const mine = this.local?.team ?? 0;
+        this.over(winner === mine ? "VICTORY" : "DEFEAT", `Team ${winner === 0 ? "Blue" : "Red"} wins`, winner === mine ? "#ffe08a" : "#ff7b7b");
         this.canRestart = true;
       });
     } else {
       this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.8, 0)), "DOWN!", "#ff7b7b", 1.1);
       if (this.fighters.every((x) => x.isDown())) {
+        this.payEarned();
         this.phase = "over";
         this.later(1.0, () => {
           this.over("GAME OVER", `Reached wave ${this.wave}  -  ${this.kills} kills`, "#ff7b7b");
@@ -872,6 +932,19 @@ export class Game implements MobHost {
         });
       }
     }
+  }
+
+  /** Gold earned from kills this wave, per player; paid out at wave clear and game over. */
+  private earned = new Map<string, number>();
+
+  private payEarned() {
+    for (const [peer, g] of this.earned) if (g > 0) this.sendReward(peer, "survival", g);
+    this.earned.clear();
+  }
+
+  private sendReward(peer: string, reason: "duel" | "team" | "survival", gold: number) {
+    if (peer === this.cfg.localPeer) this.onEvent({ type: "reward", reason, gold });
+    else this.net?.sendTo(peer, { t: "reward", r: reason, g: gold });
   }
 
   private over(text: string, sub: string, color: string) {
@@ -904,6 +977,7 @@ export class Game implements MobHost {
       if (!this.toSpawn.length && alive === 0 && this.mobs.length === 0) {
         this.phase = "perks";
         this.banner("WAVE CLEAR", "#9dff9a", "Choose an upgrade", 1.0);
+        this.payEarned();
         for (const f of this.fighters) {
           if (f.isDown()) f.revive(0.5);
           else f.heal(f.maxHp * 0.25);
@@ -971,6 +1045,8 @@ export class Game implements MobHost {
       [this.wave, this.kills, this.phase] = msg.s;
     } else if (msg.t === "perks") {
       this.onEvent({ type: "perks", options: msg.o });
+    } else if (msg.t === "reward") {
+      this.onEvent({ type: "reward", reason: msg.r, gold: msg.g });
     }
   }
 
@@ -978,7 +1054,7 @@ export class Game implements MobHost {
     switch (ev[0]) {
       case "reset": this.clearAll(); break;
       case "spawnF": {
-        const f = this.spawnFighter({ peer: ev[4], name: ev[5], char: ev[2] }, ev[3], new THREE.Vector3(ev[6], 0, ev[7]), ev[8], ev[1]);
+        const f = this.spawnFighter({ peer: ev[4], name: ev[5], char: ev[2], loadout: ev[9] ?? undefined, emblem: ev[10] ?? undefined }, ev[3], new THREE.Vector3(ev[6], 0, ev[7]), ev[8], ev[1]);
         f.puppet = true;
         break;
       }
@@ -1006,6 +1082,7 @@ export class Game implements MobHost {
       case "projEnd": { const p = this.projectiles.find((x) => x.id === ev[1]); if (p) p.done = true; break; }
       case "banner": this.onEvent({ type: "banner", text: ev[1], color: ev[2], sub: ev[3], hold: ev[4] }); break;
       case "over": this.onEvent({ type: "over", text: ev[1], sub: ev[2], color: ev[3] }); break;
+      case "result": this.onEvent({ type: "result", winner: ev[1] }); break;
     }
   }
 
@@ -1062,7 +1139,8 @@ export class Game implements MobHost {
       mode: this.cfg.mode,
       me: me ? info(me) : null,
       other: other ? { ...info(other), tag: other.owner === "cpu" ? `CPU - ${LEVELS[this.cfg.difficulty ?? 1]}` : "" } : null,
-      team: this.cfg.mode === "survival" ? this.fighters.filter((f) => f !== me).map(info) : [],
+      team: this.cfg.mode !== "duel" ? this.fighters.filter((f) => f !== me && f.team === me?.team).map(info) : [],
+      foes: this.cfg.mode === "team" ? this.fighters.filter((f) => f.team !== me?.team).map(info) : [],
       skills: me ? ["z", "x", "c"].map((k) => ({ key: k, name: me.attacks[k].name, cd: me.cooldowns[k], max: me.attacks[k].cd * me.cdMult })) : [],
       wave: this.wave, kills: this.kills, phase: this.phase,
       mobs: this.mobs.filter((m) => !m.dead).length,

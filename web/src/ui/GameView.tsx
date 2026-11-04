@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Game, type GameConfig, type Perk, type UiEvent } from "@/game/game";
 import type { Net } from "@/game/net";
+import { account } from "@/lib/account";
 
 type Hud = ReturnType<Game["hud"]>;
 
@@ -13,7 +14,9 @@ function Bar({ v, color, right }: { v: number; color: string; right?: boolean })
   );
 }
 
-export default function GameView({ cfg, net, onExit }: { cfg: GameConfig; net: Net | null; onExit: () => void }) {
+export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
+  cfg: GameConfig; net: Net | null; onExit: () => void; matchId?: string; bet?: number; team?: number;
+}) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const overlay = useRef<HTMLDivElement>(null);
   const game = useRef<Game | null>(null);
@@ -22,6 +25,12 @@ export default function GameView({ cfg, net, onExit }: { cfg: GameConfig; net: N
   const [perks, setPerks] = useState<Perk[] | null>(null);
   const [over, setOver] = useState<{ text: string; sub: string; color: string } | null>(null);
   const [lost, setLost] = useState(false);
+  const [toasts, setToasts] = useState<{ id: number; text: string }[]>([]);
+  const toast = (text: string) => {
+    const id = Math.random();
+    setToasts((t) => [...t, { id, text }]);
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3000);
+  };
 
   useEffect(() => {
     const g = new Game(canvas.current!, overlay.current!, cfg, net);
@@ -34,7 +43,20 @@ export default function GameView({ cfg, net, onExit }: { cfg: GameConfig; net: N
         bannerTimer = setTimeout(() => setBanner(null), ((e.hold ?? 0) + 0.7) * 1000);
       } else if (e.type === "perks") setPerks(e.options);
       else if (e.type === "over") setOver({ text: e.text, sub: e.sub, color: e.color });
+      else if (e.type === "reward") {
+        account.claimReward(e.reason, e.gold).then((got) => {
+          if (got > 0) toast(`+${got} gold`);
+          else if (account.signedIn) toast("Reward limit reached for now");
+        });
+      } else if (e.type === "result" && betPlaced) {
+        account.reportResult(matchId!, e.winner).then(() => toast(e.winner === team ? "Bet won! Pot paid out." : "Bet settled."));
+      }
     };
+    // Stake the gold bet once, when the match starts.
+    let betPlaced = false;
+    if (matchId && bet && bet > 0 && team !== undefined) {
+      account.placeBet(matchId, team, bet).then((ok) => { betPlaced = ok; toast(ok ? `Bet ${bet} gold on your team` : "Bet not placed"); });
+    }
     if (net) {
       const prevLeave = net.onLeave;
       net.onLeave = (p) => { prevLeave(p); if (cfg.role === "client") setLost(true); };
@@ -79,6 +101,26 @@ export default function GameView({ cfg, net, onExit }: { cfg: GameConfig; net: N
               <div className="guard"><Bar v={other.guard / other.maxGuard} color="#f2c94c" right /></div>
             </div>
           )}
+          {hud.mode === "team" && (
+            <div className="team foes">
+              {hud.foes.map((t, i) => (
+                <div key={i} className={"mate" + (t.down ? " down" : "")}>
+                  <i style={{ background: t.glow }} /><b>{t.name}</b>
+                  <Bar v={t.hp / t.maxHp} color="#e8534a" />
+                </div>
+              ))}
+            </div>
+          )}
+          {hud.mode === "team" && (
+            <div className="team">
+              {hud.team.map((t, i) => (
+                <div key={i} className={"mate" + (t.down ? " down" : "")}>
+                  <i style={{ background: t.glow }} /><b>{t.name}</b>
+                  <Bar v={t.hp / t.maxHp} color="#7fd65b" />
+                </div>
+              ))}
+            </div>
+          )}
           {hud.mode === "survival" && (
             <>
               <div className="wave">WAVE {hud.wave}<span>{hud.kills} kills  -  {hud.mobs} enemies left</span></div>
@@ -110,6 +152,7 @@ export default function GameView({ cfg, net, onExit }: { cfg: GameConfig; net: N
           <div className="hint">WASD move - Space jump - Left click attack (hold = charged) - Right click block - Z X C skills - Esc leave</div>
         </div>
       )}
+      <div className="toasts">{toasts.map((t) => <div key={t.id} className="toast">{t.text}</div>)}</div>
       {banner && (
         <div key={banner.key} className="banner">
           <div className="txt" style={{ color: banner.color }}>{banner.text}</div>

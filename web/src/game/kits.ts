@@ -56,11 +56,36 @@ export function attacks(kit: string, element: string): Record<string, Attack> {
     knuckles: knuckles,
     kicks: kicks,
   } as Record<string, () => Record<string, Attack>>)[kit]?.() ?? knight();
+  t.v = bonusSkill(kit, element);
   for (const k of Object.keys(t)) {
     t[k].element = element;
     t[k].id = k;
   }
   return t;
+}
+
+/** Each kit's locked bonus skill ("v"): unlock it in the shop, then slot it into the loadout. */
+function bonusSkill(kit: string, element: string): Attack {
+  switch (kit) {
+    case "mage":
+      if (element === "fire") return a({ name: "Inferno Ring", desc: "A ring of fire erupts around you.", cd: 9, type: "strike", at: "self", wind: 0.15, recover: 0.45, dmg: 165, guard: 45, knock: 6, stun: 0.5, delay: 0.1, radius: 2.8, style: "explosion", pose_w: "mh_w", pose_s: "m3_s" });
+      if (element === "electric") return a({ name: "Static Field", desc: "Three lightning bolts strike all around you.", cd: 10, type: "strike", at: "self", wind: 0.12, recover: 0.5, dmg: 75, guard: 22, knock: 2, stun: 0.5, delay: 0.15, radius: 2.2, repeat: 3, interval: 0.25, style: "lightning", pose_w: "mh_w", pose_s: "m3_s" });
+      return a({ name: "Healing Rain", desc: "Restore 25% of your HP.", cd: 14, type: "buff", mode: "heal", duration: 0.25, wind: 0.2, recover: 0.4, pose_w: "mh_w", pose_s: "m3_s" });
+    case "assassin":
+      return a({ name: "Venom Fan", desc: "A wide spray of five poisoned blades.", cd: 7, type: "projectile", wind: 0.12, recover: 0.3, dmg: 42, guard: 12, knock: 1.2, stun: 0.3, speed: 24, count: 5, spread: 0.5, style: "shuriken", pose_w: "as1_w", pose_s: "as1_s" });
+    case "greatsword":
+      return a({ name: "Berserk", desc: "Deal 40% more damage for 6 seconds.", cd: 14, type: "buff", mode: "rage", duration: 6, wind: 0.2, recover: 0.4, pose_w: "charge", pose_s: "win" });
+    case "katana":
+      return a({ name: "Iaido Flash", desc: "An instant cross-arena draw cut.", cd: 8, wind: 0.08, active: 0.16, recover: 0.45, dmg: 200, guard: 50, reach: 2.2, lunge: 18, knock: 5, stun: 0.7, heavy: true, pose_w: "charge", pose_s: "heavy_s" });
+    case "bow":
+      return a({ name: "Piercing Volley", desc: "Five arrows that fly through every enemy in line.", cd: 9, type: "projectile", wind: 0.2, recover: 0.4, dmg: 55, guard: 14, knock: 2, stun: 0.3, speed: 32, count: 5, spread: 0.25, style: "arrow", pierce: true, pose_w: "bow_w", pose_s: "bow_s" });
+    case "knuckles":
+      return a({ name: "Iron Body", desc: "Shrug off every hit for 2.5 seconds.", cd: 13, type: "buff", mode: "ward", duration: 2.5, wind: 0.1, recover: 0.25, pose_w: "block", pose_s: "block" });
+    case "kicks":
+      return a({ name: "Dragon Ascent", desc: "A soaring rising kick that launches you skyward.", cd: 8, wind: 0.08, active: 0.12, recover: 0.4, dmg: 170, guard: 40, reach: 1.9, lunge: 3, knock: 5, stun: 0.7, stagger: true, self_jump: 8, pose_w: "kk4_w", pose_s: "fly_s" });
+    default:
+      return a({ name: "Judgment", desc: "A pillar of holy light crashes onto the enemy.", cd: 10, type: "strike", wind: 0.2, recover: 0.5, dmg: 220, guard: 60, knock: 5, stun: 0.7, heavy: true, delay: 0.5, radius: 1.6, style: "lightning", pose_w: "l3_w", pose_s: "l3_s" });
+  }
 }
 
 function knight(): Record<string, Attack> {

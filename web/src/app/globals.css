@@ -5,7 +5,7 @@ button:disabled { opacity: 0.5; cursor: default; }
 .txt, .logo, h1, h2, .nm, .dmg, b { text-shadow: 0 2px 0 #1a1a38, 0 0 6px rgba(20, 20, 60, 0.6); }
 
 /* --- menu --------------------------------------------------------------------- */
-.menu { height: 100vh; display: grid; place-items: center; padding: 16px;
+.menu { height: 100vh; overflow-y: auto; display: grid; place-items: center; padding: 16px;
   background: radial-gradient(ellipse at 50% 120%, #b9e8c4 0%, #cfe6ff 45%, #6aa6ea 100%); }
 .menu-card { width: min(440px, 100%); display: flex; flex-direction: column; gap: 12px; padding: 28px; border-radius: 18px;
   background: rgba(16, 22, 52, 0.82); border: 2px solid #e6c26e; box-shadow: 0 20px 60px rgba(10, 20, 60, 0.35); }
@@ -122,3 +122,44 @@ input:focus { border-color: #e6c26e; }
   .actions { align-items: stretch; }
   .actions .row { justify-content: flex-end; }
 }
+
+/* --- accounts, shop, emblems ------------------------------------------------------- */
+.wallet { display: flex; gap: 8px; align-items: center; justify-content: flex-end; flex-wrap: wrap; font-size: 13px; font-weight: 700; }
+.wallet .gold { color: #ffd34d; }
+.wallet .dia { color: #7fe3ff; }
+.chip { padding: 5px 12px; border-radius: 99px; border: 2px solid #e6c26e; background: rgba(230, 194, 110, .15); color: #fff; font-weight: 700; font-size: 13px; }
+.row.two > * { flex: 1; }
+.shop { position: fixed; inset: 0; overflow: auto; padding: 20px 24px 90px; background: radial-gradient(ellipse at 50% 120%, #b9e8c4 0%, #cfe6ff 45%, #6aa6ea 100%); }
+.shop-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.shop-head h1 { margin: 0; font-size: 40px; }
+.tabs { display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+.item { display: flex; flex-direction: column; gap: 6px; padding: 14px; border-radius: 14px; background: rgba(12, 18, 44, .86); border: 2px solid rgba(255,255,255,.2); }
+.item.equipped { border-color: #e6c26e; }
+.item b { font-size: 18px; }
+.item small { color: #ffe08a; font-size: 13px; }
+.item span { font-size: 13px; color: #d8e2ff; }
+.item .next { color: #9dff9a; }
+.item em { color: #9dff9a; font-style: normal; font-size: 13px; }
+.buy { padding: 8px 12px; border-radius: 10px; border: 2px solid rgba(255,255,255,.3); background: #2b3b78; color: #fff; font-weight: 700; }
+.buy.gold { background: #b8902f; }
+.buy.dia { background: #2f8fb8; }
+.bottom-row { position: fixed; left: 24px; bottom: 18px; }
+.toast { padding: 10px 14px; border-radius: 10px; background: rgba(12, 18, 44, .9); border: 2px solid #e6c26e; font-weight: 700; margin: 6px 0; width: fit-content; }
+.toasts { position: absolute; top: 120px; right: 24px; display: flex; flex-direction: column; align-items: flex-end; pointer-events: none; }
+.ad-overlay { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(0,0,0,.8); z-index: 10; }
+.ad-box { padding: 40px 60px; border-radius: 16px; background: #1a2250; border: 2px solid #7fe3ff; display: flex; flex-direction: column; gap: 10px; text-align: center; }
+.ad-box b { font-size: 28px; }
+.loadout { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.loadout .small { width: 100%; }
+.skill-pick { flex: 1 1 45%; display: flex; flex-direction: column; align-items: flex-start; padding: 6px 8px; border-radius: 8px; border: 2px solid rgba(255,255,255,.2); background: rgba(255,255,255,.05); color: #fff; font-size: 12px; text-align: left; }
+.skill-pick.on { border-color: #e6c26e; background: rgba(230,194,110,.18); }
+.skill-pick.locked { opacity: .55; }
+.skill-pick em { font-style: normal; color: #b9c6e6; }
+.card { position: relative; }
+.card .lock { position: absolute; inset: 0; display: grid; place-items: center; border-radius: 8px; background: rgba(0,0,0,.55); font-style: normal; font-size: 11px; font-weight: 800; letter-spacing: 1px; color: #ffe08a; }
+.locknote { margin-top: 8px; color: #ffe08a; font-size: 13px; }
+.betchip { margin-left: 6px; font-style: normal; font-size: 12px; color: #ffd34d; }
+.bet input { width: 110px; }
+.team.foes { left: auto; right: 24px; top: 100px; }
+.player { border-left: 4px solid transparent; }
