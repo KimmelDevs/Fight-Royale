@@ -9,7 +9,7 @@ import { CardRow, InfoPanel, Showcase } from "./Select";
 import { Icon, charIcon } from "./icons";
 
 type Mode = "survival" | "duel" | "brawl" | "team";
-type LobbySlot = PlayerSlot & { bet?: number };
+type LobbySlot = PlayerSlot & { bet?: number; ready?: boolean };
 
 const MAX_PLAYERS: Record<Mode, number> = { survival: 4, duel: 2, brawl: 2, team: 8 };
 const TEAM_COLORS = ["#5fa8ff", "#ff6b6b"];
@@ -62,6 +62,7 @@ export default function Lobby({ name, onBack, onStart, onShop }: {
         } else if (msg.t === "pick") update(from, { char: msg.char, loadout: msg.loadout, emblem: msg.emblem });
         else if (msg.t === "team") update(from, { team: msg.team === 1 ? 1 : 0 });
         else if (msg.t === "bet") update(from, { bet: Math.max(0, Math.min(MAX_BET, Math.floor(msg.amount) || 0)) });
+        else if (msg.t === "ready") update(from, { ready: !!msg.v });
       };
       n.onLeave = (peer) => sync(playersRef.current.filter((p) => p.peer !== peer));
       setNet(n);
@@ -80,10 +81,11 @@ export default function Lobby({ name, onBack, onStart, onShop }: {
       netRef.current = n;
       n.onMessage = (_from, msg) => {
         if (msg.t === "lobby") { setPlayers(msg.players); setMode(msg.mode); }
+        else if (msg.t === "busy") { setError(msg.reason ?? "That match is already running."); }
         else if (msg.t === "start") {
           started.current = true;
           const me = (msg.cfg.players as LobbySlot[]).find((p) => p.peer === n.myId);
-          onStart({ ...msg.cfg, role: "client", localPeer: n.myId }, n, msg.matchId, me?.bet, me?.team);
+          onStart({ ...msg.cfg, role: "client", localPeer: n.myId, late: !!msg.late }, n, msg.matchId, me?.bet, me?.team);
         }
       };
       n.onLeave = () => { setError("The host closed the room."); setNet(null); };
@@ -125,14 +127,16 @@ export default function Lobby({ name, onBack, onStart, onShop }: {
   const valid = mode === "survival" ? players.length >= 1 && players.length <= 4
     : mode === "duel" || mode === "brawl" ? players.length === 2
     : players.length >= 2 && teamCounts[0] >= 1 && teamCounts[1] >= 1 && Math.max(...teamCounts) <= 4;
-  const canStart = net?.role === "host" && valid;
+  const notReady = players.filter((p) => p.peer !== net?.myId && !p.ready);
+  const canStart = net?.role === "host" && valid && notReady.length === 0;
   const me = players.find((p) => p.peer === net?.myId);
+  const toggleReady = () => patchMe({ ready: !me?.ready }, { t: "ready", v: !me?.ready });
   const myCharLocked = !acc.owns(CHARACTERS[myChar].id);
 
   const start = () => {
     if (!net || !canStart) return;
     const matchId = `${net.code}-${Date.now().toString(36)}`;
-    const slots: PlayerSlot[] = players.map(({ bet: _b, ...p }, i) => ({ ...p, team: mode === "team" ? p.team ?? i % 2 : undefined }));
+    const slots: PlayerSlot[] = players.map(({ bet: _b, ready: _r, ...p }, i) => ({ ...p, team: mode === "team" ? p.team ?? i % 2 : undefined }));
     net.broadcast({ t: "start", cfg: { mode, players: players.map((p, i) => ({ ...p, team: slots[i].team })) }, matchId });
     started.current = true;
     onStart({ mode, role: "host", players: slots, localPeer: net.myId }, net, matchId, me?.bet, me?.team);
@@ -143,7 +147,7 @@ export default function Lobby({ name, onBack, onStart, onShop }: {
       <div className="menu">
         <div className="menu-card">
           <h1 className="logo small">PLAY ONLINE</h1>
-          <p className="tag">Co-op survival (up to 4), a 1v1 duel, or team battles from 2v2 to 4v4. Peer-to-peer, no server needed.</p>
+          <p className="tag">Co-op survival (up to 4), a 1v1 duel or brawl, or team battles from 2v2 to 4v4. Peer-to-peer, no server needed. You can join a survival run that has already started.</p>
           <button className="big gold" disabled={!!busy} onClick={host}>Host a room</button>
           <div className="join">
             <input placeholder="ROOM CODE" value={joinCode} maxLength={5} onChange={(e) => setJoinCode(e.target.value.toUpperCase())} onKeyDown={(e) => e.key === "Enter" && join()} />
@@ -196,10 +200,13 @@ export default function Lobby({ name, onBack, onStart, onShop }: {
           <div key={p.peer} className="player" style={mode === "team" ? { borderLeft: `4px solid ${TEAM_COLORS[p.team ?? 0]}` } : {}}>
             <Icon src={charIcon(CHARACTERS[p.char].id)} alt={CHARACTERS[p.char].look.name} size={30} fallback={<i style={{ background: CHARACTERS[p.char].look.glow }} />} />
             <b>{p.name}{p.peer === net.myId ? " (you)" : ""}</b>
+            {p.peer === players[0]?.peer ? <em className="tagchip host">HOST</em>
+              : <em className={"tagchip" + (p.ready ? " ready" : "")}>{p.ready ? "READY" : "not ready"}</em>}
             {mode === "team" && !!p.bet && <em className="betchip">{p.bet} gold</em>}
             <span>{CHARACTERS[p.char].look.name}</span>
           </div>
         ))}
+        {valid && notReady.length > 0 && net.role === "host" && <div className="note">Waiting for {notReady.map((p) => p.name).join(", ")} to press Ready.</div>}
         {!valid && <div className="error">{mode === "duel" || mode === "brawl" ? "Duel and Brawl need exactly 2 players." : mode === "team" ? "Team battle needs at least 1 player per team, max 4 per team." : "Survival is up to 4 players."}</div>}
         {error && <div className="error">{error}</div>}
         <InfoPanel index={myChar} editable />
@@ -211,7 +218,7 @@ export default function Lobby({ name, onBack, onStart, onShop }: {
             <button className="big ghost" onClick={() => { net.close(); setNet(null); setPlayers([]); }}>&lt; LEAVE</button>
             {myCharLocked ? <button className="big gold" onClick={onShop}>UNLOCK IN SHOP</button>
               : net.role === "host" ? <button className="big gold" disabled={!canStart} onClick={start}>START</button>
-              : <button className="big ghost" disabled>Waiting...</button>}
+              : <button className={"big " + (me?.ready ? "ghost" : "gold")} onClick={toggleReady}>{me?.ready ? "NOT READY" : "READY"}</button>}
           </div>
         </div>
       </div>

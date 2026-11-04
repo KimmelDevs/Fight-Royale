@@ -8,7 +8,7 @@
 import * as THREE from "three";
 import * as M from "./mat";
 import { Fx } from "./fx";
-import { Fighter, S, STOCKS, type Entity, type Brain, type Stage } from "./fighter";
+import { Fighter, S, STOCKS, RANGED_COMBO_REST, type Entity, type Brain, type Stage } from "./fighter";
 import { Mob, waveRoster, MOB_TYPES, type MobHost } from "./mobs";
 import { AiBrain, LEVELS, type Threats } from "./ai";
 import { CHARACTERS } from "./roster";
@@ -33,6 +33,8 @@ export interface GameConfig {
   localPeer: string;
   cpuChar?: number;
   difficulty?: number;
+  /** Guest who joined a match already in progress (asks the host for a full sync). */
+  late?: boolean;
 }
 
 export interface Perk { id: string; name: string; desc: string }
@@ -318,6 +320,7 @@ export class Game implements MobHost {
   // --- lifecycle ---------------------------------------------------------------------
   start() {
     if (this.cfg.role !== "client") this.startRound();
+    else if (this.cfg.late) this.net?.send({ t: "synced" });
     this.last = performance.now();
     const loop = (now: number) => {
       this.raf = requestAnimationFrame(loop);
@@ -1128,6 +1131,8 @@ export class Game implements MobHost {
   // --- networking -------------------------------------------------------------------------
   private onNet(from: string, msg: Msg) {
     if (this.cfg.role === "host") {
+      if (msg.t === "hello") { this.lateJoin(from, msg); return; }
+      if (msg.t === "synced") { this.sendSync(from); return; }
       if (msg.t === "in") {
         let b = this.remoteBrains.get(from);
         if (!b) { b = new RemoteBrain(); this.remoteBrains.set(from, b); }
@@ -1137,6 +1142,11 @@ export class Game implements MobHost {
         const opts = this.perkWait.get(from);
         if (opts) { this.applyPerk(from, opts[msg.i] ?? opts[0]); this.perkWait.delete(from); }
       }
+      return;
+    }
+    if (msg.t === "sync") {
+      for (const ev of msg.e) this.applyEvent(ev);
+      [this.wave, this.kills, this.phase] = msg.s;
       return;
     }
     if (msg.t === "snap") {
@@ -1149,6 +1159,36 @@ export class Game implements MobHost {
     } else if (msg.t === "reward") {
       this.onEvent({ type: "reward", reason: msg.r, gold: msg.g });
     }
+  }
+
+  /** A player opened the room code mid-match: survival lets them drop in, others say busy. */
+  private lateJoin(peer: string, msg: Msg) {
+    const reject = (reason: string) => this.net?.sendTo(peer, { t: "busy", reason });
+    if (this.cfg.mode !== "survival") return reject("That room is in the middle of a match. Try again when it ends.");
+    if (this.cfg.players.some((p) => p.peer === peer)) return;
+    if (this.cfg.players.length >= 4) return reject("That survival run is full (4 players).");
+    const slot: PlayerSlot = { peer, name: String(msg.name ?? "Player").slice(0, 16), char: msg.char ?? 0, loadout: msg.loadout, emblem: msg.emblem };
+    this.cfg.players.push(slot);
+    this.net?.sendTo(peer, { t: "start", cfg: { mode: this.cfg.mode, players: this.cfg.players }, late: true });
+  }
+
+  /** The late joiner's game is up: send it everything that exists, then add its fighter. */
+  private sendSync(peer: string) {
+    const ev: any[] = [];
+    for (const f of this.fighters) {
+      const s = this.cfg.players.find((p) => p.peer === f.owner);
+      ev.push(["spawnF", f.id, f.charIndex, f.team, f.owner, s?.name ?? f.look.name, +f.root.position.x.toFixed(2), +f.root.position.z.toFixed(2), f.root.rotation.y, s?.loadout ?? null, s?.emblem ?? null]);
+    }
+    for (const m of this.mobs) if (!m.dead) ev.push(["spawnM", m.id, m.type, m.elite ? 1 : 0, m.hpMult ?? 1, +m.root.position.x.toFixed(2), +m.root.position.z.toFixed(2)]);
+    this.net?.sendTo(peer, { t: "sync", e: ev, s: [this.wave, this.kills, this.phase] });
+    const slot = this.cfg.players.find((p) => p.peer === peer);
+    if (!slot || this.fighters.some((f) => f.owner === peer)) return;
+    const anchor = this.fighters.find((f) => !f.isDown())?.root.position ?? new THREE.Vector3();
+    const f = this.spawnFighter(slot, 0, anchor.clone().add(new THREE.Vector3(1.5, 0, 1.5)), 0);
+    f.invulnT = 2;
+    f.brain = this.brainFor(f);
+    this.fxp("smoke", f.root.position.clone(), f.look.glow);
+    this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.9, 0)), `${slot.name} joined!`, "#9dff9a", 1.1);
   }
 
   private applyEvent(ev: any[]) {
@@ -1259,6 +1299,7 @@ export class Game implements MobHost {
       other: other ? { ...info(other), tag: other.owner === "cpu" ? `CPU - ${LEVELS[this.cfg.difficulty ?? 1]}` : "" } : null,
       team: !this.isDuel() ? this.fighters.filter((f) => f !== me && f.team === me?.team).map(info) : [],
       foes: this.cfg.mode === "team" ? this.fighters.filter((f) => f.team !== me?.team).map(info) : [],
+      atkLock: me && me.attacks.l1.type !== "melee" ? { t: me.atkLock, max: RANGED_COMBO_REST } : null,
       skills: me ? ["z", "x", "c"].map((k) => ({ key: k, id: me.attacks[k].id, name: me.attacks[k].name, cd: me.cooldowns[k], max: me.attacks[k].cd * me.cdMult })) : [],
       kit: me?.kit ?? "", element: me?.look.element ?? "",
       wave: this.wave, kills: this.kills, phase: this.phase,

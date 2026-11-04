@@ -31,6 +31,7 @@ const GUARD_REGEN = 30;
 export interface Plat { x0: number; x1: number; y: number; solid: boolean }
 export interface Stage { plats: Plat[]; blast: { l: number; r: number; b: number; t: number }; respawn: THREE.Vector3 }
 export const STOCKS = 3;
+export const RANGED_COMBO_REST = 2;
 const PCT_PER_DMG = 0.07;
 
 export interface Intent { attack: boolean; block: boolean; jump: boolean; skill: string; move: THREE.Vector3 }
@@ -83,6 +84,8 @@ export class Fighter implements Entity {
   lastDamage = 0;
   lastCrit = false;
   cooldowns: Record<string, number> = { z: 0, x: 0, c: 0 };
+  /** After a ranged combo's last hit, normal attacks rest this long (stops shot spam). */
+  atkLock = 0;
   onGround = true;
   velY = 0;
   wardT = 0;
@@ -185,6 +188,7 @@ export class Fighter implements Entity {
     if (!this.onGround) it.block = false;
     this.stateT += dt;
     for (const k in this.cooldowns) this.cooldowns[k] = Math.max(this.cooldowns[k] - dt, 0);
+    this.atkLock = Math.max(this.atkLock - dt, 0);
     this.wardT = Math.max(this.wardT - dt, 0);
     this.rageT = Math.max(this.rageT - dt, 0);
     this.counterT = Math.max(this.counterT - dt, 0);
@@ -232,6 +236,7 @@ export class Fighter implements Entity {
     const released = !on && this.atkPrev;
     this.atkPrev = on;
     if ([S.HITSTUN, S.STAGGER, S.KO, S.WIN].includes(this.state)) { this.holding = false; return; }
+    if (pressed && this.atkLock > 0) return;
     if (pressed) { this.holding = true; this.holdT = 0; }
     if (this.holding) {
       this.holdT += dt;
@@ -305,6 +310,7 @@ export class Fighter implements Entity {
 
   private finishAttack() {
     const a = this.atk!;
+    if (/^l\d$/.test(this.atkId) && !a.next && a.type !== "melee") this.atkLock = RANGED_COMBO_REST;
     this.comboNext = a.next || "l1";
     this.comboTimer = a.next ? 0.45 : 0;
   }
@@ -650,7 +656,7 @@ export class Fighter implements Entity {
       this.state, this.poseName, this.poseSpeed, Math.round(this.hp), Math.round(this.guard),
       +this.model.walk.toFixed(2), +this.model.charge.toFixed(2), this.trail.emitting ? 1 : 0,
       +this.model.recoil.toFixed(2), this.cooldowns.z, this.cooldowns.x, this.cooldowns.c, this.maxHp,
-      +this.pct.toFixed(1), this.stocks, this.out ? 1 : 0];
+      +this.pct.toFixed(1), this.stocks, this.out ? 1 : 0, +this.atkLock.toFixed(2)];
   }
 
   applySnapshot(s: any[]) {
@@ -669,7 +675,7 @@ export class Fighter implements Entity {
     this.cooldowns.z = s[14]; this.cooldowns.x = s[15]; this.cooldowns.c = s[16];
     this.maxHp = s[17];
     if (s.length > 18) {
-      this.pct = s[18]; this.stocks = s[19];
+      this.pct = s[18]; this.stocks = s[19]; this.atkLock = s[21] ?? 0;
       const out = s[20] === 1;
       if (out !== this.out) { this.out = out; this.root.visible = !out; if (!out) this.root.position.copy(this.netPos); }
     }
@@ -685,6 +691,7 @@ export class Fighter implements Entity {
     d = Math.atan2(Math.sin(d), Math.cos(d));
     this.root.rotation.y += d * k;
     for (const key in this.cooldowns) this.cooldowns[key] = Math.max(this.cooldowns[key] - dt, 0);
+    this.atkLock = Math.max(this.atkLock - dt, 0);
     if (this.state !== S.KO) this.model.rotation.y = this.viewBias;
     this.model.setBarrier(this.state === S.BLOCK && this.kit === "mage");
     this.model.blend(this.poses[this.poseName] ?? this.poses.idle, dt, this.poseSpeed);

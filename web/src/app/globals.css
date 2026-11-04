@@ -202,3 +202,8 @@ input:focus { border-color: #e6c26e; }
 .big.google { background: #fff; color: #222; border-color: #dadce0; }
 .or { display: flex; align-items: center; gap: 10px; color: #8a93b8; font-size: 12px; margin: 2px 0; }
 .or::before, .or::after { content: ""; flex: 1; height: 1px; background: rgba(255,255,255,0.15); }
+
+/* Normal-attack cooldown after a ranged combo */
+.sk.atk .atk-glyph { width: 60px; height: 60px; display: grid; place-items: center; font-weight: 900; font-size: 18px; letter-spacing: 1px;
+  color: #fff; background: radial-gradient(circle at 50% 35%, #4a5a9a, #1a2040); border-radius: 50%; }
+.sk.atk.locked .atk-glyph { color: #ff9a7a; }

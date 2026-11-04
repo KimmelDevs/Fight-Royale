@@ -153,6 +153,17 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
             </>
           )}
           <div className="skills">
+            {hud.atkLock && (
+              <div className={"sk atk" + (hud.atkLock.t > 0.05 ? " locked" : "")}>
+                <div className="icon" style={{ borderColor: me?.glow }}>
+                  <div className="atk-glyph">ATK</div>
+                  <div className="cool" style={{ height: `${Math.min(hud.atkLock.t / hud.atkLock.max, 1) * 100}%` }} />
+                  <b>LMB</b>
+                  {hud.atkLock.t > 0.05 && <em>{hud.atkLock.t.toFixed(1)}</em>}
+                </div>
+                <span>{hud.atkLock.t > 0.05 ? "Reloading" : "Attack"}</span>
+              </div>
+            )}
             {hud.skills.map((s) => (
               <div key={s.key} className="sk">
                 <div className="icon" style={{ borderColor: me?.glow }}>

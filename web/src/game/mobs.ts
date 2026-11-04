@@ -71,10 +71,13 @@ export class Mob implements Entity {
   dead = false;
   deathT = 0;
 
+  /** HP scale it was spawned with (sent to late joiners). */
+  hpMult = 1;
   constructor(type: string, hpMult = 1, dmgMult = 1, elite = false) {
     this.type = type;
     this.def = MOB_TYPES[type];
     this.elite = elite;
+    this.hpMult = hpMult;
     this.maxHp = this.def.hp * hpMult * (elite ? 2.2 : 1);
     this.hp = this.maxHp;
     this.dmg = this.def.dmg * dmgMult * (elite ? 1.3 : 1);
