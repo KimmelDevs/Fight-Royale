@@ -6,6 +6,7 @@ import { LEVELS } from "@/game/ai";
 import { Preview } from "@/game/preview";
 import { account, useAccount } from "@/lib/account";
 import { CHARACTER_PRICE } from "@/game/economy";
+import { Icon, skillIcon } from "./icons";
 
 const CONTROLS: Record<string, string> = {
   knight: "Tap: 3-hit sword combo  -  Hold: charged slash  -  Block: shield",
@@ -75,7 +76,8 @@ function LoadoutEditor({ index }: { index: number }) {
         return (
           <button key={k} className={"skill-pick" + (on ? " on" : "") + (locked ? " locked" : "")} disabled={locked}
             title={atks[k].desc} onClick={() => toggle(k)}>
-            <b>{atks[k].name}</b><em>{locked ? "Locked - Shop" : `${atks[k].cd}s`}</em>
+            <Icon src={skillIcon(ch.look.kit, ch.look.element, k)} alt={atks[k].name} size={34} />
+            <span><b>{atks[k].name}</b><em>{locked ? "Locked - Shop" : `${atks[k].cd}s`}</em></span>
           </button>
         );
       })}

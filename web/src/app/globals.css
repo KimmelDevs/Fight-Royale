@@ -163,3 +163,14 @@ input:focus { border-color: #e6c26e; }
 .bet input { width: 110px; }
 .team.foes { left: auto; right: 24px; top: 100px; }
 .player { border-left: 4px solid transparent; }
+
+/* --- icons --------------------------------------------------------------------------- */
+.icon-img { display: block; border-radius: 50%; }
+.wallet span { display: inline-flex; align-items: center; gap: 4px; }
+.wallet .icon-img { border-radius: 0; }
+.icon .icon-img { position: absolute; inset: 0; width: 100%; height: 100%; }
+.icon b { text-shadow: 0 0 4px #000, 0 2px 0 #000; align-self: end; justify-self: start; margin: 0 0 2px 6px; font-size: 16px; }
+.item-head { display: flex; align-items: center; gap: 10px; }
+.item-head .icon-img { flex: none; }
+.skill-pick { flex-direction: row; align-items: center; gap: 6px; }
+.skill-pick span { display: flex; flex-direction: column; }

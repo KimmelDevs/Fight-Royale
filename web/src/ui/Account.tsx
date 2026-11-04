@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { account, supabase, useAccount } from "@/lib/account";
+import { Gold, Diamond } from "./icons";
 
 /** Gold / diamond balance chip shown on menus. */
 export function Wallet({ onAccount }: { onAccount?: () => void }) {
@@ -8,8 +9,8 @@ export function Wallet({ onAccount }: { onAccount?: () => void }) {
   const p = acc.profile;
   return (
     <div className="wallet">
-      <span className="gold">{p.gold.toLocaleString()} gold</span>
-      <span className="dia">{p.diamonds.toLocaleString()} diamonds</span>
+      <span className="gold"><Gold /> {p.gold.toLocaleString()}</span>
+      <span className="dia"><Diamond /> {p.diamonds.toLocaleString()}</span>
       {onAccount && (
         <button className="chip" onClick={onAccount}>{acc.signedIn ? p.username : "Sign in"}</button>
       )}

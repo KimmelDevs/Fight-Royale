@@ -8,6 +8,7 @@ import {
   CHARACTER_PRICE, SKILL_PRICE, DIAMOND_PACKS, EMBLEMS, EMBLEM_MAX, emblemCost, AD_DIAMONDS, ADS_PER_DAY,
 } from "@/game/economy";
 import { Wallet } from "./Account";
+import { Icon, skillIcon, emblemIcon, Gold, Diamond } from "./icons";
 
 type Tab = "fighters" | "skills" | "emblems" | "diamonds";
 
@@ -72,7 +73,7 @@ export default function Shop({ onBack, onAccount, start = "fighters" }: { onBack
             const owned = acc.ownsSkill(ch.id);
             return (
               <div key={ch.id} className="item" style={{ borderColor: ch.look.glow }}>
-                <b>{v.name}</b>
+                <div className="item-head"><Icon src={skillIcon(ch.look.kit, ch.look.element, "v")} alt={v.name} size={48} /><b>{v.name}</b></div>
                 <span>{ch.look.name}: {v.desc} ({v.cd}s)</span>
                 {owned ? <em>Unlocked - equip it in character select</em> : (
                   <div className="row">
@@ -93,7 +94,7 @@ export default function Shop({ onBack, onAccount, start = "fighters" }: { onBack
             const equipped = p.emblem === e.id;
             return (
               <div key={e.id} className={"item" + (equipped ? " equipped" : "")}>
-                <b>{e.name} <small>Lv {lvl}/{EMBLEM_MAX}</small></b>
+                <div className="item-head"><Icon src={emblemIcon(e.id)} alt={e.name} size={56} /><b>{e.name} <small>Lv {lvl}/{EMBLEM_MAX}</small></b></div>
                 <span>Now: {e.desc(lvl)}</span>
                 {lvl < EMBLEM_MAX && <span className="next">Next: {e.desc(lvl + 1)}</span>}
                 <div className="row">
@@ -111,14 +112,14 @@ export default function Shop({ onBack, onAccount, start = "fighters" }: { onBack
       {tab === "diamonds" && (
         <div className="grid">
           <div className="item">
-            <b>Watch an ad</b>
+            <div className="item-head"><Diamond size={40} /><b>Watch an ad</b></div>
             <span>+{AD_DIAMONDS} diamonds, up to {ADS_PER_DAY} a day.{adsAreDemo() ? " (Test ad - real ads not set up yet.)" : ""}</span>
             {!acc.signedIn ? <button className="buy" onClick={onAccount}>Sign in to earn diamonds</button>
               : <button className="buy dia" disabled={!adsAvailable() || adT > 0} onClick={watchAd}>{adsAvailable() ? "Watch ad" : "Ads coming soon"}</button>}
           </div>
           {DIAMOND_PACKS.map((d) => (
             <div key={d.id} className="item">
-              <b>{d.diamonds} diamonds</b>
+              <div className="item-head"><Diamond size={40} /><b>{d.diamonds} diamonds</b></div>
               <span>Unlock fighters and skills faster.</span>
               <button className="buy dia" onClick={() => acc.signedIn ? run(() => account.buyDiamonds(d.id), "Opening checkout...") : onAccount()}>{d.price}</button>
             </div>

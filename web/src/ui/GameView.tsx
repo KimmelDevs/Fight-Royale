@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Game, type GameConfig, type Perk, type UiEvent } from "@/game/game";
 import type { Net } from "@/game/net";
 import { account } from "@/lib/account";
+import { Icon, skillIcon } from "./icons";
 
 type Hud = ReturnType<Game["hud"]>;
 
@@ -141,6 +142,7 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
             {hud.skills.map((s) => (
               <div key={s.key} className="sk">
                 <div className="icon" style={{ borderColor: me?.glow }}>
+                  <Icon src={skillIcon(hud.kit, hud.element, s.id)} alt={s.name} size={60} />
                   <div className="cool" style={{ height: `${Math.min(s.cd / Math.max(s.max, 0.01), 1) * 100}%` }} />
                   <b>{s.key.toUpperCase()}</b>
                   {s.cd > 0.05 && <em>{s.cd.toFixed(1)}</em>}
