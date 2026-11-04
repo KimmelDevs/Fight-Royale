@@ -65,7 +65,7 @@ export const CHARACTERS: Character[] = [
   { id: "nyx", title: "Shadow Blade", role: "Assassin - Twin Daggers",
     desc: "Blinding speed and a four-hit flurry. Fragile, but almost impossible to pin down.",
     stats: { power: 4, speed: 5, range: 2, defense: 1 },
-    look: { name: "Nyx", body: "f", kit: "assassin", element: "shadow", outfit: "assassin", style: "ponytail", hat: "hood",
+    look: { name: "Nyx", body: "f", vrm: "nyx", kit: "assassin", element: "shadow", outfit: "assassin", style: "ponytail", hat: "hood",
       hair: "#3a3550", hair_shade: "#b3a8e6", iris_top: "#7b2cbf", iris_bottom: "#e0aaff", eye_dark: "#1d1030",
       tunic: "#1f1b2e", band: "#6b3fa0", pants: "#17141f", boots: "#17141f", metal: "#8f8aa8", trim: "#c9a7ff",
       cape: "#6b3fa0", cape_bottom: "#b38cff", glow: "#bf66ff", shield: "#1f1b2e", emblem: "#c9a7ff" } },
