@@ -93,7 +93,7 @@ export const CHARACTERS: Character[] = [
   { id: "ash", title: "Crimson Hunter", role: "Archer - Longbow",
     desc: "A silent hunter in grey whose arrows never miss twice.",
     stats: { power: 5, speed: 4, range: 5, defense: 1 },
-    look: { name: "Ash", body: "m", kit: "bow", element: "blood", outfit: "assassin", style: "short", hat: "none", cloak: true,
+    look: { name: "Ash", body: "m", vrm: "ash", kit: "bow", element: "blood", outfit: "assassin", style: "short", hat: "none", cloak: true,
       hair: "#b8bcc8", hair_shade: "#a8a8c0", iris_top: "#b01a2a", iris_bottom: "#ff7a7a", eye_dark: "#2a0508",
       tunic: "#2a2a30", band: "#8a1a24", pants: "#1e1e24", boots: "#1e1e24", metal: "#a8a8b8", trim: "#c8343e",
       cape: "#3a3a44", cape_bottom: "#8a2a2a", glow: "#ff4d4d", shield: "#2a2a30", emblem: "#c8343e" } },
