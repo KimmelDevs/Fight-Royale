@@ -117,7 +117,7 @@ void main(){
 }`;
 const FACE_FRAG = /* glsl */ `
 uniform vec3 skin; uniform vec3 shadeTint; uniform vec3 eyeDark; uniform vec3 irisTop; uniform vec3 irisBottom;
-uniform vec3 blush; uniform vec3 mouth; uniform vec3 tongue; uniform vec3 lightView; uniform float blink;
+uniform vec3 blush; uniform vec3 mouth; uniform vec3 tongue; uniform vec3 lightView; uniform float blink; uniform float eyeScale;
 varying vec3 vN; varying vec3 vLocal;
 float ell(vec2 p, vec2 c, vec2 r){ return length((p - c) / r); }
 float fill(float d){ float w = max(fwidth(d), 0.001); return 1.0 - smoothstep(1.0 - w, 1.0 + w, d); }
@@ -131,7 +131,7 @@ void main(){
   for (int i = 0; i < 2; i++) {
     float side = i == 0 ? 1.0 : -1.0;
     vec2 ec = vec2(0.37 * side, -0.03);
-    vec2 er = vec2(0.15, 0.19 * open);
+    vec2 er = vec2(0.15, 0.19 * open) * eyeScale;
     float b = fill(ell(p, vec2(0.58 * side, -0.3), vec2(0.13, 0.055)));
     col = mix(col, blush, b * 0.35 * front);
     float eye = fill(ell(p, ec, er)) * front;
@@ -301,6 +301,7 @@ export function face(skin: THREE.ColorRepresentation, look: any): THREE.ShaderMa
       tongue: { value: new THREE.Color(0.98, 0.55, 0.6) },
       lightView,
       blink: { value: 0 },
+      eyeScale: { value: look.body === "m" ? 0.86 : 1.04 },
     },
   });
 }

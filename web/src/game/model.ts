@@ -19,6 +19,12 @@ const HIP = 0.84;
 const CAP_C = new THREE.Vector3(0, 0.035, -0.035);
 const JOINTS = ["torso", "head", "arm_r", "hand_r", "arm_l", "hand_l", "leg_l", "leg_r"] as const;
 
+/** Body-type proportions applied on top of the shared rig (multipliers). */
+const BODY = {
+  m: { height: 1.05, shoulder: 1.12, torso: 1.1, hip: 0.94, limb: 1.12, head: 0.9, bust: false },
+  f: { height: 0.97, shoulder: 0.9, torso: 0.92, hip: 1.1, limb: 0.9, head: 0.95, bust: true },
+};
+
 type V3 = [number, number, number];
 const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 const col = (c: string) => new THREE.Color(c);
@@ -127,9 +133,43 @@ export class FighterModel extends THREE.Group {
       case "kicks": this.buildKicks(); break;
       default: this.buildSword(); this.buildShield();
     }
+    this.applyBody();
     this.joints = { torso: this.torso, head: this.head, arm_r: this.arm_r, hand_r: this.hand_r,
       arm_l: this.arm_l, hand_l: this.hand_l, leg_l: this.leg_l, leg_r: this.leg_r };
     for (const j of JOINTS) this.cur[j] = new THREE.Vector3();
+  }
+
+  /**
+   * Reshapes the shared rig: chest and shoulder width, hip width, limb thickness, head size,
+   * overall height, plus a slight bust for female bodies. Weapons keep their size.
+   */
+  private applyBody() {
+    const B = BODY[this.look.body === "m" ? "m" : "f"];
+    this.scale.setScalar(B.height);
+    for (const c of this.torso.children) {
+      if (!(c as THREE.Mesh).isMesh) continue;
+      c.scale.x *= B.torso;
+      c.scale.z *= B.torso;
+      c.position.x *= B.shoulder;
+    }
+    for (const a of [this.arm_l, this.arm_r]) {
+      a.position.x *= B.shoulder;
+      a.scale.set(B.limb, 1, B.limb);
+    }
+    // Undo the arm thickness on the hands so held weapons keep their shape.
+    for (const h of [this.hand_l, this.hand_r]) h.scale.set(1 / B.limb, 1, 1 / B.limb);
+    for (const l of [this.leg_l, this.leg_r]) {
+      l.position.x *= B.hip;
+      l.scale.set(B.limb, 1, B.limb);
+    }
+    this.skirt.scale.x *= B.hip;
+    this.skirt.scale.z *= B.hip;
+    this.head.scale.setScalar(B.head);
+    if (B.bust) {
+      const o = this.look.outfit;
+      const top = o === "knight" ? this.metal() : o === "mage" ? this.tn(this.look.band) : this.tn(this.look.tunic);
+      mesh(this.torso, sphere(0.07, 20), top, [0, 0.2, 0.095], [0, 0, 0], [1.45, 0.62, 0.62]);
+    }
   }
 
   // --- material shortcuts -------------------------------------------------------
