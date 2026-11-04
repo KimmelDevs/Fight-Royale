@@ -28,6 +28,8 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
   const [perks, setPerks] = useState<Perk[] | null>(null);
   const [over, setOver] = useState<{ text: string; sub: string; color: string } | null>(null);
   const [lost, setLost] = useState(false);
+  const [paused, setPausedState] = useState(false);
+  const setPaused = (p: boolean) => { setPausedState(p); if (game.current) game.current.paused = p; };
   const [toasts, setToasts] = useState<{ id: number; text: string }[]>([]);
   const toast = (text: string) => {
     const id = Math.random();
@@ -67,7 +69,7 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
     g.start();
     const iv = setInterval(() => setHud(g.hud()), 80);
     const key = (e: KeyboardEvent) => {
-      if (e.code === "Escape") onExit();
+      if (e.code === "Escape") { e.preventDefault(); const p = !g.paused; g.paused = p; setPausedState(p); }
       if (e.code === "KeyR" && g.canRestart) { setOver(null); g.restart(); }
     };
     window.addEventListener("keydown", key);
@@ -190,8 +192,8 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
             ))}
           </div>
           <div className="hint">{hud?.plat
-            ? `${label("left")}/${label("right")} move - ${label("up")} or ${label("jump")} jump (twice to double jump) - ${label("down")} drop / fast fall - ${label("attack")} attack (hold = charged) - ${label("block")} shield - ${label("skill1")} ${label("skill2")} ${label("skill3")} skills - Esc leave`
-            : `${label("up")}${label("left")}${label("down")}${label("right")} move - ${label("jump")} jump - ${label("attack")} attack (hold = charged) - ${label("block")} block - ${label("skill1")} ${label("skill2")} ${label("skill3")} skills - Esc leave`}</div>
+            ? `${label("left")}/${label("right")} move - ${label("up")} or ${label("jump")} jump (twice to double jump) - ${label("down")} drop / fast fall - ${label("attack")} attack (hold = charged) - ${label("block")} shield - ${label("skill1")} ${label("skill2")} ${label("skill3")} skills - Esc pause`
+            : `${label("up")}${label("left")}${label("down")}${label("right")} move - ${label("jump")} jump - ${label("attack")} attack (hold = charged) - ${label("block")} block - ${label("skill1")} ${label("skill2")} ${label("skill3")} skills - Esc pause`}</div>
         </div>
       )}
       <div className="toasts">{toasts.map((t) => <div key={t.id} className="toast">{t.text}</div>)}</div>
@@ -211,6 +213,17 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
               </button>
             ))}
           </div>
+        </div>
+      )}
+      {paused && !over && !lost && (
+        <div className="over pause">
+          <div className="txt" style={{ color: "#ffe08a" }}>PAUSED</div>
+          <div className="bsub">{cfg.role === "offline" ? "The match is frozen." : "Online matches keep running while this menu is open."}</div>
+          <div className="row">
+            <button className="big gold" onClick={() => setPaused(false)}>Resume</button>
+            <button className="big ghost" onClick={onExit}>Leave match</button>
+          </div>
+          <div className="bsub small">Esc: resume</div>
         </div>
       )}
       {(over || lost) && (

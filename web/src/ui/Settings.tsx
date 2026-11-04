@@ -19,7 +19,7 @@ export default function Settings({ onBack }: { onBack: () => void }) {
     if (!wait) return;
     const take = (code: string) => {
       if (code === "Escape") { setWait(null); return; }
-      if (RESERVED.has(code)) { setMsg(`${keyLabel(code)} is reserved (Esc leaves a match, R is rematch).`); return; }
+      if (RESERVED.has(code)) { setMsg(`${keyLabel(code)} is reserved (Esc pauses, R is rematch).`); return; }
       bind(wait.action, wait.slot, code);
       setMsg("");
       setWait(null);
@@ -65,7 +65,7 @@ export default function Settings({ onBack }: { onBack: () => void }) {
           ))}
         </div>
         {msg && <div className="error">{msg}</div>}
-        <p className="note">Esc always leaves a match and R starts a rematch. Bindings are saved in this browser.</p>
+        <p className="note">Esc always pauses a match and R starts a rematch. Bindings are saved in this browser.</p>
         <div className="row two">
           <button className="big ghost" onClick={() => { resetBindings(); setWait(null); setMsg("Controls reset to defaults."); }}>Reset defaults</button>
           <button className="big gold" onClick={onBack}>Done</button>

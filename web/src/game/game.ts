@@ -207,6 +207,8 @@ export class Game implements MobHost {
   private round = 0;
   roundOver = false;
   canRestart = false;
+  /** Pause menu open: offline matches freeze; online matches keep running but ignore your input. */
+  paused = false;
 
   // Survival state.
   wave = 0;
@@ -496,8 +498,11 @@ export class Game implements MobHost {
     const realDt = Math.min((now - this.last) / 1000, 0.05);
     this.last = now;
     if (this.stopUntil > 0 && now >= this.stopUntil) { this.stopUntil = 0; this.timeScale = 1; }
-    const dt = realDt * this.timeScale;
+    const frozen = this.paused && this.cfg.role === "offline";
+    const dt = frozen ? 0 : realDt * this.timeScale;
     this.localInput = this.input.read(this.camera);
+    if (this.paused) this.localInput = { attack: false, block: false, jump: false, skill: "", mx: 0, mz: 0 };
+    if (frozen) { if (render) { M.updateLight(this.camera); this.renderer.render(this.scene, this.camera); } return; }
     M.timeU.value += dt;
 
     if (this.cfg.role === "client") {
