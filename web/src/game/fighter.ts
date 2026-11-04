@@ -373,7 +373,8 @@ export class Fighter implements Entity {
     }
     let v = 0;
     let walking = false;
-    if (this.state === S.IDLE && this.autoApproach && o && !o.isDown() && dist > ENGAGE) { v = this.walkSpeed; walking = true; }
+    // No brain yet = still in the READY countdown: stand still.
+    if (this.state === S.IDLE && this.autoApproach && this.brain && o && !o.isDown() && dist > ENGAGE) { v = this.walkSpeed; walking = true; }
     if (this.state === S.ATTACK && this.atk && this.atkPhase <= 1 && dist > MIN_DIST + 0.15) v += this.atk.lunge;
     this.knock = Math.max(this.knock - 14 * dt, 0);
     v -= this.knock;
