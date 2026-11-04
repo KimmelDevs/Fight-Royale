@@ -291,7 +291,7 @@ Z / X / C are the default loadout; V is the locked bonus skill (unlock: 2000 gol
 |---|---|---|---|---|---|---|---|---|---|
 | Z | Rush | melee | 120 | 35 | 0.08 / 0.2 / 0.4 | 3 | 0.7 | 5s | reach 1.6, lunge 14, staggers |
 | X | Shockwave Punch | projectile | 110 | 30 | 0.14 / 0.08 / 0.35 | 5 | 0.5 | 6s | 1 x proj, speed 18 |
-| C | Meteor Fist | strike | 300 | 80 | 0.1 / 0.08 / 0.6 | 8 | 0.9 | 11s | around self, radius 2.5, lands after 0.8s, self-launch 9, heavy |
+| C | Meteor Fist | strike | 300 | 80 | 0.22 / 0.08 / 0.6 | 8 | 0.9 | 11s | around self, radius 2.5, lands after 0.02s, self-launch 9, heavy |
 | V | Iron Body | buff | - | - | 0.1 / 0.08 / 0.25 | - | - | 13s | ward 2.5s |
 
 #### Kira (kicks, chi)
@@ -345,7 +345,7 @@ Z / X / C are the default loadout; V is the locked bonus skill (unlock: 2000 gol
 |---|---|---|---|---|---|---|---|---|---|
 | Z | Rush | melee | 120 | 35 | 0.08 / 0.2 / 0.4 | 3 | 0.7 | 5s | reach 1.6, lunge 14, staggers |
 | X | Shockwave Punch | projectile | 110 | 30 | 0.14 / 0.08 / 0.35 | 5 | 0.5 | 6s | 1 x proj, speed 18 |
-| C | Meteor Fist | strike | 300 | 80 | 0.1 / 0.08 / 0.6 | 8 | 0.9 | 11s | around self, radius 2.5, lands after 0.8s, self-launch 9, heavy |
+| C | Meteor Fist | strike | 300 | 80 | 0.22 / 0.08 / 0.6 | 8 | 0.9 | 11s | around self, radius 2.5, lands after 0.02s, self-launch 9, heavy |
 | V | Iron Body | buff | - | - | 0.1 / 0.08 / 0.25 | - | - | 13s | ward 2.5s |
 
 #### Ash (bow, blood)
