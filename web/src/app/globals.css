@@ -224,3 +224,17 @@ input:focus { border-color: #e6c26e; }
 @keyframes pulse { from { opacity: 0.75; } to { opacity: 1; } }
 @media (max-width: 600px) { .bind-row { grid-template-columns: 1fr 96px 96px; } .bind-row .act { font-size: 11px; } }
 .sk.atk .atk-glyph.dash-glyph { font-size: 14px; background: radial-gradient(circle at 50% 35%, #3d8a7a, #123a34); }
+
+/* --- pre-match prepare: emblem picker ---------------------------------------------- */
+.panel.prep h3 { margin: 10px 0 6px; font-size: 13px; letter-spacing: 1px; color: #ffe08a; text-transform: uppercase; }
+.emblem-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+.emblem-pick.compact { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }
+.emblem-pick .em { display: flex; gap: 8px; align-items: center; text-align: left; padding: 6px 8px; border-radius: 10px; cursor: pointer;
+  background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.18); color: #e8ecff; }
+.emblem-pick .em:hover { border-color: #e6c26e; }
+.emblem-pick .em.on { border-color: #ffd34d; background: rgba(255, 211, 77, 0.16); box-shadow: 0 0 10px rgba(255, 211, 77, 0.35); }
+.emblem-pick .em span { display: flex; flex-direction: column; line-height: 1.15; min-width: 0; }
+.emblem-pick .em b { font-size: 13px; }
+.emblem-pick .em em { font-style: normal; font-size: 11px; color: #ffd98a; }
+.emblem-pick .em small { font-size: 10.5px; color: #b9c6e6; }
+@media (max-width: 800px) { .panel.prep { bottom: 96px; max-height: 58vh; } }

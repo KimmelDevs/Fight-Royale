@@ -5,8 +5,8 @@ import * as Kits from "@/game/kits";
 import { LEVELS } from "@/game/ai";
 import { Preview } from "@/game/preview";
 import { account, useAccount } from "@/lib/account";
-import { CHARACTER_PRICE } from "@/game/economy";
-import { Icon, skillIcon, charIcon } from "./icons";
+import { CHARACTER_PRICE, EMBLEMS, EMBLEM_MAX } from "@/game/economy";
+import { Icon, skillIcon, charIcon, emblemIcon } from "./icons";
 
 const CONTROLS: Record<string, string> = {
   knight: "Tap: 3-hit sword combo  -  Hold: charged slash  -  Block: shield",
@@ -82,6 +82,47 @@ function LoadoutEditor({ index }: { index: number }) {
         );
       })}
       {msg && <div className="error">{msg}</div>}
+    </div>
+  );
+}
+
+/** Pick the emblem to bring into the match (upgrades happen in the Emblems shop). */
+export function EmblemPicker({ onChange, compact }: { onChange?: () => void; compact?: boolean }) {
+  const acc = useAccount();
+  const [msg, setMsg] = useState("");
+  const pick = async (id: string) => {
+    setMsg("");
+    try { await account.setEmblem(id); onChange?.(); } catch (e: any) { setMsg(e.message); }
+  };
+  return (
+    <div className={"emblem-pick" + (compact ? " compact" : "")}>
+      {EMBLEMS.map((e) => {
+        const lvl = acc.emblemLevel(e.id);
+        const on = acc.profile.emblem === e.id;
+        return (
+          <button key={e.id} className={"em" + (on ? " on" : "")} onClick={() => pick(e.id)} title={e.desc(lvl)}>
+            <Icon src={emblemIcon(e.id)} alt={e.name} size={compact ? 30 : 40} />
+            <span><b>{e.name}</b><em>Lv {lvl}/{EMBLEM_MAX}</em>{!compact && <small>{e.desc(lvl)}</small>}</span>
+          </button>
+        );
+      })}
+      {msg && <div className="error">{msg}</div>}
+    </div>
+  );
+}
+
+/** Last step before a match: emblem and skill loadout for the chosen fighter. */
+export function PreparePanel({ index }: { index: number }) {
+  const ch = CHARACTERS[index];
+  return (
+    <div className="panel prep">
+      <h2>Prepare</h2>
+      <div className="title">{ch.look.name} - {ch.title}</div>
+      <h3>Emblem</h3>
+      <EmblemPicker />
+      <h3>Skills</h3>
+      <LoadoutEditor index={index} />
+      <p className="small">Upgrade emblems and unlock bonus skills in the Shop.</p>
     </div>
   );
 }
@@ -164,11 +205,13 @@ export default function Select({ purpose, onBack, onDone, onShop }: {
   const [me, setMe] = useState(0);
   const [cpu, setCpu] = useState(RANDOM);
   const [level, setLevel] = useState(1);
-  const shown = step === 0 || purpose === "team" ? me : cpu;
+  const shown = step !== 1 || purpose === "team" ? me : cpu;
   const n = CHARACTERS.length;
   const acc = useAccount();
   const myLocked = !acc.owns(CHARACTERS[me].id);
 
+  // Steps: 0 fighter -> 1 opponent / team setup (not survival) -> last: prepare (emblem, skills).
+  const prepStep = purpose === "survival" ? 1 : 2;
   const finish = () => {
     if (purpose === "survival") return onDone(me);
     if (team) return onDone(me, undefined, level, size);
@@ -176,14 +219,15 @@ export default function Select({ purpose, onBack, onDone, onShop }: {
     if (c === RANDOM) { const opts = CHARACTERS.map((_, i) => i).filter((i) => i !== me); c = opts[Math.floor(Math.random() * opts.length)]; }
     onDone(me, c, level);
   };
-  const next = () => (myLocked ? onShop() : purpose !== "survival" && step === 0 ? setStep(1) : finish());
+  const next = () => (myLocked ? onShop() : step < prepStep ? setStep(step + 1) : finish());
+  const back = () => (step > 0 ? setStep(step - 1) : onBack());
 
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
       if (e.code === "ArrowLeft" || e.code === "KeyA") step === 0 ? setMe((m) => (m + n - 1) % n) : setCpu((c) => (c === RANDOM ? n - 1 : c === 0 ? RANDOM : c - 1));
       if (e.code === "ArrowRight" || e.code === "KeyD") step === 0 ? setMe((m) => (m + 1) % n) : setCpu((c) => (c === RANDOM ? 0 : c === n - 1 ? RANDOM : c + 1));
       if (e.code === "Enter") { e.preventDefault(); next(); }
-      if (e.code === "Escape") step === 1 ? setStep(0) : onBack();
+      if (e.code === "Escape") back();
     };
     window.addEventListener("keydown", k);
     return () => window.removeEventListener("keydown", k);
@@ -193,14 +237,15 @@ export default function Select({ purpose, onBack, onDone, onShop }: {
     <div className="select">
       <Showcase index={shown} />
       <div className="header">
-        <h1 style={{ color: step === 1 ? "#ffb3a8" : "#fff" }}>{step === 0 ? "CHOOSE YOUR FIGHTER" : team ? "TEAM BATTLE VS CPU" : "CHOOSE YOUR OPPONENT"}</h1>
+        <h1 style={{ color: step === 1 ? "#ffb3a8" : step === prepStep ? "#ffe08a" : "#fff" }}>{step === 0 ? "CHOOSE YOUR FIGHTER" : step === prepStep ? "PREPARE FOR BATTLE" : team ? "TEAM BATTLE VS CPU" : "CHOOSE YOUR OPPONENT"}</h1>
         <div className="sub">{step === 0 ? "Click a card or use Left / Right. Drag to rotate. Enter: next."
+          : step === prepStep ? "Pick your emblem and which 3 skills to bring. Enter: fight."
           : team ? `You: ${CHARACTERS[me].look.name}. CPU teammates join you against a CPU team. Pick the size and difficulty.`
           : `You: ${CHARACTERS[me].look.name}. Pick the CPU's fighter and difficulty.`}</div>
       </div>
-      {!(team && step === 1) && <InfoPanel index={shown} editable={step === 0} />}
+      {step === prepStep ? <PreparePanel index={me} /> : !(team && step === 1) && <InfoPanel index={shown} editable={step === 0} />}
       <div className="bottom">
-        {!(team && step === 1) && <CardRow current={shown} onPick={(i) => (step === 0 ? setMe(i) : setCpu(i))} allowRandom={step === 1} showLocks={step === 0} />}
+        {(step === 0 || (step === 1 && !team)) && <CardRow current={shown} onPick={(i) => (step === 0 ? setMe(i) : setCpu(i))} allowRandom={step === 1} showLocks={step === 0} />}
         <div className="actions">
           {team && step === 1 && (
             <div className="levels">
@@ -212,7 +257,7 @@ export default function Select({ purpose, onBack, onDone, onShop }: {
               </div>
             </div>
           )}
-          {step === 1 && (
+          {step === 1 && purpose !== "survival" && (
             <div className="levels">
               <span>CPU difficulty</span>
               <div>
@@ -223,8 +268,8 @@ export default function Select({ purpose, onBack, onDone, onShop }: {
             </div>
           )}
           <div className="row">
-            <button className="big ghost" onClick={() => (step === 1 ? setStep(0) : onBack())}>&lt; BACK</button>
-            <button className="big gold" onClick={next}>{myLocked ? "UNLOCK IN SHOP" : purpose !== "survival" && step === 0 ? "NEXT >" : "FIGHT!"}</button>
+            <button className="big ghost" onClick={back}>&lt; BACK</button>
+            <button className="big gold" onClick={next}>{myLocked ? "UNLOCK IN SHOP" : step < prepStep ? "NEXT >" : "FIGHT!"}</button>
           </div>
         </div>
       </div>

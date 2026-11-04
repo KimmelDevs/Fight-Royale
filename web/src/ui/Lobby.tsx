@@ -5,7 +5,7 @@ import { CHARACTERS } from "@/game/roster";
 import type { GameConfig, PlayerSlot } from "@/game/game";
 import { MAX_BET } from "@/game/economy";
 import { account, useAccount } from "@/lib/account";
-import { CardRow, InfoPanel, Showcase } from "./Select";
+import { CardRow, EmblemPicker, InfoPanel, Showcase } from "./Select";
 import { Icon, charIcon } from "./icons";
 
 type Mode = "survival" | "duel" | "brawl" | "team";
@@ -195,6 +195,8 @@ export default function Lobby({ name, onBack, onStart, onShop }: {
             ) : <div className="small">Sign in to bet gold on team battles.</div>}
           </>
         )}
+        <h3>Your emblem</h3>
+        <EmblemPicker compact onChange={() => patchMe({ ...kit(myChar) }, { t: "pick", char: myChar, ...kit(myChar) })} />
         <h3>Players ({players.length}/{MAX_PLAYERS[mode]})</h3>
         {players.map((p) => (
           <div key={p.peer} className="player" style={mode === "team" ? { borderLeft: `4px solid ${TEAM_COLORS[p.team ?? 0]}` } : {}}>
