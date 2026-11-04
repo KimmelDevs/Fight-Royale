@@ -1,5 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { label, type Action } from "@/game/keys";
+const SKILL_ACTION: Record<string, Action> = { z: "skill1", x: "skill2", c: "skill3" };
 import { Game, type GameConfig, type Perk, type UiEvent } from "@/game/game";
 import type { Net } from "@/game/net";
 import { account } from "@/lib/account";
@@ -158,7 +160,7 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
                 <div className="icon" style={{ borderColor: me?.glow }}>
                   <div className="atk-glyph">ATK</div>
                   <div className="cool" style={{ height: `${Math.min(hud.atkLock.t / hud.atkLock.max, 1) * 100}%` }} />
-                  <b>LMB</b>
+                  <b>{label("attack").replace(" click", "")}</b>
                   {hud.atkLock.t > 0.05 && <em>{hud.atkLock.t.toFixed(1)}</em>}
                 </div>
                 <span>{hud.atkLock.t > 0.05 ? "Reloading" : "Attack"}</span>
@@ -169,7 +171,7 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
                 <div className="icon" style={{ borderColor: me?.glow }}>
                   <Icon src={skillIcon(hud.kit, hud.element, s.id)} alt={s.name} size={60} />
                   <div className="cool" style={{ height: `${Math.min(s.cd / Math.max(s.max, 0.01), 1) * 100}%` }} />
-                  <b>{s.key.toUpperCase()}</b>
+                  <b>{label(SKILL_ACTION[s.key])}</b>
                   {s.cd > 0.05 && <em>{s.cd.toFixed(1)}</em>}
                 </div>
                 <span>{s.name}</span>
@@ -177,8 +179,8 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
             ))}
           </div>
           <div className="hint">{hud?.plat
-            ? "A/D move - W or Space jump (twice to double jump) - S drop / fast fall - Left click attack (hold = charged) - Right click shield - Z X C skills - Esc leave"
-            : "WASD move - Space jump - Left click attack (hold = charged) - Right click block - Z X C skills - Esc leave"}</div>
+            ? `${label("left")}/${label("right")} move - ${label("up")} or ${label("jump")} jump (twice to double jump) - ${label("down")} drop / fast fall - ${label("attack")} attack (hold = charged) - ${label("block")} shield - ${label("skill1")} ${label("skill2")} ${label("skill3")} skills - Esc leave`
+            : `${label("up")}${label("left")}${label("down")}${label("right")} move - ${label("jump")} jump - ${label("attack")} attack (hold = charged) - ${label("block")} block - ${label("skill1")} ${label("skill2")} ${label("skill3")} skills - Esc leave`}</div>
         </div>
       )}
       <div className="toasts">{toasts.map((t) => <div key={t.id} className="toast">{t.text}</div>)}</div>

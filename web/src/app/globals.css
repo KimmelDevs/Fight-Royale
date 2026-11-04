@@ -207,3 +207,19 @@ input:focus { border-color: #e6c26e; }
 .sk.atk .atk-glyph { width: 60px; height: 60px; display: grid; place-items: center; font-weight: 900; font-size: 18px; letter-spacing: 1px;
   color: #fff; background: radial-gradient(circle at 50% 35%, #4a5a9a, #1a2040); border-radius: 50%; }
 .sk.atk.locked .atk-glyph { color: #ff9a7a; }
+
+/* --- settings: key bindings ------------------------------------------------------ */
+.menu-card.settings { max-width: 560px; }
+.binds { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+.bind-row { display: grid; grid-template-columns: 1fr 130px 130px; gap: 8px; align-items: center; }
+.bind-row .act { font-size: 13px; color: #dfe5ff; }
+.slotwrap { position: relative; display: block; }
+.bind-row .slot { width: 100%; padding: 8px 6px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.25); background: rgba(255,255,255,0.08);
+  color: #fff; font-weight: 700; font-size: 13px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bind-row .slot:hover { border-color: #e6c26e; }
+.bind-row .slot.empty { color: #7d86aa; font-weight: 400; }
+.bind-row .slot.listening { border-color: #ffd34d; background: rgba(255, 211, 77, 0.18); color: #ffe08a; animation: pulse 0.9s infinite alternate; }
+.bind-row .clear { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 18px; height: 18px; padding: 0; border-radius: 50%;
+  border: none; background: rgba(0,0,0,0.35); color: #c9d3e6; font-size: 11px; line-height: 18px; cursor: pointer; }
+@keyframes pulse { from { opacity: 0.75; } to { opacity: 1; } }
+@media (max-width: 600px) { .bind-row { grid-template-columns: 1fr 96px 96px; } .bind-row .act { font-size: 11px; } }

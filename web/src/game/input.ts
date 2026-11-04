@@ -1,34 +1,40 @@
-// Keyboard + mouse state. Left mouse attacks, right mouse blocks, WASD moves relative to the
-// camera, Space jumps, Z/X/C cast skills.
+// Keyboard + mouse state, mapped through the player's key bindings (keys.ts). Defaults: left
+// mouse attacks, right mouse blocks, WASD moves relative to the camera, Space jumps, Z/X/C
+// cast skills. Any action can be bound to a key or a mouse button.
 import * as THREE from "three";
+import { actionFor, type Action } from "./keys";
 
 export interface RawInput { attack: boolean; block: boolean; jump: boolean; skill: string; mx: number; mz: number }
 
+const SKILL_KEY: Partial<Record<Action, string>> = { skill1: "z", skill2: "x", skill3: "c" };
+
 export class Input {
-  private keys = new Set<string>();
-  private mouse = [false, false, false];
+  /** Pressed codes: keyboard codes and "Mouse0".."Mouse4". */
+  private down = new Set<string>();
   private skills: string[] = [];
   private el: HTMLElement | null = null;
 
+  private press(code: string, on: boolean) {
+    if (on && !this.down.has(code)) {
+      const a = actionFor(code);
+      const s = a && SKILL_KEY[a];
+      if (s) this.skills.push(s);
+    }
+    if (on) this.down.add(code); else this.down.delete(code);
+  }
+
   private onKey = (e: KeyboardEvent) => {
     if ((e.target as HTMLElement)?.tagName === "INPUT") return;
-    if (e.type === "keydown") {
-      if (!this.keys.has(e.code)) {
-        if (e.code === "KeyZ") this.skills.push("z");
-        if (e.code === "KeyX") this.skills.push("x");
-        if (e.code === "KeyC") this.skills.push("c");
-      }
-      this.keys.add(e.code);
-      if (e.code === "Space") e.preventDefault();
-    } else this.keys.delete(e.code);
+    this.press(e.code, e.type === "keydown");
+    if (e.type === "keydown" && actionFor(e.code) && (e.code === "Space" || e.code.startsWith("Arrow") || e.code === "Tab")) e.preventDefault();
   };
   private onMouse = (e: MouseEvent) => {
-    this.mouse[e.button] = e.type === "mousedown";
-    if (e.type === "mousedown") e.preventDefault();
+    this.press("Mouse" + e.button, true);
+    e.preventDefault();
   };
-  private onUp = (e: MouseEvent) => { this.mouse[e.button] = false; };
+  private onUp = (e: MouseEvent) => { this.press("Mouse" + e.button, false); };
   private noMenu = (e: Event) => e.preventDefault();
-  private onBlur = () => { this.keys.clear(); this.mouse = [false, false, false]; };
+  private onBlur = () => { this.down.clear(); };
 
   attach(el: HTMLElement) {
     this.el = el;
@@ -49,14 +55,18 @@ export class Input {
     window.removeEventListener("blur", this.onBlur);
   }
 
+  private held(a: Action) {
+    for (const c of this.down) if (actionFor(c) === a) return true;
+    return false;
+  }
+
   /** Reads this frame's input; movement is converted to a world direction using the camera. */
   read(camera: THREE.Camera): RawInput {
-    const k = this.keys;
     let x = 0, y = 0;
-    if (k.has("KeyD") || k.has("ArrowRight")) x += 1;
-    if (k.has("KeyA") || k.has("ArrowLeft")) x -= 1;
-    if (k.has("KeyW") || k.has("ArrowUp")) y += 1;
-    if (k.has("KeyS") || k.has("ArrowDown")) y -= 1;
+    if (this.held("right")) x += 1;
+    if (this.held("left")) x -= 1;
+    if (this.held("up")) y += 1;
+    if (this.held("down")) y -= 1;
     let mx = 0, mz = 0;
     if (x || y) {
       const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
@@ -66,6 +76,6 @@ export class Input {
       const m = right.multiplyScalar(x).addScaledVector(fwd, y).normalize();
       mx = m.x; mz = m.z;
     }
-    return { attack: this.mouse[0], block: this.mouse[2], jump: k.has("Space"), skill: this.skills.shift() ?? "", mx, mz };
+    return { attack: this.held("attack"), block: this.held("block"), jump: this.held("jump"), skill: this.skills.shift() ?? "", mx, mz };
   }
 }

@@ -5,6 +5,8 @@ import Lobby from "./Lobby";
 import GameView from "./GameView";
 import AccountScreen, { Wallet } from "./Account";
 import Shop from "./Shop";
+import Settings, { useBindings } from "./Settings";
+import { label } from "@/game/keys";
 import type { GameConfig } from "@/game/game";
 import type { Net } from "@/game/net";
 import { account, useAccount } from "@/lib/account";
@@ -14,11 +16,13 @@ type Screen =
   | { s: "select"; purpose: "duel" | "brawl" | "survival" }
   | { s: "online" }
   | { s: "account" }
+  | { s: "settings" }
   | { s: "shop"; tab?: "fighters" | "skills" | "emblems" | "diamonds" }
   | { s: "game"; cfg: GameConfig; net: Net | null; matchId?: string; bet?: number; team?: number };
 
 export default function App() {
   const acc = useAccount();
+  useBindings();
   const [screen, setScreen] = useState<Screen>({ s: "menu" });
   const [guestName, setGuestName] = useState("Player");
 
@@ -50,6 +54,7 @@ export default function App() {
       />
     );
   }
+  if (screen.s === "settings") return <Settings onBack={toMenu} />;
   if (screen.s === "online") {
     return <Lobby name={name} onBack={toMenu} onShop={() => setScreen({ s: "shop" })}
       onStart={(cfg, net, matchId, bet, team) => setScreen({ s: "game", cfg, net, matchId, bet, team })} />;
@@ -81,12 +86,13 @@ export default function App() {
           <button className="big ghost" onClick={() => setScreen({ s: "shop" })}>Shop</button>
           <button className="big ghost" onClick={() => setScreen({ s: "shop", tab: "emblems" })}>Emblems</button>
         </div>
+        <button className="big ghost" onClick={() => setScreen({ s: "settings" })}>Settings: Controls</button>
         <div className="controls">
           <b>Controls</b>
-          <span>WASD move</span><span>Space jump</span>
-          <span>Left click: attack (tap) / charged attack (hold)</span>
-          <span>Right click: block (block just before a hit to PARRY)</span>
-          <span>Z X C skills</span><span>Esc: leave match</span>
+          <span>{label("up")} {label("left")} {label("down")} {label("right")} move</span><span>{label("jump")} jump</span>
+          <span>{label("attack")}: attack (tap) / charged attack (hold)</span>
+          <span>{label("block")}: block (block just before a hit to PARRY)</span>
+          <span>{label("skill1")} {label("skill2")} {label("skill3")} skills</span><span>Esc: leave match</span>
           <span>Win a 1v1: +250 gold. Survival: gold for every mob.</span>
         </div>
       </div>
