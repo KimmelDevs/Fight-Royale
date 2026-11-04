@@ -100,6 +100,8 @@ export class VrmRig {
   style: MotionStyle = "light";
   /** Right hand holds a staff: heavy, upright, spring-driven instead of copying the wrist. */
   staff = false;
+  /** Left hand carries a big shield that always faces front. */
+  shield = false;
   private staffDir = new THREE.Vector3();
   private staffVel = new THREE.Vector3();
   private hipsBone: THREE.Object3D | null;
@@ -262,6 +264,14 @@ export class VrmRig {
           this.staffVel.addScaledVector(_v.copy(want).sub(this.staffDir), w * w * dt).multiplyScalar(Math.max(0, 1 - 2 * zeta * w * dt));
           this.staffDir.addScaledVector(this.staffVel, dt).normalize();
           const mount = new THREE.Quaternion().setFromUnitVectors(up, this.staffDir);
+          hk.joint.quaternion.copy(parentRoot.multiply(mount));
+        } else if (this.shield && side === "left") {
+          // A big shield faces the front (slightly turned to cover the centerline), top up,
+          // whatever the wrist does; it tips forward a little as the arm rises (blocks, bash).
+          const raise = THREE.MathUtils.clamp((poseDir.z + 1) * 0.5, 0, 1);
+          const basis = new THREE.Matrix4().makeBasis(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, -1), new THREE.Vector3(0, 1, 0));
+          const mount = new THREE.Quaternion().setFromEuler(_e.set(D(8) * raise, -D(12), 0, "YXZ"))
+            .multiply(new THREE.Quaternion().setFromRotationMatrix(basis));
           hk.joint.quaternion.copy(parentRoot.multiply(mount));
         } else {
           // Weapon mount (procedural hand) takes the VRM hand's final orientation.

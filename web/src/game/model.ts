@@ -814,7 +814,7 @@ export class FighterModel extends THREE.Group {
     this.vrmRig.followArm = this.kit === "mage" ? 0.4 : this.kit === "bow" ? 0.5 : 0.3;
     this.vrmRig.staff = this.kit === "mage";
     this.vrmRig.style = this.look.body === "m" ? "heavy" : "light";
-    if (this.kit === "knight") this.buildHeaterShield();
+    if (this.kit === "knight") { this.buildHeaterShield(); this.vrmRig.shield = true; }
     for (const h of [this.hand_l, this.hand_r]) h.scale.multiplyScalar(VRM_WEAPON_SCALE);
     JN.forEach((n, i) => this.joints[n].quaternion.copy(save[i]));
     this.hips.position.copy(hipsPos);
