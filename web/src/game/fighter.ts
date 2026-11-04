@@ -233,6 +233,7 @@ export class Fighter implements Entity {
     this.trail.emitting = this.state === S.ATTACK && !!a && a.type === "melee" &&
       (this.atkPhase === 1 || (this.atkPhase === 0 && this.stateT > a.wind * 0.6) || (this.atkPhase === 2 && this.stateT < a.wind + a.active + 0.05));
     this.model.setBarrier(this.state === S.BLOCK && this.kit === "mage");
+    this.model.combat = [S.ATTACK, S.CHARGE, S.BLOCK, S.HITSTUN, S.STAGGER].includes(this.state);
     this.model.charge = this.state === S.CHARGE ? Math.min(this.stateT / CHARGE_MAX, 1) : Math.max(this.model.charge - dt * 4, 0);
     this.computePose();
     this.model.blend(this.poses[this.poseName] ?? this.poses.idle, dt, this.poseSpeed);
@@ -731,6 +732,7 @@ export class Fighter implements Entity {
     this.dashCd = Math.max(this.dashCd - dt, 0);
     if (this.state !== S.KO) this.model.rotation.y = this.viewBias;
     this.model.setBarrier(this.state === S.BLOCK && this.kit === "mage");
+    this.model.combat = [S.ATTACK, S.CHARGE, S.BLOCK, S.HITSTUN, S.STAGGER].includes(this.state);
     this.model.blend(this.poses[this.poseName] ?? this.poses.idle, dt, this.poseSpeed);
     this.trail.update(dt);
   }

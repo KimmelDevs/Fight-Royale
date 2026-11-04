@@ -91,6 +91,8 @@ export class FighterModel extends THREE.Group {
   walk = 0;
   recoil = 0;
   charge = 0;
+  /** Attacking, charging, blocking or reeling (set by the fighter each frame). */
+  combat = false;
 
   private joints: Record<string, THREE.Group> = {};
   /** Procedural body meshes (hidden once a VRM body is attached) and the VRM rig. */
@@ -765,7 +767,7 @@ export class FighterModel extends THREE.Group {
     this.cape.rotation.set(0.08 + 0.3 * this.walk + 0.3 * this.recoil + Math.sin(this.t * 2.1) * 0.03, 0, Math.sin(this.t * 1.7) * 0.03);
     this.hairSway.forEach((h, i) => { h.rotation.x = 0.1 * this.walk + 0.25 * this.recoil + Math.sin(this.t * 2 + i) * 0.05; });
     if (this.gripL) this.reachGrip();
-    this.vrmRig?.update(dt, { t: this.t, walk: this.walk, phase: this.walkPhase, crouch: this.hipsY });
+    this.vrmRig?.update(dt, { t: this.t, walk: this.walk, phase: this.walkPhase, crouch: this.hipsY, combat: this.combat });
     this.glowMat.color.copy(this.glowBase).lerp(new THREE.Color(1, 1, 1), this.charge * (0.5 + 0.3 * Math.sin(this.t * 30)));
     this.updateBlink(dt);
     this.updateFlash(dt);
@@ -815,6 +817,14 @@ export class FighterModel extends THREE.Group {
     this.vrmRig.staff = this.kit === "mage";
     this.vrmRig.style = this.look.body === "m" ? "heavy" : "light";
     if (this.kit === "knight") { this.buildHeaterShield(); this.vrmRig.shield = true; }
+    if (this.gripL) { this.vrmRig.gripL = this.gripL; this.vrmRig.bladed = 1; }
+    if (["knight", "greatsword", "katana"].includes(this.kit) && this.bladeBase.parent) {
+      // A point off the blade's cutting edge (blades are wide along their local X).
+      const bb = this.bladeBase.position;
+      const edge = pivot(this.bladeBase.parent, [bb.x + 0.1, bb.y, bb.z]);
+      this.vrmRig.blade = { base: this.bladeBase, tip: this.bladeTip, edge };
+    }
+    if (this.kit === "greatsword") { this.vrmRig.restSword = true; this.vrmRig.grip.left = true; }
     for (const h of [this.hand_l, this.hand_r]) h.scale.multiplyScalar(VRM_WEAPON_SCALE);
     JN.forEach((n, i) => this.joints[n].quaternion.copy(save[i]));
     this.hips.position.copy(hipsPos);
