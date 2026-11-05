@@ -682,63 +682,118 @@ export class FighterModel extends THREE.Group {
   }
 
   /** KAIZEN_BIND_ZAREK_COUNTER_V4: forked short blade in right hand, long chain gripped by left. */
+
   private buildChainblade() {
-    // Chain end in the OFF hand.  Right hand catches/releases the blade; off hand steers it.
-    const reel = pivot(this.hand_l, [0, -0.06, 0], [PI / 2, 0, 0]);
-    mesh(reel, cyl(0.032, 0.031, 0.23, 10), this.tn("#381b26"));
-    mesh(reel, sphere(0.044, 12), this.tn("#e8bd72"), [0, 0.12, 0]);
-    this.chainAnchor = pivot(reel, [0, 0.14, 0]);
-    const black = this.tn("#22242a");
-    // Long, independent links. Alternate orientation so the chain reads as metal links.
-    for (let i = 0; i < 44; i++) {
+    // KAIZEN_WEAPON_V5: compact forked spear-knife, dark red grip, individually sized links.
+    // Off-hand holds the free end; the blade flies independently in the other hand.
+    const anchorGrip = pivot(this.hand_l, [0, -0.055, 0], [PI / 2, 0, 0]);
+    mesh(anchorGrip, cyl(0.025, 0.028, 0.19, 12), this.tn("#36202b"));
+    mesh(anchorGrip, cyl(0.037, 0.033, 0.018, 12), this.tn("#c69c52"), [0, 0.09, 0]);
+    mesh(anchorGrip, sphere(0.027, 12), this.tn("#a8aab2"), [0, -0.103, 0]);
+    this.chainAnchor = pivot(anchorGrip, [0, 0.113, 0]);
+
+    // Thin, correctly proportioned steel chain. No scaling links along their length.
+    const darkSteel = this.tn("#30343d");
+    const chainHighlight = this.tn("#7b808b");
+    for (let i = 0; i < 72; i++) {
       const link = pivot(this);
-      mesh(link, torus(0.025, 0.078), black, [0, 0, 0],
-        [i % 2 === 0 ? 0 : PI / 2, 0, 0], [0.83, 1, 1.14]);
+      mesh(link, torus(0.016, 0.034), darkSteel, [0, 0, 0],
+        [i % 2 ? PI / 2 : 0, 0, 0], [0.80, 1.16, 0.85]);
+      mesh(link, torus(0.017, 0.030), chainHighlight, [0, 0, 0.003],
+        [i % 2 ? PI / 2 : 0, 0, 0], [0.75, 1.13, 0.8]);
+      link.visible = false;
       this.chainLinks.push(link);
     }
-    // One blade, not an articulated sword. Shape inspired by the supplied forked spear-knife.
-    this.chainBlade = pivot(this, [0, 1.13, 0.24]);
-    mesh(this.chainBlade, cyl(0.031, 0.037, 0.41, 12), this.tn("#6b202d"), [0, -0.04, 0]);
-    for (const y of [-0.21, -0.13, -0.05, 0.04])
-      mesh(this.chainBlade, torus(0.032, 0.038), this.tn("#a43b4c"), [0, y, 0], [PI / 2, 0, 0], [1, 0.35, 1]);
-    mesh(this.chainBlade, box(0.21, 0.034, 0.068), this.tn("#d4ad60"), [0, 0.17, 0]);
-    const bladeShape = new THREE.Shape();
-    bladeShape.moveTo(-0.075, 0.18);
-    bladeShape.lineTo(0.068, 0.18);
-    bladeShape.lineTo(0.112, 0.30);
-    bladeShape.lineTo(0.099, 0.52);
-    bladeShape.lineTo(0.030, 0.56); // right hooked tine
-    bladeShape.lineTo(0.038, 0.43);
-    bladeShape.lineTo(-0.030, 0.47); // notch between the sharpened tines
-    bladeShape.lineTo(-0.076, 0.64); // long left point
-    bladeShape.lineTo(-0.052, 0.37);
-    bladeShape.lineTo(-0.13, 0.29);
-    bladeShape.closePath();
-    const bladeGeo = new THREE.ExtrudeGeometry(bladeShape, {
-      depth: 0.016, bevelEnabled: true, bevelThickness: 0.004,
-      bevelSize: 0.0025, bevelSegments: 1,
+
+    // All weapon details belong to a single rigid blade group.
+    this.chainBlade = pivot(this, [0, 1.11, 0.24]);
+    const grip = this.tn("#681d2e");
+    const bright = this.tn("#e1e4e8");
+    const dark = this.tn("#6b7381");
+    const brass = this.tn("#cba864");
+    mesh(this.chainBlade, cyl(0.028, 0.030, 0.34, 14), grip, [0, -0.02, 0]);
+    // Diagonal-looking handle wrappings and a chain-link connection at the pommel.
+    for (let i = 0; i < 7; i++) {
+      const y = -0.165 + i * 0.045;
+      mesh(this.chainBlade, torus(0.027, 0.034), this.tn("#9b3d4c"),
+        [0, y, 0], [PI / 2, 0, 0], [0.89, 0.32, 1.02]);
+    }
+    mesh(this.chainBlade, cyl(0.043, 0.039, 0.032, 14), brass, [0, 0.169, 0]);
+    mesh(this.chainBlade, cyl(0.037, 0.037, 0.031, 14), brass, [0, -0.197, 0]);
+    mesh(this.chainBlade, sphere(0.025, 12), dark, [0, -0.224, 0]);
+    mesh(this.chainBlade, box(0.19, 0.025, 0.062), brass, [0, 0.196, 0]);
+    mesh(this.chainBlade, sphere(0.024, 12), this.gem(), [0, 0.201, 0.036]);
+
+    // An asymmetric, forked polished blade (no thick bevels or oversized side tines).
+    const shape = new THREE.Shape();
+    shape.moveTo(-0.073, 0.214);
+    shape.lineTo(0.080, 0.214);
+    shape.lineTo(0.111, 0.305);
+    shape.lineTo(0.104, 0.482);
+    shape.lineTo(0.071, 0.607); // short tine
+    shape.lineTo(0.039, 0.564);
+    shape.lineTo(0.054, 0.433);
+    shape.lineTo(-0.024, 0.466); // inner gap
+    shape.lineTo(-0.101, 0.718); // long fine tip
+    shape.lineTo(-0.130, 0.682);
+    shape.lineTo(-0.081, 0.390);
+    shape.lineTo(-0.150, 0.295);
+    shape.closePath();
+    const daggerGeo = new THREE.ExtrudeGeometry(shape, {
+      depth: 0.012, bevelEnabled: true, bevelThickness: 0.003,
+      bevelSize: 0.002, bevelSegments: 2,
     });
-    bladeGeo.translate(0, 0, -0.008);
-    mesh(this.chainBlade, bladeGeo, this.steel());
-    mesh(this.chainBlade, box(0.013, 0.21, 0.018), this.glowMat,
-      [-0.053, 0.33, 0.02], [0, 0, -0.16]);
-    this.bladeBase = pivot(this.chainBlade, [0, 0.19, 0]);
-    this.bladeTip = pivot(this.chainBlade, [-0.076, 0.64, 0]);
+    daggerGeo.translate(0, 0, -0.006);
+    // KAIZEN_BIND_ZX_V6: resize only the blade head. Keep the chain, grip and guard as V5.
+    daggerGeo.translate(0, -0.214, 0);
+    daggerGeo.scale(0.72, 0.72, 1);
+    daggerGeo.translate(0, 0.214, 0);
+    mesh(this.chainBlade, daggerGeo, bright);
+    // Separate narrow central ridge makes the steel appear faceted, not like a paddle.
+    const ridge = new THREE.Shape();
+    ridge.moveTo(-0.052, 0.257);
+    ridge.lineTo(0.033, 0.256);
+    ridge.lineTo(0.028, 0.407);
+    ridge.lineTo(-0.070, 0.625);
+    ridge.lineTo(-0.049, 0.400);
+    ridge.closePath();
+    const ridgeGeo = new THREE.ExtrudeGeometry(ridge, { depth: 0.005, bevelEnabled: false });
+    ridgeGeo.translate(0, 0, 0.010);
+    ridgeGeo.translate(0, -0.214, 0);
+    ridgeGeo.scale(0.72, 0.72, 1);
+    ridgeGeo.translate(0, 0.214, 0);
+    mesh(this.chainBlade, ridgeGeo, dark);
+    // Fine edge highlight along the long tine.
+    const edgePath = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(-0.147, 0.300, 0.014),
+      new THREE.Vector3(-0.079, 0.391, 0.014),
+      new THREE.Vector3(-0.129, 0.681, 0.014),
+      new THREE.Vector3(-0.101, 0.716, 0.014),
+    ]);
+    const edgeGeo = new THREE.TubeGeometry(edgePath, 22, 0.0035, 4, false);
+    edgeGeo.translate(0, -0.214, 0);
+    edgeGeo.scale(0.72, 0.72, 1);
+    edgeGeo.translate(0, 0.214, 0);
+    mesh(this.chainBlade, edgeGeo, bright);
+    for (const yy of [0.272, 0.317])
+      mesh(this.chainBlade, sphere(0.009, 8), brass, [0.018, yy, 0.018]);
+    this.bladeBase = pivot(this.chainBlade, [0, 0.21, 0]);
+    this.bladeTip = pivot(this.chainBlade, [-0.072, 0.578, 0]);
     this.castPoint = this.bladeTip;
-    this.shieldNode = reel;
-    // No two-handed grip: the chain end and the blade have independent hand motion.
-    // Additional links make obvious wraps around a caught enemy's chest and arms.
-    for (let i = 0; i < 22; i++) {
-      const wrapLink = pivot(this);
-      mesh(wrapLink, torus(0.023, 0.074), black, [0, 0, 0],
-        [i % 2 ? PI / 2 : 0, 0, 0], [0.85, 1, 1.1]);
-      wrapLink.visible = false;
-      this.chainWrap.push(wrapLink);
+    this.shieldNode = anchorGrip;
+
+    // Thin chains wrapped around an enemy during X/V binding, not giant hoops.
+    for (let i = 0; i < 28; i++) {
+      const node = pivot(this);
+      mesh(node, torus(0.014, 0.030), darkSteel, [0, 0, 0],
+        [i % 2 ? PI / 2 : 0, 0, 0], [0.83, 1.11, 0.88]);
+      node.visible = false;
+      this.chainWrap.push(node);
     }
     for (let i = 0; i < 2; i++) {
-      const mat = new THREE.MeshBasicMaterial({ color: i ? 0xffbbc9 : 0xff566c,
-        transparent: true, opacity: i ? 0.12 : 0.22, depthWrite: false, side: THREE.DoubleSide });
-      const ghost = new THREE.Mesh(bladeGeo, mat);
+      const mat = new THREE.MeshBasicMaterial({ color: i ? 0xf4bec7 : 0xff5a69,
+        transparent: true, opacity: i ? 0.08 : 0.16, depthWrite: false, side: THREE.DoubleSide });
+      const ghost = new THREE.Mesh(daggerGeo, mat);
       ghost.visible = false;
       ghost.userData.fill = true;
       this.add(ghost);
@@ -746,82 +801,117 @@ export class FighterModel extends THREE.Group {
     }
   }
 
-  /** Chain rotates between off-hand and flying blade; bound enemies visibly wear chain loops. */
+  /** V5: free-moving forked blade; thin chain follows a real curve without stretched links. */
+
+
   private updateChainblade(dt: number) {
     const blade = this.chainBlade, anchor = this.chainAnchor;
     if (!blade || !anchor || !this.chainLinks.length) return;
     this.updateMatrixWorld(true);
     const start = this.worldToLocal(anchor.getWorldPosition(new THREE.Vector3()));
-    const handRight = this.worldToLocal(this.hand_r.getWorldPosition(new THREE.Vector3()));
+    const handR = this.worldToLocal(this.hand_r.getWorldPosition(new THREE.Vector3()));
     const pose = this.chainPose;
     if (pose !== this.chainPrevPose) { this.chainPoseClock = 0; this.chainPrevPose = pose; }
     else this.chainPoseClock += dt;
     const t = this.chainPoseClock;
+    const blocking = pose === "block";
     const orbit = /^(?:cbx|cbz|cbc)/.test(pose);
     const strike = pose.endsWith("_s");
     const attack = /^(?:cb[1-5]_|cbh_|cbz_|cbv_|cbc_|cbx)/.test(pose);
-    let goal = handRight.clone().add(new THREE.Vector3(0, 0.1, 0.2));
     const bound = this.chainBindTargetWorld !== null;
     const bindCenter = bound ? this.worldToLocal(this.chainBindTargetWorld!.clone()) : null;
+    this.chainOrbit += dt * (blocking ? 15 : orbit ? (strike ? 20 : 11) : attack ? 8 : 1.4);
+
+    let goal = handR.clone().add(new THREE.Vector3(0, 0.08, 0.16));
     if (bindCenter) {
-      goal = bindCenter.clone().add(new THREE.Vector3(0.10, 0.18, 0.06));
+      goal = bindCenter.clone().add(new THREE.Vector3(0.05, 0.13, 0.02));
+    } else if (blocking) {
+      // Continuous rotating guard that stays tight to the torso.
+      goal.set(Math.sin(this.chainOrbit) * 0.77,
+        1.10 + Math.sin(this.chainOrbit * 2) * 0.09,
+        0.18 + Math.cos(this.chainOrbit) * 0.69);
     } else if (orbit) {
-      this.chainOrbit += dt * (strike ? 21 : 11);
-      const r = strike ? 2.04 : 1.17;
-      goal = new THREE.Vector3(Math.sin(this.chainOrbit) * r,
-        1.14 + Math.sin(this.chainOrbit * 2) * 0.15,
-        Math.cos(this.chainOrbit) * r * 0.84 + 0.24);
+      const r = strike ? 1.85 : 1.12;
+      goal.set(Math.sin(this.chainOrbit) * r,
+        1.14 + Math.sin(this.chainOrbit * 2) * 0.13,
+        Math.cos(this.chainOrbit) * r * 0.83 + 0.22);
     } else if (pose.startsWith("cbh") || pose.startsWith("cbv")) {
-      const power = strike ? Math.min(1, t * 4.8) : 0.20;
-      const travel = Math.sin(Math.PI * power) * 2.75;
-      goal = new THREE.Vector3(start.x + Math.sin(t * 9) * 0.18, 1.28, start.z + 0.5 + travel);
+      const power = strike ? Math.min(1, t * 4.8) : 0.2;
+      const travel = Math.sin(Math.PI * power) * 2.55;
+      goal.set(start.x + Math.sin(t * 9) * 0.16, 1.25, start.z + 0.45 + travel);
     } else if (/^cb[1-5]_[ws]$/.test(pose)) {
-      const n = Number(pose[2]), dir = n % 2 ? 1 : -1;
-      const theta = (n % 2 ? -1.0 : 1.0) + dir * (strike ? Math.min(1,t / 0.24) * PI * 1.18 : -0.2);
-      const radius = strike ? 1.62 : 0.78;
-      goal = new THREE.Vector3(Math.sin(theta) * radius,
-        1.17 + Math.cos(theta + n) * 0.31, Math.cos(theta) * radius * .78 + .25);
-    } else if (pose === "block") {
-      goal = handRight.clone().add(new THREE.Vector3(-0.11, 0.15, 0.20));
+      const n = Number(pose[2]), sign = n % 2 ? 1 : -1;
+      const angle = (n % 2 ? -1 : 1) + sign * (strike ? Math.min(1, t / 0.24) * PI * 1.16 : -0.2);
+      const r = strike ? 1.46 : 0.76;
+      goal.set(Math.sin(angle) * r, 1.14 + Math.cos(angle + n) * 0.25,
+        Math.cos(angle) * r * 0.77 + 0.2);
     }
-    blade.position.lerp(goal, 1 - Math.exp(-(bound ? 42 : attack ? 25 : 14) * dt));
+    blade.position.lerp(goal, 1 - Math.exp(-(bound ? 38 : blocking ? 36 : attack ? 26 : 17) * dt));
     const end = blade.position.clone();
-    const ctrl = start.clone().lerp(end, 0.50).add(new THREE.Vector3(
-      Math.sin(this.chainOrbit) * (orbit ? .40 : .12), bound ? .12 : attack ? .08 : -.22,
-      Math.cos(this.chainOrbit) * (orbit ? .36 : .10)));
-    const curve = new THREE.QuadraticBezierCurve3(start, ctrl, end);
+
+    // During guard the blade goes around Kaizen, and the chain follows the preceding arc.
+    // During attacks a slack quadratic produces natural whiplash.
+    const curve = blocking ? new THREE.CatmullRomCurve3([
+      start,
+      new THREE.Vector3(Math.sin(this.chainOrbit - 1.05) * 0.63, 1.08,
+        0.16 + Math.cos(this.chainOrbit - 1.05) * 0.60),
+      new THREE.Vector3(Math.sin(this.chainOrbit - 0.48) * 0.76, 1.13,
+        0.16 + Math.cos(this.chainOrbit - 0.48) * 0.66),
+      end,
+    ], false, "centripetal", 0.5) : new THREE.QuadraticBezierCurve3(
+      start,
+      start.clone().lerp(end, 0.5).add(new THREE.Vector3(
+        Math.sin(this.chainOrbit) * (orbit ? 0.34 : 0.10),
+        bound ? 0.02 : attack ? 0.06 : -0.23,
+        Math.cos(this.chainOrbit) * (orbit ? 0.31 : 0.09))),
+      end,
+    );
+
+    // Maintain original link shape and thickness at every reach; add/hide links instead
+    // of stretching them (the cause of the giant chain in V4).
+    const length = curve.getLength();
+    const visibleCount = THREE.MathUtils.clamp(Math.ceil(length / 0.047), 8, this.chainLinks.length);
     const up = new THREE.Vector3(0, 1, 0);
     for (let i = 0; i < this.chainLinks.length; i++) {
-      const q = (i + 0.5) / this.chainLinks.length;
       const link = this.chainLinks[i];
-      link.position.copy(curve.getPoint(q));
-      link.quaternion.setFromUnitVectors(up, curve.getTangent(q).normalize());
+      link.visible = i < visibleCount;
+      if (!link.visible) continue;
+      const u = (i + 0.5) / visibleCount;
+      link.position.copy(curve.getPoint(u));
+      const tan = curve.getTangent(u).normalize();
+      if (tan.lengthSq() > 0.0001) link.quaternion.setFromUnitVectors(up, tan);
       link.rotateY((i % 2) * PI / 2);
-      // Stretch along the path so the links connect at different throw distances.
-      link.scale.y = Math.max(.65, Math.min(1.5, curve.getLength() / (this.chainLinks.length * .105)));
+      link.scale.setScalar(1); // never widen a link with distance
     }
+    // Smaller enemy wraps: two tight overlapping chain loops at chest height.
     for (let i = 0; i < this.chainWrap.length; i++) {
-      const wrap = this.chainWrap[i];
-      wrap.visible = !!bindCenter;
+      const link = this.chainWrap[i];
+      link.visible = !!bindCenter;
       if (!bindCenter) continue;
-      const a = i * TAU / 11, height = i < 11 ? -.17 : .17;
-      wrap.position.copy(bindCenter!).add(new THREE.Vector3(
-        Math.sin(a) * .43, height + Math.sin(a * 2) * .055, Math.cos(a) * .43));
-      wrap.rotation.set(.15 * Math.sin(a), a + PI / 2, 0);
+      const angle = (i % 14) * TAU / 14;
+      const layer = i < 14 ? -0.13 : 0.13;
+      link.position.copy(bindCenter).add(new THREE.Vector3(
+        Math.sin(angle) * 0.32, layer + Math.sin(angle * 2) * 0.04,
+        Math.cos(angle) * 0.32));
+      link.rotation.set(0.1 * Math.cos(angle), angle + PI / 2, 0);
     }
-    const vector = end.clone().sub(curve.getPoint(.87));
-    if (vector.lengthSq() > .001) blade.quaternion.slerp(
-      new THREE.Quaternion().setFromUnitVectors(up, vector.normalize()), 1 - Math.exp(-18 * dt));
-    let previous: THREE.Object3D = blade;
+    const tangent = blocking
+      ? new THREE.Vector3(Math.cos(this.chainOrbit), 0, -Math.sin(this.chainOrbit)).normalize()
+      : end.clone().sub(curve.getPoint(0.86)).normalize();
+    if (tangent.lengthSq() > 0.01)
+      blade.quaternion.slerp(new THREE.Quaternion().setFromUnitVectors(up, tangent),
+        1 - Math.exp(-(blocking ? 30 : 18) * dt));
+    let prev: THREE.Object3D = blade;
     for (let i = 0; i < this.chainGhosts.length; i++) {
       const ghost = this.chainGhosts[i];
-      ghost.visible = attack && !bound && (strike || orbit);
-      ghost.position.lerp(previous.position, 1 - Math.exp(-(i ? 12 : 19) * dt));
-      ghost.quaternion.slerp(previous.quaternion, 1 - Math.exp(-18 * dt));
-      ghost.scale.setScalar(i ? .85 : .96);
-      previous = ghost;
+      ghost.visible = !bound && (blocking || (attack && (strike || orbit)));
+      ghost.position.lerp(prev.position, 1 - Math.exp(-(i ? 10 : 17) * dt));
+      ghost.quaternion.slerp(prev.quaternion, 1 - Math.exp(-16 * dt));
+      ghost.scale.setScalar(i ? 0.85 : 0.95);
+      prev = ghost;
     }
   }
+
 
   private buildSword() {
     const s = pivot(this.hand_r, [0, 0, 0], [PI / 2, 0, 0]);

@@ -194,6 +194,9 @@ export class Fighter implements Entity {
   chainBindT = 0;
   chainBindKind: "x" | "v" | "" = "";
   chainChoiceArmed = false;
+  // KAIZEN_BIND_FOLLOWUP_V7: after selecting Z/X, both remain bound until the action finishes.
+  chainBindFinishT = 0;
+  chainResolveDirection: "forward" | "backward" | "" = "";
   onChainBindResolve: (f: Fighter, dir: "forward" | "backward", kind: "x" | "v") => void = () => {};
   bloodlust = 0;
   bloodFrenzyT = 0;
@@ -299,26 +302,55 @@ export class Fighter implements Entity {
     if (this.chainBindTarget && (this.chainBindTarget.isDown() || this.state === S.KO))
       this.releaseChainBind();
     if (this.chainBindTarget && this.chainBindT > 0) {
-      this.chainBindT = Math.max(0, this.chainBindT - dt);
-      const dir = this.chainRelativeDirection();
-      if (dir === "neutral") this.chainChoiceArmed = true;
-      else if (this.chainChoiceArmed && (dir === "forward" || dir === "backward")) {
-        const kind = this.chainBindKind;
-        this.onChainBindResolve(this, dir, kind as "x" | "v");
-        this.releaseChainBind();
+      if (this.chainBindFinishT > 0) {
+        // KAIZEN_BIND_FOLLOWUP_V7: the chosen move owns the bind until it completes.
+        // NEVER pass this key to readSkill() as an ordinary Z or X cast.
+        this.intent.skill = "";
+        this.chainBindFinishT = Math.max(0, this.chainBindFinishT - dt);
+        this.chainBindT = this.chainBindFinishT;
+        if (this.chainBindFinishT === 0) this.releaseChainBind();
+      } else {
+        // Four seconds to choose Z (forward) or X (backward).
+        this.chainBindT = Math.max(0, this.chainBindT - dt);
+        const choice = this.intent.skill;
+        if (!choice) this.chainChoiceArmed = true;
+        else if (this.chainChoiceArmed && (choice === "z" || choice === "x")) {
+          const direction = choice === "z" ? "forward" : "backward";
+          const kind = this.chainBindKind as "x" | "v";
+          this.chainChoiceArmed = false;
+          this.chainResolveDirection = direction;
+          // Serpent Bind's forward launch and delayed landing hit ends at 0.67s.
+          // Other follow-ups finish sooner but still need a short chained animation.
+          this.chainBindFinishT = kind === "v" && direction === "forward" ? 0.85
+            : kind === "v" ? 0.48 : 0.38;
+          this.chainBindT = this.chainBindFinishT;
+          this.intent.skill = ""; // consume the selection so the normal Z/X cannot fire
+          this.onChainBindResolve(this, direction, kind);
+        }
+        if (this.chainBindT === 0) this.releaseChainBind();
       }
-      if (this.chainBindT === 0) this.releaseChainBind();
     }
-    // Both combatants are fixed in place. They can still take HP damage and DOT ticks.
+    // Both fighters remain input-locked for the entire follow-up (not just the key press).
     if (this.chainBindT > 0 || (this.chainBoundBy && this.chainBoundBy.chainBindT > 0)) {
-      this.vx = 0; this.velY = 0; this.knock = 0; this.dashT = 0;
+      // The target must be allowed to travel vertically during Serpent Bind's forward
+      // launch/slam, but still cannot steer, attack, dash or activate skills.
+      const launchingVictim = !!this.chainBoundBy &&
+        this.chainBoundBy.chainBindFinishT > 0 &&
+        this.chainBoundBy.chainBindKind === "v" &&
+        this.chainBoundBy.chainResolveDirection === "forward";
+      this.vx = 0;
+      if (!launchingVictim) this.velY = 0;
+      this.knock = 0; this.dashT = 0;
       this.airChaseMoveT = 0; this.model.walk = 0; this.trail.emitting = false;
       this.model.chainPose = this.kit === "chainblade" ? "cbv_s" : "idle";
       this.model.chainBindTargetWorld = this.chainBindTarget?.chest() ?? null;
-      // No movement / attack / jump update; pose renders in the normal animation pipeline.
       this.poseName = this.kit === "chainblade" ? "cbv_s" : "hit";
       this.poseSpeed = 13;
       this.model.blend(this.poses[this.poseName] ?? this.poses.idle, dt, this.poseSpeed);
+      if (launchingVictim) {
+        if (this.stage) this.verticalPlat(dt);
+        else this.vertical(dt);
+      }
       this.trail.update(dt);
       return;
     }
@@ -347,7 +379,11 @@ export class Fighter implements Entity {
     else { this.move(dt); this.vertical(dt); }
     if (this.state !== S.BLOCK) {
       this.guardDelay -= dt;
-      if (this.guardDelay <= 0) this.guard = Math.min(this.guard + GUARD_REGEN * dt, this.maxGuard);
+      if (this.guardDelay <= 0) {
+        // KAIZEN_GUARD_CLASH_V8: Kaizen regenerates guard at half the usual rate.
+        const guardRegen = this.kit === "chainblade" ? GUARD_REGEN * 0.5 : GUARD_REGEN;
+        this.guard = Math.min(this.guard + guardRegen * dt, this.maxGuard);
+      }
     }
     const a = this.atk;
     this.trail.emitting = this.state === S.ATTACK && !!a && (a.type === "melee" || a.style === "iron_tempest") &&
@@ -530,7 +566,9 @@ export class Fighter implements Entity {
     this.chainBindTarget = victim;
     this.chainBindKind = kind;
     this.chainBindT = 4;
-    this.chainChoiceArmed = false; // release the initial movement key before selecting
+    this.chainChoiceArmed = false; // require a new key press after the bind connects
+    this.chainBindFinishT = 0;
+    this.chainResolveDirection = "";
     victim.chainBoundBy = this;
     this.chainHookTarget = victim;
     this.chainHookT = 0;
@@ -546,6 +584,10 @@ export class Fighter implements Entity {
     this.chainBindKind = "";
     this.chainBindT = 0;
     this.chainChoiceArmed = false;
+    this.chainBindFinishT = 0;
+    this.chainResolveDirection = "";
+    // KAIZEN_BIND_FOLLOWUP_V7: prevent the selection key firing after release.
+    this.intent.skill = "";
     this.model.chainBindTargetWorld = null;
     if (this.state === S.ATTACK) {
       this.finishAttack();
@@ -556,7 +598,7 @@ export class Fighter implements Entity {
   private readSkill() {
     const k = this.intent.skill;
     if (!k) return;
-    // During a chain bind, WASD chooses the follow-up; skill keys are locked.
+    // While bound, Z/X are handled in update() before readSkill(); other skills are locked.
     if (this.chainBindT > 0 || (this.chainBoundBy && this.chainBoundBy.chainBindT > 0)) return;
     // C: Blood Festival shuts off ALL active skills (Z/X/C/V) for its full 6 seconds.
     if (this.kit === "sickle" && this.bloodFestivalT > 0) return;
@@ -884,6 +926,13 @@ export class Fighter implements Entity {
         if (this.bloodFestivalT <= 0) this.stagger(0.85);
         this.model.flash("#ffd966", 0.18);
         return "guard_break";
+      }
+      // KAIZEN_GUARD_CLASH_V8: the spinning chain catches incoming melee weapons.
+      // Parry (above) and guard break (above) retain priority; projectiles still block.
+      if (this.kit === "chainblade" && attacker instanceof Fighter && a.type === "melee") {
+        this.knock = Math.min(a.knock * 0.12, 0.5);
+        this.model.recoil = 0.85;
+        return "kaizen_guard_clash";
       }
       this.knock = a.knock * 0.5;
       this.model.recoil = 0.7;
@@ -1252,7 +1301,7 @@ export class Fighter implements Entity {
       this.state, this.poseName, this.poseSpeed, Math.round(this.hp), Math.round(this.guard),
       +this.model.walk.toFixed(2), +this.model.charge.toFixed(2), this.trail.emitting ? 1 : 0,
       +this.model.recoil.toFixed(2), this.cooldowns.z, this.cooldowns.x, this.cooldowns.c, this.maxHp,
-      +this.pct.toFixed(1), this.stocks, this.out ? 1 : 0, +this.atkLock.toFixed(2), +this.dashCd.toFixed(2), this.status.mask, this.barrelOut ? 1 : 0, Math.round(this.bloodlust), +this.bloodFrenzyT.toFixed(2), this.sickleOut ? 1 : 0, +this.bloodFestivalT.toFixed(2), +this.tempestSpin.toFixed(3), +this.cycloneSpin.toFixed(3), +this.bladeSwingYaw.toFixed(3), +this.chainFuryT.toFixed(2), this.clashMomentum, this.chainBindTarget ? +this.chainBindTarget.chest().x.toFixed(2) : null, this.chainBindTarget ? +this.chainBindTarget.chest().y.toFixed(2) : null, this.chainBindTarget ? +this.chainBindTarget.chest().z.toFixed(2) : null];
+      +this.pct.toFixed(1), this.stocks, this.out ? 1 : 0, +this.atkLock.toFixed(2), +this.dashCd.toFixed(2), this.status.mask, this.barrelOut ? 1 : 0, Math.round(this.bloodlust), +this.bloodFrenzyT.toFixed(2), this.sickleOut ? 1 : 0, +this.bloodFestivalT.toFixed(2), +this.tempestSpin.toFixed(3), +this.cycloneSpin.toFixed(3), +this.bladeSwingYaw.toFixed(3), +this.chainFuryT.toFixed(2), this.clashMomentum, this.chainBindTarget ? +this.chainBindTarget.chest().x.toFixed(2) : null, this.chainBindTarget ? +this.chainBindTarget.chest().y.toFixed(2) : null, this.chainBindTarget ? +this.chainBindTarget.chest().z.toFixed(2) : null, +this.chainBindT.toFixed(2)];
   }
 
   applySnapshot(s: any[]) {
@@ -1274,6 +1323,7 @@ export class Fighter implements Entity {
       this.pct = s[18]; this.stocks = s[19]; this.atkLock = s[21] ?? 0; this.dashCd = s[22] ?? 0; this.status.mask = s[23] ?? 0; this.barrelOut = s[24] === 1; this.bloodlust = s[25] ?? 0; this.bloodFrenzyT = s[26] ?? 0; this.sickleOut = s[27] === 1; this.bloodFestivalT = s[28] ?? 0; this.clashMomentum = s[33] ?? 0; this.chainFuryT = s[32] ?? 0;
       this.model.chainBindTargetWorld = s.length >= 37 && s[34] !== null
         ? new THREE.Vector3(s[34], s[35], s[36]) : null;
+      this.chainBindT = s[37] ?? 0; // KAIZEN_BIND_ZX_V6: remote HUD follow-ups
       const out = s[20] === 1;
       if (out !== this.out) { this.out = out; this.root.visible = !out; if (!out) this.root.position.copy(this.netPos); }
     }

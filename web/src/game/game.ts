@@ -328,6 +328,7 @@ export class Game implements MobHost {
   traps: Trap[] = [];
   /** Blood Festival arenas. Created on host and replicated as visual events on clients. */
   private bloodFestivals: BloodFestival[] = [];
+  private kaizenGuardContacts = new WeakMap<Fighter, WeakMap<Entity, number>>();
   local: Fighter | null = null;
 
   private sun = new THREE.DirectionalLight(0xffffff, 1.9);
@@ -783,6 +784,7 @@ export class Game implements MobHost {
       if (this.cfg.mode === "survival") this.updateSurvival(dt);
     }
     for (const f of this.fighters) f.update(dt);
+    if (this.cfg.role !== "client") this.updateKaizenSpinGuard();
     this.bladeLight(dt);
     for (const m of this.mobs) m.update(dt);
     this.statusFx(dt);
@@ -816,6 +818,43 @@ export class Game implements MobHost {
     if (!render) return;
     M.updateLight(this.camera);
     this.renderer.render(this.scene, this.camera);
+  }
+
+
+  /** KAIZEN_WEAPON_V5: close-range spinning guard, host-authoritative. */
+  private updateKaizenSpinGuard() {
+    for (const f of this.fighters) {
+      if (f.kit !== "chainblade" || f.state !== S.BLOCK || f.guard <= 0 ||
+          f.isDown() || !f.root.visible || f.chainBindT > 0 ||
+          (f.chainBoundBy && f.chainBoundBy.chainBindT > 0)) continue;
+      let cooldowns = this.kaizenGuardContacts.get(f);
+      if (!cooldowns) {
+        cooldowns = new WeakMap<Entity, number>();
+        this.kaizenGuardContacts.set(f, cooldowns);
+      }
+      for (const enemy of this.enemiesOf(f)) {
+        if (!enemy.root.visible || enemy.isDown()) continue;
+        const delta = enemy.root.position.clone().sub(f.root.position);
+        if (Math.abs(delta.y) > 1.05) continue;
+        delta.y = 0;
+        if (delta.length() > 0.92 + enemy.radius) continue;
+        if (this.time < (cooldowns.get(enemy) ?? -Infinity)) continue;
+        cooldowns.set(enemy, this.time + 0.45); // limited damage; no rapid hitlock
+        const dir = delta.lengthSq() > 0.001 ? delta.normalize() :
+          new THREE.Vector3(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
+        const attack: Attack = {
+          ...f.attacks.l1,
+          id: "kaizen_guard_spin", style: "kaizen_guard_spin", type: "melee",
+          dmg: 16, guard: 9, knock: 0.35, stun: 0.05, heavy: false,
+          no_parry: true, effect: "", effect_t: 0, effect_p: 0,
+        };
+        // Damage is never automatic through a normal block. HP is deducted only
+        // if the standard hit pipeline returns a hit; guard break still works.
+        const outcome = this.applyHit(f, enemy, attack, 1, enemy.chest(), dir, false);
+        if (outcome === "hit" || outcome === "crit" || outcome === "ko")
+          this.fxp("slashes", enemy.chest(), "#e8667c");
+      }
+    }
   }
 
   private retarget() {
@@ -1917,6 +1956,33 @@ export class Game implements MobHost {
     const heavy = a.heavy || a.id === "l3";
     const shieldPos = d instanceof Fighter ? d.model.shieldNode.getWorldPosition(new THREE.Vector3()) : hitPos;
     switch (result) {
+      case "kaizen_guard_clash": {
+        // KAIZEN_GUARD_CLASH_V8: successful spinning-block contact clashes with a
+        // melee attack. The attacker recoils; Kaizen remains guarding. Guard was
+        // already drained in receiveHit(), so enough pressure can still break it.
+        if (attacker instanceof Fighter) {
+          // A clash against Kaizen's rotating chain counts as a real weapon clash
+          // for Zarek's round-based Clash Counter.
+          if (attacker.kit === "glaive") {
+            attacker.clashMomentum += 1;
+            this.fxp("num", attacker.chest().add(new THREE.Vector3(0, 0.9, 0)),
+              `CLASH ${attacker.clashMomentum} • ${Math.min(2, 1 + Math.min(5, attacker.clashMomentum) * .2).toFixed(1)}x BASIC SPD`,
+              "#a6efff", 0.8);
+            this.fxp("lightning", attacker.chest(), "#6acfff");
+          }
+          attacker.clashRecoil();
+        }
+        this.snd("clash", 0.9);
+        this.fxp("sparks", shieldPos, "#fff0c2", 38, 8);
+        this.fxp("sparks", shieldPos, "#d65a6e", 12, 5);
+        this.fxp("flash", shieldPos, "#ffe0b0", 0.46, 0.15, 0.85);
+        this.fxp("ring", shieldPos, "#ffe0b0", 1.7, 0.25, 0.8);
+        this.fxp("num", shieldPos.clone().add(new THREE.Vector3(0, 0.5, 0)),
+          "CLASH!", "#ffe08a", 1.1);
+        this.add_trauma(0.3);
+        this.hitStop(0.09);
+        break;
+      }
       case "hit": case "crit": case "ko": {
         const crit = d.lastCrit;
         this.hitSound(attacker, a, crit);
@@ -2490,7 +2556,7 @@ export class Game implements MobHost {
     const boss = this.mobs.find((m) => m.def.boss && !m.dead);
     const other = this.isDuel() ? this.fighters.find((f) => f !== me) : null;
     const info = (f: Fighter) => ({ id: CHARACTERS[f.charIndex].id, name: f.look.name + (isCpu(f.owner) && f.owner !== "cpu" ? " (CPU)" : ""), hp: f.hp, maxHp: f.maxHp, guard: f.guard, maxGuard: f.maxGuard, down: f.isDown(), glow: f.look.glow,
-      pct: f.pct, stocks: f.stocks, out: f.out, team: f.team, status: f.status.kinds(), bloodlust: f.bloodlust, bloodFrenzyT: f.bloodFrenzyT, bloodFestivalT: f.bloodFestivalT, clashMomentum: f.clashMomentum });
+      pct: f.pct, stocks: f.stocks, out: f.out, team: f.team, status: f.status.kinds(), bloodlust: f.bloodlust, bloodFrenzyT: f.bloodFrenzyT, bloodFestivalT: f.bloodFestivalT, clashMomentum: f.clashMomentum, chainBindT: f.chainBindT }); // KAIZEN_BIND_ZX_V6
     return {
       mode: this.cfg.mode,
       plat: this.plat,
@@ -2508,6 +2574,9 @@ export class Game implements MobHost {
       skills: me ? ["z", "x", "c"].map((k) => {
         // In the air, show the air version of a skill when it has one.
         const a = !me.onGround && me.attacks[k + "_air"] ? me.attacks[k + "_air"] : me.attacks[k];
+        // KAIZEN_BIND_ZX_V6: bound follow-ups have no extra cooldown and replace Z/X icons.
+        if (me.kit === "chainblade" && me.chainBindT > 0 && (k === "z" || k === "x"))
+          return { key: k, id: k === "z" ? "forward" : "backward", name: k === "z" ? "Forward" : "Backward", cd: 0, max: 1 };
         // During Blood Festival all special skills are locked, regardless of remaining cooldown.
         if (me.bloodFestivalT > 0) return { key: k, id: a.id, name: a.name + " (Locked)", cd: me.bloodFestivalT, max: 6 };
         // Powder keg out: the slot becomes its trigger.
