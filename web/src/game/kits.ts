@@ -126,7 +126,7 @@ function bonusSkill(kit: string, element: string): Attack {
     case "bow":
       return a({ name: "Piercing Volley", desc: "Five arrows that fly through every enemy in line.", cd: 9, type: "projectile", wind: 0.2, recover: 0.4, dmg: 55, guard: 14, knock: 2, stun: 0.3, speed: 32, count: 5, spread: 0.25, style: "arrow", pierce: true, pose_w: "bow_w", pose_s: "bow_s" });
     case "wind":
-      return a({ name: "Gust Barrage", desc: "Three wind blades fly out in a fan.", cd: 7, parry_stun: 1.5, type: "projectile", wind: 0.14, recover: 0.35, dmg: 60, guard: 16, knock: 2, stun: 0.35, speed: 22, count: 3, spread: 0.25, size: 1.2, style: "wave", pierce: true, pose_w: "k2_w", pose_s: "k2_s" });
+      return a({ name: "Gust Barrage", desc: "Three wind blades fly out in a fan.", cd: 7, parry_stun: 1.5, type: "projectile", wind: 0.14, recover: 0.35, dmg: 60, guard: 16, knock: 2, stun: 0.35, speed: 22, count: 3, spread: 0.25, size: 1.2, style: "wave", pierce: true, pose_w: "w2_w", pose_s: "w2_s" });
     case "knuckles":
       return a({ name: "Iron Body", desc: "Shrug off every hit for 2.5 seconds.", cd: 13, type: "buff", mode: "ward", duration: 2.5, wind: 0.1, recover: 0.25, pose_w: "block", pose_s: "block" });
     case "kicks":
@@ -236,13 +236,13 @@ function bow(): Record<string, Attack> {
  */
 function wind(): Record<string, Attack> {
   return {
-    l1: a({ wind: 0.07, active: 0.06, recover: 0.14, dmg: 46, guard: 12, reach: 1.55, lunge: 3, knock: 1.2, stun: 0.26, pose_w: "k1_w", pose_s: "k1_s", next: "l2" }),
-    l2: a({ wind: 0.08, active: 0.06, recover: 0.16, dmg: 50, guard: 12, reach: 1.55, lunge: 3, knock: 1.4, stun: 0.28, pose_w: "k2_w", pose_s: "k2_s", next: "l3" }),
-    l3: a({ wind: 0.14, active: 0.08, recover: 0.34, dmg: 80, guard: 22, reach: 1.7, lunge: 4, knock: 4.5, stun: 0.45, pose_w: "k5_w", pose_s: "k5_s" }),
-    heavy: a({ type: "projectile", wind: 0.12, active: 0.05, recover: 0.5, dmg: 200, guard: 55, knock: 6, stun: 0.7, heavy: true, speed: 18, size: 1.7, style: "shock", pierce: true, pose_w: "kh_w", pose_s: "k1_s" }),
-    z: a({ parry_stun: 1.5, name: "Gale Fist", desc: "A straight punch wrapped in wind.", cd: 4, wind: 0.08, active: 0.08, recover: 0.3, dmg: 110, guard: 30, reach: 1.9, lunge: 4, knock: 5, stun: 0.5, pose_w: "k1_w", pose_s: "k1_s" }),
+    l1: a({ wind: 0.1, active: 0.06, recover: 0.14, dmg: 46, guard: 12, reach: 1.55, lunge: 3, knock: 1.2, stun: 0.26, pose_w: "w1_w", pose_s: "w1_s", next: "l2" }),
+    l2: a({ wind: 0.1, active: 0.06, recover: 0.16, dmg: 50, guard: 12, reach: 1.55, lunge: 3, knock: 1.4, stun: 0.28, pose_w: "w2_w", pose_s: "w2_s", next: "l3" }),
+    l3: a({ wind: 0.17, active: 0.08, recover: 0.34, dmg: 80, guard: 22, reach: 1.7, lunge: 4, knock: 4.5, stun: 0.45, pose_w: "w3_w", pose_s: "w3_s" }),
+    heavy: a({ type: "projectile", wind: 0.12, active: 0.05, recover: 0.5, dmg: 200, guard: 55, knock: 6, stun: 0.7, heavy: true, speed: 18, size: 1.7, style: "shock", pierce: true, pose_w: "w3_w", pose_s: "w3_s" }),
+    z: a({ parry_stun: 1.5, name: "Gale Fist", desc: "A straight punch wrapped in wind.", cd: 4, wind: 0.14, active: 0.08, recover: 0.3, dmg: 110, guard: 30, reach: 1.9, lunge: 4, knock: 5, stun: 0.5, pose_w: "w1_w", pose_s: "w1_s" }),
     z_air: a({ parry_stun: 1.5, name: "Downburst", desc: "In the air: plunge straight down and smash the ground.", cd: 4, type: "strike", at: "self", mode: "dive", speed: 26, lunge: 2, wind: 0.08, recover: 0.4, dmg: 130, guard: 35, knock: 6, stun: 0.6, delay: 0.02, radius: 2.2, style: "slam", pose_w: "slam_air", pose_s: "slam_s" }),
-    x: a({ parry_stun: 1.5, name: "Wind Step", desc: "A quick short dash that strikes anyone in the way.", cd: 5, wind: 0.05, active: 0.16, recover: 0.3, dmg: 90, guard: 25, reach: 1.6, lunge: 15, knock: 3, stun: 0.4, pose_w: "k5_w", pose_s: "k5_s" }),
+    x: a({ parry_stun: 1.5, name: "Wind Step", desc: "A quick short dash that strikes anyone in the way.", cd: 5, wind: 0.1, active: 0.16, recover: 0.3, dmg: 90, guard: 25, reach: 1.6, lunge: 15, knock: 3, stun: 0.4, pose_w: "wd_w", pose_s: "wd_s" }),
     x_air: a({ parry_stun: 1.5, name: "Falling Star", desc: "In the air: dive at the enemy and crash down fist-first.", cd: 5, type: "strike", at: "self", mode: "dive", speed: 22, lunge: 11, wind: 0.06, recover: 0.45, dmg: 160, guard: 40, knock: 6, stun: 0.8, heavy: true, delay: 0.02, radius: 1.8, style: "slam", pose_w: "slam_air", pose_s: "slam_s" }),
     c: a({ parry_stun: 1.5, name: "Tornado Rise", desc: "A rising uppercut inside a whirlwind that hits all around you three times and lifts you into the air.", cd: 9, type: "strike", at: "self", self_jump: 9, wind: 0.08, recover: 0.4, dmg: 70, guard: 20, knock: 3, stun: 0.6, delay: 0.03, radius: 2.0, repeat: 3, interval: 0.14, style: "spin", pose_w: "kh_w", pose_s: "rise" }),
     c_air: a({ parry_stun: 1.5, name: "Hurricane Crash", desc: "In the air: crash down inside a hurricane that slams everyone around three times.", cd: 9, type: "strike", at: "self", mode: "dive", speed: 28, lunge: 4, wind: 0.1, recover: 0.6, dmg: 90, guard: 30, knock: 7, stun: 1.0, heavy: true, delay: 0.02, radius: 3.0, repeat: 3, interval: 0.18, style: "slam", pose_w: "slam_air", pose_s: "slam_s" }),
@@ -430,8 +430,19 @@ const TABLES: Record<string, Record<string, Pose>> = {
   knuckles: KNUCKLES,
   wind: {
     ...KNUCKLES,
-    // Light, open stance (not a boxing guard): hands loose in front, weight on the balls of the feet.
-    idle: P([0.04, -0.35, 0], [0, 0.3, 0], [-0.6, 0.3, -0.35], [0.4, 0, 0], [-0.75, -0.25, 0.3], [0.4, 0, 0], [-0.3, 0, 0.08], [0.3, 0, -0.08], -0.06),
+    // Relaxed: arms low at the sides, so any raised fist reads as an attack coming.
+    idle: P([0.02, -0.3, 0], [0, 0.25, 0], [-0.2, 0.15, -0.22], [0.2, 0, 0], [-0.25, -0.15, 0.22], [0.2, 0, 0], [-0.25, 0, 0.08], [0.25, 0, -0.08], -0.05),
+    // Every attack chambers first: the fist pulls back to the hip and the torso twists away.
+    w1_w: P([0.05, -0.6, 0], [0, 0.55, 0], [0.45, 0.35, -0.35], [1.2, 0, 0], [-0.9, -0.3, 0.3], [0.6, 0, 0], [-0.35, 0, 0.08], [0.35, 0, -0.08], -0.08),
+    w1_s: P([0.2, 0.4, 0], [-0.05, -0.35, 0], [-1.6, 0.2, 0], [0, 0, 0], [-0.4, -0.2, 0.35], [0.8, 0, 0], [-0.5, 0, 0.08], [0.45, 0, -0.08], -0.12),
+    w2_w: P([0.05, 0.5, 0], [0, -0.45, 0], [-0.9, 0.3, -0.3], [0.6, 0, 0], [0.45, -0.35, 0.35], [1.2, 0, 0], [-0.35, 0, 0.08], [0.35, 0, -0.08], -0.08),
+    w2_s: P([0.2, -0.45, 0], [-0.05, 0.4, 0], [-0.4, 0.2, -0.35], [0.8, 0, 0], [-1.6, -0.2, 0], [0, 0, 0], [-0.5, 0, 0.08], [0.45, 0, -0.08], -0.12),
+    // Palm strike: both hands drawn back to the right hip, then pushed out together.
+    w3_w: P([0.1, -0.75, 0], [0, 0.65, 0], [0.4, 0.4, -0.3], [1.1, 0, 0], [-0.2, 0.6, 0.1], [1.1, 0, 0], [-0.4, 0, 0.1], [0.4, 0, -0.1], -0.12),
+    w3_s: P([0.25, 0.1, 0], [-0.1, 0, 0], [-1.55, 0.12, 0], [0, 0, 0], [-1.55, -0.12, 0], [0, 0, 0], [-0.6, 0, 0.08], [0.55, 0, -0.08], -0.16),
+    // Wind Step: lean back and load both fists, then lunge through with the right.
+    wd_w: P([-0.15, -0.3, 0], [0.1, 0.3, 0], [0.4, 0.3, -0.3], [1.1, 0, 0], [0.3, -0.3, 0.3], [1.1, 0, 0], [-0.5, 0, 0.1], [0.5, 0, -0.1], -0.14),
+    wd_s: P([0.45, 0.2, 0], [-0.25, -0.15, 0], [-1.6, 0.15, 0], [0, 0, 0], [0.4, -0.2, 0.4], [0.6, 0, 0], [-0.8, 0, 0.08], [0.7, 0, -0.08], -0.22),
     rise: P([-0.2, 0.3, 0], [-0.25, -0.2, 0], [-2.8, 0.3, -0.2], [0.5, 0, 0], [-0.6, -0.3, 0.6], [0.4, 0, 0], [-0.9, 0, 0.06], [0.2, 0, -0.06], 0),
     // Double jump: riding a burst of wind (knees tucked, arms spread low to push off the air).
     wind_jump: K(P([0.3, 0, 0], [0.2, 0, 0], [0.35, 0, -1.15], [0, 0, 0], [0.35, 0, 1.15], [0, 0, 0], [-1.0, 0, 0.12], [-0.45, 0, -0.12], 0), 1.5, 1.15),
