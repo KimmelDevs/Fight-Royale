@@ -951,7 +951,7 @@ export class Game implements MobHost {
     this.swingSound(f, a);
     const el = f.look.element;
     const big = ["z", "x", "c", "v", "heavy", "l3"].includes(f.atkId);
-    if (el === "earth" && big) {
+    if (el === "earth" && big && a.style !== "iron_tempest") {
       // Earth skills and heavy blows crack the ground in front of the fighter.
       const fwd = new THREE.Vector3(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
       this.fxp("rocks", f.root.position.clone().addScaledVector(fwd, 1.1).setY(f.root.position.y), f.atkId === "heavy" || f.atkId === "v" ? 24 : 16, f.atkId === "heavy" ? 1.35 : 1);
@@ -967,7 +967,7 @@ export class Game implements MobHost {
         if (f.kit === "sickle" && a.style === "bloodcrescent") this.crimsonExecution(f, a);
         else this.fireProjectiles(f, a);
         break;
-      case "strike": this.runStrike(f, a, f.atkPower); break;
+      case "strike": if (f.kit === "kicks" && a.style === "cyclone_kick_v2") this.cycloneKick(f, a, f.atkPower); else if (f.kit === "greatsword" && a.style === "iron_tempest") this.ironTempest(f, a, f.atkPower); else this.runStrike(f, a, f.atkPower); break;
       case "buff": this.applyBuff(f, a); break;
       case "blink": this.blink(f, a); break;
       case "phantom": this.phantom(f, a); break;
@@ -979,7 +979,10 @@ export class Game implements MobHost {
   }
 
   private melee(f: Fighter, a: Attack) {
+    // AIR_COMBAT_V1: launcher has a tall vertical hitbox; air combo is mid-height.
     const fwd = new THREE.Vector3(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
+    const antiAir = f.atkId === "anti_air";
+    const airCombo = f.atkId.startsWith("air_l");
     for (const d of this.enemiesOf(f)) {
       const to = d.root.position.clone().sub(f.root.position);
       const dy = Math.abs(to.y);
@@ -987,13 +990,25 @@ export class Game implements MobHost {
       const dist = to.length();
       const dir = to.clone().divideScalar(Math.max(dist, 0.001));
       if (d instanceof Fighter && this.isDuel() && d.state === S.ATTACK && d.atk?.type === "melee" &&
-        (d.atkPhase === 1 || (d.atkPhase === 0 && d.atk.wind - d.stateT <= 0.08)) && dist <= a.reach + 0.3 && dy < 0.8) {
+        (d.atkPhase === 1 || (d.atkPhase === 0 && d.atk.wind - d.stateT <= 0.08)) && dist <= a.reach + 0.3 &&
+        dy < (antiAir || airCombo || d.atkId === "anti_air" || d.atkId.startsWith("air_l") ? 1.65 : 0.8)) {
         this.clash(f, d, f.root.position.clone().addScaledVector(dir, Math.min(dist * 0.5, 0.8)).add(new THREE.Vector3(0, 1.15, 0)));
         return;
       }
-      if (dist - d.radius + 0.35 > a.reach || dy > 1.3 || (dist > 0.6 && dir.dot(fwd) < 0.15)) continue;
+      if (dist - d.radius + 0.35 > a.reach ||
+          dy > (antiAir ? 3.25 : airCombo ? 1.8 : 1.3) ||
+          (dist > 0.6 && dir.dot(fwd) < (antiAir ? -0.08 : 0.15))) continue;
       const hitPos = d.chest().addScaledVector(dir, -0.15);
-      this.applyHit(f, d, a, f.atkPower, hitPos, dir, false);
+      const result = this.applyHit(f, d, a, f.atkPower, hitPos, dir, false);
+      if (antiAir && d instanceof Fighter && (result === "hit" || result === "crit")) {
+        // Launcher happens only after an HP hit, never through blocks/parries/clashes.
+        const wasGrounded = d.onGround;
+        d.velY = Math.max(d.velY, f.stage ? 7.2 : 6.6);
+        d.onGround = false;
+        if (wasGrounded) this.fxp("ring", d.root.position.clone().add(new THREE.Vector3(0, 0.35, 0)), f.look.glow, 1.2, 0.22, 0.75);
+        f.landedAntiAir(d);
+        this.fxp("sparks", d.chest(), f.look.glow, 22, 6, [0, 1, 0]);
+      }
     }
     // Hitting an enemy's powder keg sets it off.
     for (const t of [...this.traps]) {
@@ -1255,6 +1270,81 @@ export class Game implements MobHost {
 
   private enemiesOfTeam(team: number): Entity[] {
     return [...this.entities.values()].filter((o) => o.team !== team && !o.isDown());
+  }
+
+  /** SWORD_AND_CYCLONE_V1: Kira's feet actually change every beat. No repeated ring FX. */
+  private cycloneKick(f: Fighter, a: Attack, power: number) {
+    const round = this.round;
+    const serial = f.swingSerial;
+    const times = [0.03, 0.22, 0.41];
+    for (let i = 0; i < times.length; i++) this.later(times[i], () => {
+      if (round !== this.round || f.isDown() || f.state !== S.ATTACK ||
+          f.swingSerial !== serial || f.atk?.style !== "cyclone_kick_v2") return;
+      const center = f.root.position.clone();
+      const leg = i === 1 ? f.model.leg_l : f.model.leg_r;
+      const foot = leg.localToWorld(new THREE.Vector3(0, -0.78, 0.12));
+      this.fxp("slashes", foot, i === 2 ? "#c6ffef" : "#70e8d6");
+      this.fxp("sparks", foot, f.look.glow, i === 2 ? 24 : 13, 5);
+      this.snd(i === 2 ? "swing_heavy" : "swing", i === 2 ? 0.65 : 0.45);
+      const strike: Attack = { ...a, repeat: 1, knock: i === 2 ? 4.5 : 0.9,
+        stun: i === 2 ? 0.4 : 0.15, heavy: false };
+      for (const d of this.enemiesOf(f)) {
+        const to = d.root.position.clone().sub(center);
+        const height = Math.abs(to.y);
+        to.y = 0;
+        const range = to.length();
+        if (range > a.radius + d.radius * 0.5 || height > 1.65) continue;
+        const dir = range > 0.05 ? to.divideScalar(range) :
+          new THREE.Vector3(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
+        this.applyHit(f, d, strike, power, d.chest(), dir, false);
+      }
+    });
+  }
+
+  /** Garrick X: three distinct steel arcs, not an auto-repeating radial blast.
+   *  The final horizontal cleave can hit a nearby airborne target, but never slams down.
+   *  Each hit still goes through the ordinary block / parry / guard-break logic.
+   *  Interrupted windups, parries, round changes and KOs cancel later sweeps.
+   */
+  private ironTempest(f: Fighter, a: Attack, power: number) {
+    const round = this.round;
+    const swing = f.swingSerial;
+    const stages = [
+      { time: 0.04, dmg: 70,  guard: 22, radius: 2.25, knock: 0.9, stun: 0.16, heavy: false, height: 1.75 },
+      { time: 0.33, dmg: 90,  guard: 29, radius: 2.55, knock: 1.2, stun: 0.20, heavy: false, height: 2.75 },
+      { time: 0.67, dmg: 150, guard: 50, radius: 2.80, knock: 7.0, stun: 0.62, heavy: true,  height: 2.30 },
+    ];
+    for (let i = 0; i < stages.length; i++) {
+      const s = stages[i];
+      this.later(s.time, () => {
+        if (round !== this.round || f.isDown() || f.state !== S.ATTACK ||
+            f.swingSerial !== swing || f.atk?.style !== "iron_tempest") return;
+        const at = f.root.position.clone();
+        const mid = at.clone().add(new THREE.Vector3(0, i === 1 ? 1.55 : 1.05, 0));
+        // Tall sweeping blade trails instead of ground craters / Gale-style slams.
+        const steel = i === 2 ? "#ffe2a0" : "#c5d8ff";
+        this.fxp("ring", mid, steel, s.radius, 0.24, i === 2 ? 1 : 0.75);
+        this.fxp("slashes", mid, steel);
+        this.fxp("sparks", mid, f.look.glow, i === 2 ? 34 : 18, i === 2 ? 9 : 6);
+        if (i === 2) {
+          this.fxp("flash", mid, "#fff4d3", 0.8, 0.16, 0.9);
+          this.add_trauma(0.28);
+        }
+        this.snd(i === 2 ? "swing_heavy" : "swing", i === 2 ? 0.9 : 0.55);
+        const strike: Attack = { ...a, dmg: s.dmg, guard: s.guard, knock: s.knock,
+          stun: s.stun, heavy: s.heavy, radius: s.radius, repeat: 1 };
+        for (const d of this.enemiesOf(f)) {
+          const to = d.root.position.clone().sub(at);
+          const dy = Math.abs(to.y);
+          to.y = 0;
+          const dist = to.length();
+          if (dist > s.radius + d.radius * 0.5 || dy > s.height) continue;
+          const dir = dist > 0.05 ? to.divideScalar(dist) :
+            new THREE.Vector3(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
+          this.applyHit(f, d, strike, power, d.chest(), dir, false);
+        }
+      });
+    }
   }
 
   /** Area attack(s) at the target (or around the caster) after a telegraphed delay. */

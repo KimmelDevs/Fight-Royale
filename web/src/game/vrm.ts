@@ -81,6 +81,10 @@ export const STYLES = {
   feral: { stance: D(11), toeOut: D(13), knee: D(18), drop: 0.055, lean: D(12), chin: D(4), shoulderUp: D(2), elbowOut: D(8),
     hipSway: 0.007, hipRoll: D(0.8), contra: D(1.5), relaxKnee: D(7), headTilt: D(1.0), headYaw: D(5),
     breath: 0.75, armSwing: D(20), walkRoll: D(1.8), walkYaw: D(4.5) },
+  // GARRICK_RANGE_WALK_V2: planted two-handed sword gait, less knee pumping.
+  greatsword: { stance: D(10), toeOut: D(9), knee: D(11), drop: 0.035, lean: D(4), chin: D(3), shoulderUp: D(3), elbowOut: D(9),
+    hipSway: 0.004, hipRoll: D(0.5), contra: D(0.5), relaxKnee: D(2), headTilt: D(0.4), headYaw: D(3),
+    breath: 0.5, armSwing: D(7), walkRoll: D(0.8), walkYaw: D(2) },
   heavy: { stance: D(14), toeOut: D(12), knee: D(18), drop: 0.07, lean: D(6), chin: D(5), shoulderUp: D(4), elbowOut: D(12),
     hipSway: 0.008, hipRoll: D(0.8), contra: D(0.6), relaxKnee: D(3), headTilt: D(0.5), headYaw: D(4),
     breath: 0.5, armSwing: D(9), walkRoll: D(1.2), walkYaw: D(2.5) },

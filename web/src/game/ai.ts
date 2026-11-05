@@ -33,6 +33,9 @@ export class AiBrain implements Brain {
   private sideSign = 1;
   private strafeT = 0;
   private thinkCd = 1;
+  // AIR_COMBAT_V1: CPUs also learn to contest the air and chase successful launches.
+  private antiAirCd = 0;
+  private aiAirTap = false;
   private skillCd = 2;
   private seenSwing = -1;
   private seenCharge = false;
@@ -48,7 +51,25 @@ export class AiBrain implements Brain {
     if (f.stage) { if (this.platform(f, o, dt)) return; }
     this.react(f, o);
     if (!f.stage) { this.dodge(f); this.position(f, o, dt); }
-    this.offense(f, o, dt);
+    this.antiAirCd = Math.max(0, this.antiAirCd - dt);
+    this.aiAirTap = false;
+    if (f.state === S.IDLE && f.onGround && !RANGED.has(f.kit) &&
+        o.root.position.y - f.root.position.y > 0.65 &&
+        o.root.position.y - f.root.position.y < 3.25 &&
+        f.root.position.clone().setY(0).distanceTo(o.root.position.clone().setY(0)) < f.attacks.anti_air.reach + 0.25 &&
+        this.antiAirCd <= 0) {
+      // Space + attack on the same simulation tick, avoiding normal jump.
+      this.aiAirTap = true;
+      this.antiAirCd = rand(1.0, 1.8);
+      this.queue = [];
+      this.hold = 0;
+    } else if (!f.onGround && f.state === S.IDLE &&
+        f.root.position.distanceTo(o.root.position) < 2.3 && this.antiAirCd <= 0 &&
+        !RANGED.has(f.kit)) {
+      this.aiAirTap = true;
+      this.antiAirCd = rand(0.24, 0.45);
+    }
+    if (!this.aiAirTap) this.offense(f, o, dt);
     if (f.kit === "wind" && !f.stage) this.airDive(f, o, dt);
     // Bomber: set off the keg when the enemy walks near it.
     if (f.barrelOut && o.root.position.clone().setY(0).distanceTo(f.barrelPos) < 3) {
@@ -62,6 +83,19 @@ export class AiBrain implements Brain {
       f.intent.block = true;
       this.queue = [];
       this.hold = 0;
+      return;
+    }
+    if (this.aiAirTap) {
+      f.intent.jump = true;
+      f.intent.attack = true;
+      return;
+    }
+    if (f.airChaseT > 0 && f.state === S.IDLE && !RANGED.has(f.kit)) {
+      // Follow up with a pure Space press, never another grounded anti-air chord.
+      this.queue = [];
+      this.hold = 0;
+      f.intent.attack = false;
+      f.intent.jump = true;
       return;
     }
     if (this.hold > 0) {

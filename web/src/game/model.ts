@@ -662,11 +662,11 @@ export class FighterModel extends THREE.Group {
     mesh(s, sphere(0.034, 12), this.tn(L.trim), [0, -0.16, 0]);
     mesh(s, box(0.34, 0.05, 0.06), this.tn(L.trim), [0, 0.2, 0]);
     mesh(s, sphere(0.026, 10), this.gem(), [0, 0.2, 0.034]);
-    mesh(s, box(0.13, 1.25, 0.024), this.steel(), [0, 0.85, 0]);
-    mesh(s, cyl(0, 0.065, 0.2, 4), this.steel(), [0, 1.57, 0], [0, 0, 0], [1, 1, 0.2]);
-    mesh(s, box(0.026, 1.1, 0.028), this.glowMat, [0, 0.82, 0]);
+    mesh(s, box(0.15, 1.48, 0.024), this.steel(), [0, 0.97, 0]);
+    mesh(s, cyl(0, 0.073, 0.23, 4), this.steel(), [0, 1.81, 0], [0, 0, 0], [1, 1, 0.2]);
+    mesh(s, box(0.026, 1.30, 0.028), this.glowMat, [0, 0.93, 0]);
     this.bladeBase = pivot(s, [0, 0.5, 0]);
-    this.bladeTip = pivot(s, [0, 1.62, 0]);
+    this.bladeTip = pivot(s, [0, 1.86, 0]);
     this.gripL = pivot(s, [0, -0.11, 0]);
     this.shieldNode = pivot(s, [0, 0.6, 0]);
     this.castPoint = this.bladeTip;
@@ -965,14 +965,15 @@ export class FighterModel extends THREE.Group {
     this.knee[0] += (kn[0] - this.knee[0]) * k;
     this.knee[1] += (kn[1] - this.knee[1]) * k;
     this.t += dt;
-    this.walkPhase += dt * 11 * this.walk;
+    this.walkPhase += dt * (this.kit === "greatsword" ? 8.5 : 11) * this.walk;
     const s = Math.sin(this.walkPhase);
     this.recoil = Math.max(this.recoil - dt * 5, 0);
     this.hips.position.y = HIP + this.hipsY + Math.abs(s) * 0.03 * this.walk + Math.sin(this.t * 2.4) * 0.005;
     for (const j of JOINTS) this.joints[j].rotation.set(this.cur[j].x, this.cur[j].y, this.cur[j].z);
     this.torso.rotation.x += -this.recoil * 0.3 + Math.sin(this.t * 2.4) * 0.012;
-    this.leg_l.rotation.x += s * 0.55 * this.walk;
-    this.leg_r.rotation.x -= s * 0.55 * this.walk;
+    const stride = this.kit === "greatsword" ? 0.36 : 0.55;
+    this.leg_l.rotation.x += s * stride * this.walk;
+    this.leg_r.rotation.x -= s * stride * this.walk;
     // Veyr's low stalking posture also animates the procedural fallback (no VRM yet).
     if (this.kit === "sickle") {
       const stalking = this.walk;
@@ -1048,7 +1049,7 @@ export class FighterModel extends THREE.Group {
     // Staffs and bows follow the arm a lot (natural tilt); blades less, to keep swing arcs.
     this.vrmRig.followArm = this.kit === "sickle" ? 0.18 : this.kit === "mage" ? 0.4 : this.kit === "bow" ? 0.5 : 0.3;
     this.vrmRig.staff = this.kit === "mage";
-    this.vrmRig.style = this.kit === "sickle" ? "feral" : this.look.body === "m" ? "heavy" : "light";
+    this.vrmRig.style = this.kit === "sickle" ? "feral" : this.kit === "greatsword" ? "greatsword" : this.look.body === "m" ? "heavy" : "light";
     if (this.kit === "knight") { this.buildHeaterShield(); this.vrmRig.shield = true; }
     if (this.gripL) { this.vrmRig.gripL = this.gripL; this.vrmRig.bladed = 1; }
     if (["knight", "greatsword", "katana"].includes(this.kit) && this.bladeBase.parent) {

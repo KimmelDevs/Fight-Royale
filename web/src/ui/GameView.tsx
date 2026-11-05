@@ -254,9 +254,10 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
               </div>
             ))}
           </div>
+          {/* AIR_COMBAT_V1: show both keyboard chords without changing keybindings. */}
           <div className="hint">{hud?.plat
-            ? `${label("left")}/${label("right")} move - ${label("up")} or ${label("jump")} jump (twice to double jump) - ${label("down")} drop / fast fall - ${label("attack")} attack (hold = charged) - ${label("block")} shield - ${label("skill1")} ${label("skill2")} ${label("skill3")} skills - Esc pause`
-            : `${label("up")}${label("left")}${label("down")}${label("right")} move - ${label("jump")} jump - ${label("attack")} attack (hold = charged) - ${label("block")} block - ${label("skill1")} ${label("skill2")} ${label("skill3")} skills - Esc pause`}</div>
+            ? `${label("left")}/${label("right")} move - ${label("up")} or ${label("jump")} jump (twice to double jump) - ${label("down")} drop / fast fall - ${label("attack")} attack (hold = charged) - ${label("block")} shield - ${label("skill1")} ${label("skill2")} ${label("skill3")} skills - Space+${label("attack")} anti-air / air combo - tap ${label("jump")} after launcher to chase - hold air attack for heavy - air ${label("block")} block/recover - Esc pause`
+            : `${label("up")}${label("left")}${label("down")}${label("right")} move - ${label("jump")} jump - ${label("attack")} attack (hold = charged) - ${label("block")} block - ${label("skill1")} ${label("skill2")} ${label("skill3")} skills - Space+${label("attack")} anti-air / air combo - tap ${label("jump")} after launcher to chase - hold air attack for heavy - air ${label("block")} block/recover - Esc pause`}</div>
         </div>
       )}
       <div className="toasts">{toasts.map((t) => <div key={t.id} className="toast">{t.text}</div>)}</div>

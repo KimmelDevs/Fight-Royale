@@ -133,6 +133,23 @@ export class Fighter implements Entity {
   private comboTimer = 0;
   private buffered = false;
   private atkPrev = false;
+  /** SWORD_AND_CYCLONE_V1: sync Kira spin and sword torso follow-through. */
+  private cycloneSpin = 0;
+  private bladeSwingYaw = 0;
+  /** Visual-only full-body turn for Garrick Iron Tempest (host-synced). */
+  private tempestSpin = 0;
+  // AIR_COMBAT_V1: launcher follow-up and one defensive air recovery per airtime.
+  airChaseT = 0;
+  private airChaseUsed = false;
+  private airChaseTarget: Entity | null = null;
+  private airChaseMoveT = 0;
+  private airChaseDir = new THREE.Vector3();
+  private airRecoverUsed = false;
+  private airRecoverPrev = false;
+  private airHoldT = 0;
+  private airHeavyDone = false;
+  // Space then Click within 0.22s still counts as a grounded anti-air chord.
+  private airStartT = 99;
   private jumpPrev = false;
   private holding = false;
   private holdT = 0;
@@ -216,7 +233,7 @@ export class Fighter implements Entity {
       this.cdMult *= 1 - b.cd;
       this.moveSpeed *= 1 + b.speed;
     }
-    this.poses = Kits.poses(this.kit);
+    this.poses = Kits.poses(this.kit, this.look.element);
     this.root.rotation.order = "YXZ";
     this.model = new FighterModel(look);
     this.root.add(this.model);
@@ -236,7 +253,10 @@ export class Fighter implements Entity {
     it.attack = false; it.block = false; it.jump = false; it.skill = ""; it.move.set(0, 0, 0); it.dash.set(0, 0, 0);
     if (this.out) { this.waitRespawn(dt); return; }
     if (this.brain && this.state !== S.KO && this.state !== S.WIN) this.brain.think(this, dt);
-    if (!this.onGround) it.block = false;
+    // AIR_COMBAT_V1: Right Click while hit-stunned in air = one escape per airtime.
+    this.tryAirRecovery();
+    // Ground and airborne blocks both work; perfect parry still uses its normal timing.
+    // Escaping hitstun is handled separately, once per airtime.
     this.stateT += dt;
     for (const k in this.cooldowns) this.cooldowns[k] = Math.max(this.cooldowns[k] - dt, 0);
     this.atkLock = Math.max(this.atkLock - dt, 0);
@@ -255,6 +275,9 @@ export class Fighter implements Entity {
     this.bloodFestivalT = Math.max(this.bloodFestivalT - dt, 0);
     this.invulnT = Math.max(this.invulnT - dt, 0);
     this.airJumpT = Math.max(this.airJumpT - dt, 0);
+    this.airChaseT = Math.max(this.airChaseT - dt, 0);
+    this.airChaseMoveT = Math.max(this.airChaseMoveT - dt, 0);
+    this.airStartT = Math.min(99, this.airStartT + dt);
     this.tickStatus(dt);
     this.readAttack(dt);
     this.readJump();
@@ -283,12 +306,35 @@ export class Fighter implements Entity {
       if (this.guardDelay <= 0) this.guard = Math.min(this.guard + GUARD_REGEN * dt, this.maxGuard);
     }
     const a = this.atk;
-    this.trail.emitting = this.state === S.ATTACK && !!a && a.type === "melee" &&
+    this.trail.emitting = this.state === S.ATTACK && !!a && (a.type === "melee" || a.style === "iron_tempest") &&
       (this.atkPhase === 1 || (this.atkPhase === 0 && this.stateT > a.wind * 0.6) || (this.atkPhase === 2 && this.stateT < a.wind + a.active + 0.05));
     this.model.setBarrier(this.state === S.BLOCK && this.kit === "mage");
     this.model.combat = [S.ATTACK, S.CHARGE, S.BLOCK, S.HITSTUN, S.STAGGER].includes(this.state);
     this.model.hurt = this.state === S.HITSTUN || this.state === S.STAGGER;
     this.model.charge = this.state === S.CHARGE ? Math.min(this.stateT / CHARGE_MAX, 1) : Math.max(this.model.charge - dt * 4, 0);
+    // Iron Tempest: one full turn over the attack's active window.
+    // Model-only rotation preserves the player-facing direction and collision tests.
+    const tempestActive = this.kit === "greatsword" && this.state === S.ATTACK && this.atk?.style === "iron_tempest";
+    const tempestPhase = tempestActive ? Math.max(0, Math.min(1, (this.stateT - this.atk!.wind) / this.atk!.active)) : 0;
+    this.tempestSpin = tempestActive ? Math.PI * 2 * (tempestPhase * tempestPhase * (3 - 2 * tempestPhase)) : 0;
+    // SWORD_AND_CYCLONE_V1: Kira turns her ENTIRE body while the feet alternate.
+    const cycloneActive = this.kit === "kicks" && this.state === S.ATTACK && this.atk?.style === "cyclone_kick_v2";
+    const cyclonePhase = cycloneActive ? Math.max(0, Math.min(1, (this.stateT - this.atk!.wind) / this.atk!.active)) : 0;
+    this.cycloneSpin = cycloneActive ? Math.PI * 4 * (cyclonePhase * cyclonePhase * (3 - 2 * cyclonePhase)) : 0;
+    // One-handed Aster and two-handed Garrick lead sword strikes with their torsos.
+    // No world-facing change: hit detection and shielding remain authoritative.
+    const bladeActive = this.state === S.ATTACK && this.atk?.type === "melee" &&
+      ((this.kit === "greatsword") || (this.kit === "knight" && this.look.element === "light"));
+    if (bladeActive) {
+      const a = this.atk!;
+      const progress = Math.max(0, Math.min(1, this.stateT / Math.max(a.wind + a.active, 0.01)));
+      const turn = progress * progress * (3 - 2 * progress);
+      const direction = this.atkId === "l2" ? -1 : 1;
+      const recoveryT = Math.max(0, Math.min(1, (this.stateT - a.wind - a.active) / Math.max(0.01, a.recover)));
+      const settle = 1 - recoveryT * recoveryT * (3 - 2 * recoveryT);
+      this.bladeSwingYaw = direction * (this.kit === "greatsword" ? 0.48 : 0.27) * (1 - 2 * turn) * settle;
+    } else this.bladeSwingYaw = 0;
+    this.model.rotation.y = this.viewBias + this.tempestSpin + + this.cycloneSpin + this.bladeSwingYaw;
     this.computePose();
     this.model.bloodFestivalT = this.kit === "sickle" ? this.bloodFestivalT : 0;
     this.model.blend(this.poses[this.poseName] ?? this.poses.idle, dt, this.poseSpeed);
@@ -328,6 +374,35 @@ export class Fighter implements Entity {
     this.atkPrev = on;
     if ([S.HITSTUN, S.STAGGER, S.KO, S.WIN].includes(this.state)) { this.holding = false; return; }
     if (pressed && this.atkLock > 0) return;
+    // AIR_COMBAT_V1: Space+Click resolves on press, no charged-heavy misfire.
+    // Holding the airborne chord turns the strike into a heavier sideways finisher.
+    if (on && this.intent.jump && !this.onGround && !this.airHeavyDone &&
+        this.state === S.ATTACK && this.atkId.startsWith("air_l")) {
+      this.airHoldT += dt;
+      if (this.airHoldT >= 0.34 && this.atkPhase >= 1) {
+        this.airHeavyDone = true;
+        this.holding = false;
+        this.startAttack("air_heavy");
+        return;
+      }
+    }
+    if (pressed && this.intent.jump && this.atkLock <= 0) {
+      if ((this.onGround || this.airStartT < 0.22) &&
+          (this.state === S.IDLE || this.state === S.BLOCK)) {
+        this.holding = false;
+        this.airStartT = 99;
+        this.startAttack("anti_air");
+        return;
+      }
+      if (!this.onGround && (this.state === S.IDLE ||
+          (this.state === S.ATTACK && this.atkId.startsWith("air_l")))) {
+        this.holding = false;
+        this.airHoldT = 0;
+        this.airHeavyDone = false;
+        this.requestAirLight();
+        return;
+      }
+    }
     if (pressed) { this.holding = true; this.holdT = 0; }
     if (this.holding) {
       this.holdT += dt;
@@ -341,6 +416,29 @@ export class Fighter implements Entity {
   }
 
   private readJump() {
+    // AIR_COMBAT_V1: Space+Click launches an anti-air instead of also jumping.
+    // The player must release Space, then tap it again after a landed launcher to chase.
+    const want = this.stage ? (this.intent.jump || this.up()) : this.intent.jump;
+    const was = this.stage ? this.upPrev : this.jumpPrev;
+    if (want && !was && this.airChaseT > 0 && this.airChaseTarget && !this.airChaseUsed &&
+        (this.state === S.IDLE || (this.state === S.ATTACK && this.atkId === "anti_air" && this.atkPhase >= 1))) {
+      this.jumpPrev = true;
+      this.upPrev = true;
+      this.startAirChase();
+      return;
+    }
+    if (this.onGround && this.state === S.ATTACK && this.atkId === "anti_air") {
+      this.jumpPrev = want;
+      this.upPrev = want;
+      return;
+    }
+    // An aerial Space+Click is an attack, not a second jump.
+    if (!this.onGround && this.state === S.ATTACK &&
+        (this.atkId.startsWith("air_l") || this.atkId === "air_heavy") && this.intent.attack) {
+      this.jumpPrev = want;
+      this.upPrev = want;
+      return;
+    }
     if (this.stage) { this.readJumpPlat(); return; }
     const pressed = this.intent.jump && !this.jumpPrev;
     this.jumpPrev = this.intent.jump;
@@ -383,6 +481,57 @@ export class Fighter implements Entity {
     this.startAttack(!this.onGround && this.attacks[k + "_air"] ? k + "_air" : k);
   }
 
+  // AIR_COMBAT_V1: pressed light combos in the air, buffering the next strike.
+  private requestAirLight() {
+    if (this.onGround) return;
+    if (this.state === S.IDLE || this.state === S.BLOCK) this.startAttack("air_l1");
+    else if (this.state === S.ATTACK && this.atkId.startsWith("air_l") && this.atk?.next)
+      this.buffered = true;
+  }
+
+  /** Called by the authoritative arena only after an anti-air actually connects. */
+  landedAntiAir(target: Entity) {
+    if (target.isDown()) return;
+    this.airChaseTarget = target;
+    this.airChaseT = 1.15;
+    this.airChaseUsed = false;
+  }
+
+  private startAirChase() {
+    const target = this.airChaseTarget;
+    if (!target || target.isDown() || this.airChaseT <= 0) return;
+    const toward = target.root.position.clone().sub(this.root.position).setY(0);
+    if (toward.lengthSq() < 0.01) toward.set(Math.sin(this.root.rotation.y), 0, Math.cos(this.root.rotation.y));
+    this.airChaseDir.copy(toward.normalize());
+    if (this.stage) this.airChaseDir.set(Math.sign(target.root.position.x - this.root.position.x) || this.facing, 0, 0);
+    this.airChaseMoveT = 0.30;
+    this.velY = Math.max(this.jumpV * (this.stage ? 1.43 : 1.32),
+      Math.sqrt(Math.max(0, target.root.position.y - this.root.position.y) * 2 * GRAVITY));
+    this.onGround = false;
+    this.ground = null;
+    this.airChaseT = 0;
+    this.airChaseUsed = true;
+    this.holding = false;
+    this.atk = null;
+    this.atkId = "";
+    this.setState(S.IDLE);
+    this.model.recoil = 0.3;
+  }
+
+  private tryAirRecovery() {
+    const pressed = this.intent.block && !this.airRecoverPrev;
+    this.airRecoverPrev = this.intent.block;
+    if (!pressed || this.onGround || this.airRecoverUsed || this.state !== S.HITSTUN || this.stateT < 0.18) return;
+    // Deliberately one escape only: no infinite air-teching or invulnerable flight.
+    this.airRecoverUsed = true;
+    this.invulnT = Math.max(this.invulnT, 0.16);
+    this.velY = Math.max(this.velY, 1.6);
+    this.knock = 0;
+    if (this.stage) this.vx = -this.facing * this.moveSpeed * 1.3;
+    this.model.recoil = 0.65;
+    this.setState(S.IDLE);
+  }
+
   private requestLight() {
     if (this.state === S.IDLE || this.state === S.BLOCK) this.startAttack(this.comboTimer > 0 ? this.comboNext : "l1");
     else if (this.state === S.ATTACK && this.atk && this.atk.next) this.buffered = true;
@@ -402,6 +551,8 @@ export class Fighter implements Entity {
     if (this.kit === "sickle" && this.bloodFestivalT > 0 && /^l\d+$/.test(id)) this.atkPower *= 1.35;
     this.atkId = id;
     this.atk = this.attacks[id];
+    // AIR_COMBAT_V1: avoid missing pose names on custom character rigs.
+    if (!this.atk) { this.atkId = ""; return; }
     if (this.kit === "knuckles" && this.atk?.name === "Meteor Fist") this.knock = 0;
     if (this.kit === "sickle" && this.bloodFrenzyT > 0 && id.startsWith("l"))
       this.atk = { ...this.atk, wind: this.atk.wind * 0.88, recover: this.atk.recover * 0.88 };
@@ -501,6 +652,12 @@ export class Fighter implements Entity {
       this.model.rotation.y = this.viewBias;
       return;
     }
+    if (this.airChaseMoveT > 0 && !this.onGround) {
+      pos.addScaledVector(this.airChaseDir, Math.min(this.moveSpeed * 3.1, 12) * dt);
+      const flat = Math.hypot(pos.x, pos.z);
+      if (flat > this.arenaRadius) { pos.x *= this.arenaRadius / flat; pos.z *= this.arenaRadius / flat; }
+      return;
+    }
     if (this.dashT > 0) {
       pos.addScaledVector(this.dashDir, DASH_SPEED * dt);
       const fl = Math.hypot(pos.x, pos.z);
@@ -540,6 +697,9 @@ export class Fighter implements Entity {
       this.velY = 0;
       this.onGround = true;
       this.airJump = 0;
+      this.airRecoverUsed = false;
+      this.airStartT = 99;
+      this.airChaseMoveT = 0;
       this.model.recoil = 0.35;
       this.onLanded(this);
     }
@@ -673,6 +833,7 @@ export class Fighter implements Entity {
   win() { if (this.state !== S.KO) this.setState(S.WIN); }
 
   revive(frac: number) {
+    this.airChaseT = 0; this.airChaseMoveT = 0; this.airRecoverUsed = false;
     this.hp = this.maxHp * frac;
     this.guard = this.maxGuard;
     this.bloodlust = 0; this.bloodFrenzyT = 0; this.bloodFeintT = 0; this.sickleOut = false; this.bloodFestivalT = 0;
@@ -683,6 +844,7 @@ export class Fighter implements Entity {
   heal(amount: number) { this.hp = Math.min(this.hp + amount, this.maxHp); }
 
   ko() {
+    this.airChaseT = 0; this.airChaseMoveT = 0;
     this.bloodlust = 0; this.bloodFrenzyT = 0; this.bloodFeintT = 0; this.sickleOut = false; this.bloodFestivalT = 0;
     this.status.clear();
     this.setState(S.KO);
@@ -767,6 +929,8 @@ export class Fighter implements Entity {
       if (this.state === S.ATTACK && this.atk && this.atkPhase <= 1 && this.atk.lunge > 3) this.vx = this.facing * Math.max(Math.abs(this.vx), this.atk.lunge * 0.6);
     }
     if (this.dashT > 0) { this.vx = this.dashDir.x * DASH_SPEED * 1.1; if (!this.onGround) this.velY = Math.max(this.velY, 0.5); }
+    if (this.airChaseMoveT > 0 && !this.onGround)
+      this.vx = this.airChaseDir.x * Math.min(this.moveSpeed * 3.1, 12);
     pos.x += this.vx * dt;
     // Main stage walls: can't pass through its sides.
     for (const p of this.stage!.plats) {
@@ -818,6 +982,9 @@ export class Fighter implements Entity {
         this.onGround = true;
         this.ground = p;
         this.airJumps = 1;
+        this.airRecoverUsed = false;
+        this.airStartT = 99;
+        this.airChaseMoveT = 0;
         this.model.recoil = 0.35;
         this.onLanded(this);
         break;
@@ -853,6 +1020,9 @@ export class Fighter implements Entity {
     this.ground = null;
     this.velY = 0;
     this.airJumps = 1;
+    this.airRecoverUsed = false;
+    this.airChaseT = 0;
+    this.airChaseMoveT = 0;
     this.invulnT = 2;
     this.guard = this.maxGuard;
     this.setState(S.IDLE);
@@ -880,6 +1050,33 @@ export class Fighter implements Entity {
           else { p = a.pose_s; sp = 40; }
           break;
         }
+        if (a?.style === "cyclone_kick_v2") {
+          const elapsed = this.stateT - a.wind;
+          if (elapsed < 0) { p = "cy1_w"; sp = 24; }
+          else if (elapsed < 0.19) { p = "cy1_s"; sp = 50; }
+          else if (elapsed < 0.38) { p = "cy2_s"; sp = 55; }
+          else { p = "cy3_s"; sp = 55; }
+          break;
+        }
+        if (a?.style === "iron_tempest") {
+          // Distinct two turning slashes and a full-body heavy horizontal finish.
+          const elapsed = this.stateT - a.wind;
+          if (elapsed < 0) { p = "charge"; sp = 16; }
+          else if (elapsed < 0.30) { p = "l1_s"; sp = 38; }
+          else if (elapsed < 0.62) { p = "l2_s"; sp = 40; }
+          else { p = "heavy_s"; sp = 36; }
+          break;
+        }
+        if (a?.type === "melee" && (this.kit === "greatsword" ||
+            (this.kit === "knight" && this.look.element === "light"))) {
+          const heavySword = this.kit === "greatsword";
+          if (this.atkPhase === 0) { p = a.pose_w; sp = heavySword ? 13 : 24; }
+          else if (this.atkPhase === 1) { p = a.pose_s; sp = heavySword ? 28 : 46; }
+          else if (this.stateT < a.wind + a.active + a.recover * 0.75) {
+            p = a.pose_s; sp = heavySword ? 12 : 22;
+          } else { p = "idle"; sp = heavySword ? 8 : 13; }
+          break;
+        }
         if (this.atkPhase === 0) { p = a!.pose_w; sp = 22; }
         else if (this.atkPhase === 1) { p = a!.pose_s; sp = 45; }
         else if (this.stateT < a!.wind + a!.active + a!.recover * 0.5) { p = a!.pose_s; sp = 20; }
@@ -890,6 +1087,8 @@ export class Fighter implements Entity {
       case S.KO: p = "down"; sp = 10; break;
       case S.WIN: p = "win"; sp = 6; break;
     }
+    // AIR_COMBAT_V1: all air attacks use the same procedural / VRM pose pipeline.
+    // Existing attack poses are chosen per-kit in kits.ts.
     this.poseName = p;
     this.poseSpeed = sp;
   }
@@ -902,7 +1101,7 @@ export class Fighter implements Entity {
       this.state, this.poseName, this.poseSpeed, Math.round(this.hp), Math.round(this.guard),
       +this.model.walk.toFixed(2), +this.model.charge.toFixed(2), this.trail.emitting ? 1 : 0,
       +this.model.recoil.toFixed(2), this.cooldowns.z, this.cooldowns.x, this.cooldowns.c, this.maxHp,
-      +this.pct.toFixed(1), this.stocks, this.out ? 1 : 0, +this.atkLock.toFixed(2), +this.dashCd.toFixed(2), this.status.mask, this.barrelOut ? 1 : 0, Math.round(this.bloodlust), +this.bloodFrenzyT.toFixed(2), this.sickleOut ? 1 : 0, +this.bloodFestivalT.toFixed(2)];
+      +this.pct.toFixed(1), this.stocks, this.out ? 1 : 0, +this.atkLock.toFixed(2), +this.dashCd.toFixed(2), this.status.mask, this.barrelOut ? 1 : 0, Math.round(this.bloodlust), +this.bloodFrenzyT.toFixed(2), this.sickleOut ? 1 : 0, +this.bloodFestivalT.toFixed(2), +this.tempestSpin.toFixed(3), +this.cycloneSpin.toFixed(3), +this.bladeSwingYaw.toFixed(3)];
   }
 
   applySnapshot(s: any[]) {
@@ -925,6 +1124,9 @@ export class Fighter implements Entity {
       const out = s[20] === 1;
       if (out !== this.out) { this.out = out; this.root.visible = !out; if (!out) this.root.position.copy(this.netPos); }
     }
+    this.tempestSpin = s[29] ?? 0;
+    this.cycloneSpin = s[30] ?? 0;
+    this.bladeSwingYaw = s[31] ?? 0;
     if (this.state === S.KO && prev !== S.KO) this.model.fall();
     if (this.state !== S.KO && prev === S.KO) this.model.standUp();
   }
@@ -939,7 +1141,7 @@ export class Fighter implements Entity {
     for (const key in this.cooldowns) this.cooldowns[key] = Math.max(this.cooldowns[key] - dt, 0);
     this.atkLock = Math.max(this.atkLock - dt, 0);
     this.dashCd = Math.max(this.dashCd - dt, 0);
-    if (this.state !== S.KO) this.model.rotation.y = this.viewBias;
+    if (this.state !== S.KO) this.model.rotation.y = this.viewBias + this.tempestSpin + this.cycloneSpin + this.bladeSwingYaw;
     this.model.setBarrier(this.state === S.BLOCK && this.kit === "mage");
     this.model.combat = [S.ATTACK, S.CHARGE, S.BLOCK, S.HITSTUN, S.STAGGER].includes(this.state);
     this.model.hurt = this.state === S.HITSTUN || this.state === S.STAGGER;

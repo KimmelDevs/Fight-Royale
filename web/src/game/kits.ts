@@ -1,3 +1,5 @@
+// GARRICK_RANGE_WALK_V2
+// SWORD_AND_CYCLONE_V1
 // Per-class combat data: stats, attack/skill tables and pose tables.
 // `type` picks how the arena resolves an attack:
 //   melee      - timed hit check in front of the attacker (hits every enemy in the arc)
@@ -82,6 +84,8 @@ export function attacks(kit: string, element: string): Record<string, Attack> {
     bomb: bomb,
     kicks: kicks,
   } as Record<string, () => Record<string, Attack>>)[kit]?.() ?? knight();
+  // AIR_COMBAT_V1: shared air commands keep each kit's existing Z/X/C untouched.
+  Object.assign(t, airCombatMoves(kit, element, t));
   t.v = bonusSkill(kit, element);
   for (const k of Object.keys(t)) {
     t[k].element = element;
@@ -210,12 +214,12 @@ function assassin(): Record<string, Attack> {
 
 function greatsword(): Record<string, Attack> {
   return {
-    l1: a({ wind: 0.26, active: 0.1, recover: 0.38, dmg: 110, guard: 32, reach: 2.2, lunge: 2, knock: 3, stun: 0.42, next: "l2" }),
-    l2: a({ wind: 0.24, active: 0.1, recover: 0.4, dmg: 120, guard: 34, reach: 2.2, lunge: 2, knock: 3, stun: 0.42, pose_w: "l2_w", pose_s: "l2_s", next: "l3" }),
-    l3: a({ wind: 0.36, active: 0.12, recover: 0.6, dmg: 190, guard: 50, reach: 2.3, lunge: 2.5, knock: 6, stun: 0.6, stagger: true, pose_w: "l3_w", pose_s: "l3_s" }),
-    heavy: a({ wind: 0.18, active: 0.14, recover: 0.7, dmg: 320, guard: 80, reach: 2.5, lunge: 4, knock: 8, stun: 0.9, heavy: true, pose_w: "charge", pose_s: "heavy_s" }),
+    l1: a({ wind: 0.30, active: 0.14, recover: 0.38, dmg: 110, guard: 32, reach: 2.55, lunge: 2, knock: 3, stun: 0.42, next: "l2" }),
+    l2: a({ wind: 0.29, active: 0.14, recover: 0.40, dmg: 120, guard: 34, reach: 2.60, lunge: 2, knock: 3, stun: 0.42, pose_w: "l2_w", pose_s: "l2_s", next: "l3" }),
+    l3: a({ wind: 0.40, active: 0.17, recover: 0.60, dmg: 190, guard: 50, reach: 2.70, lunge: 2.5, knock: 6, stun: 0.6, stagger: true, pose_w: "l3_w", pose_s: "l3_s" }),
+    heavy: a({ wind: 0.24, active: 0.18, recover: 0.72, dmg: 320, guard: 80, reach: 2.90, lunge: 4, knock: 8, stun: 0.9, heavy: true, pose_w: "charge", pose_s: "heavy_s" }),
     z: a({ name: "Ground Slam", desc: "Smash the earth, knocking back everyone nearby.", cd: 6, type: "strike", at: "self", wind: 0.3, recover: 0.5, dmg: 150, guard: 50, knock: 7, stun: 0.6, delay: 0.05, radius: 2.6, style: "slam", pose_w: "l3_w", pose_s: "l3_s" }),
-    x: a({ name: "Whirlwind", desc: "Spin with the blade out, hitting all around you four times.", cd: 7, type: "strike", at: "self", wind: 0.12, recover: 0.4, dmg: 60, guard: 20, knock: 2, stun: 0.3, delay: 0.05, radius: 2.1, repeat: 4, interval: 0.18, style: "spin", pose_w: "l1_w", pose_s: "heavy_s" }),
+    x: a({ name: "Iron Tempest", desc: "Brace, carve two wide turning sweeps, then unleash a crushing horizontal cleave. The upper arc can catch jumping enemies. Block or parry to counter it.", cd: 9, type: "strike", at: "self", wind: 0.28, active: 0.86, recover: 0.48, dmg: 70, guard: 22, knock: 1.1, stun: 0.16, delay: 0.04, radius: 2.80, repeat: 3, interval: 0.30, lunge: 1.1, style: "iron_tempest", pose_w: "charge", pose_s: "heavy_s" }),
     c: a({ name: "Titan Cleave", desc: "A colossal downward cleave that splits the ground ahead.", cd: 12, type: "strike", wind: 0.4, recover: 0.7, dmg: 340, guard: 90, knock: 9, stun: 1.0, heavy: true, delay: 0.55, radius: 2.0, style: "cleave", pose_w: "l3_w", pose_s: "l3_s" }),
   };
 }
@@ -378,9 +382,64 @@ function kicks(): Record<string, Attack> {
     l3: a({ wind: 0.12, active: 0.08, recover: 0.2, dmg: 72, guard: 18, reach: 1.85, lunge: 3.5, knock: 2.2, stun: 0.32, pose_w: "kk3_w", pose_s: "kk3_s", next: "l4" }),
     l4: a({ wind: 0.18, active: 0.08, recover: 0.38, dmg: 105, guard: 30, reach: 1.8, lunge: 2.5, knock: 4.5, stun: 0.5, stagger: true, pose_w: "kk4_w", pose_s: "kk4_s" }),
     heavy: a({ wind: 0.12, active: 0.16, recover: 0.5, dmg: 230, guard: 55, reach: 2.0, lunge: 7, knock: 6.5, stun: 0.8, heavy: true, self_jump: 4, pose_w: "charge", pose_s: "fly_s" }),
-    z: a({ name: "Cyclone Kick", desc: "A spinning kick that hits everyone around you three times.", cd: 6, type: "strike", at: "self", wind: 0.08, recover: 0.4, dmg: 65, guard: 20, knock: 3, stun: 0.3, delay: 0.05, radius: 2.0, repeat: 3, interval: 0.15, style: "spin", pose_w: "kk3_w", pose_s: "kk3_s" }),
+    z: a({ name: "Cyclone Kick", desc: "Three real rotating heel kicks with alternating legs and a final knock-away. Each kick can be guarded or parried.", cd: 6, type: "strike", at: "self", wind: 0.18, active: 0.57, recover: 0.40, dmg: 65, guard: 20, knock: 3, stun: 0.3, delay: 0.03, radius: 2.0, repeat: 3, interval: 0.19, style: "cyclone_kick_v2", pose_w: "cy1_w", pose_s: "cy1_s" }),
     x: a({ name: "Crescent Gale", desc: "A kick so fast it launches a cutting wind across the arena.", cd: 6, type: "projectile", wind: 0.14, recover: 0.35, dmg: 110, guard: 30, knock: 3, stun: 0.45, speed: 20, size: 1.4, style: "wave", pierce: true, pose_w: "kk2_w", pose_s: "kk2_s" }),
     c: a({ name: "Phantom Step", desc: "Vanish and reappear behind the enemy for a kick, three times. The first kick stuns for 2 seconds, holding them for the rest.", cd: 12, type: "phantom", wind: 0.12, active: 0.05, recover: 1.35, dmg: 115, guard: 30, knock: 1.2, stun: 2.0, stagger: true, heavy: true, repeat: 3, interval: 0.5, no_parry: true, pose_w: "kk1_w", pose_s: "kk3_s" }),
+  };
+}
+
+// AIR_COMBAT_V1: kit-specific anti-airs and airborne combos (never a ground smash).
+// Every playable character inherits their kit's signature style; different elements
+// distinguish Aster/Vesper and the three elemental mages.
+function airCombatMoves(kit: string, element: string, base: Record<string, Attack>): Record<string, Attack> {
+  const profiles: Record<string, [string, number, number, string, string]> = {
+    knight: [element === "light" ? "Rising Shield" : "Rising Riposte", 43, 2.05, element === "light" ? "block" : "l1_w", element === "light" ? "bash" : "rise"],
+    greatsword: ["Sky Cleaver", 53, 2.5, "charge", "heavy_s"],
+    katana: ["Ascending Draw", 43, 2.2, "l1_w", "rise"],
+    assassin: ["Dagger Lift", 35, 1.85, "as1_w", "as3_s"],
+    knuckles: ["Rising Uppercut", 41, 1.9, "kh_w", "kh_s"],
+    kicks: ["Skyward Kick", 42, 2.1, "kk2_w", "fly_s"],
+    wind: ["Gale Uppercut", 37, 2.1, "w1_w", "rise"],
+    sickle: ["Sickle Pursuit", 40, 2.15, "vr1_w", "vr3_s"],
+    mage: [element === "electric" ? "Lightning Lift" : element === "water" ? "Tidal Lift" : "Flame Lift", 33, 2.6, "mh_w", "mh_s"],
+    bow: ["Rising Bowstrike", 32, 2.15, "bow_w", "bow_s"],
+    bomb: ["Airburst Guard", 34, 2.2, "throw_w", "throw_s"],
+  };
+  const [name, dmg, reach, windPose, hitPose] = profiles[kit] ?? profiles.knight;
+  const fast = ["assassin", "sickle", "katana", "kicks", "wind"].includes(kit);
+  const ranged = kit === "mage" || kit === "bow";
+  const anti = a({
+    name, desc: "Space + Attack: intercept airborne foes, then tap Space to chase a successful launcher.",
+    type: "melee", wind: fast ? 0.12 : kit === "greatsword" ? 0.26 : 0.17,
+    active: 0.12, recover: fast ? 0.29 : 0.39,
+    dmg, guard: 20, knock: 2.2, stun: 0.33, reach, lunge: 0,
+    pose_w: windPose, pose_s: hitPose,
+  });
+  const baseLight = base.l1;
+  const blade = ranged ? "projectile" : "melee";
+  const mk = (n: number, dmg: number, next: string, knock: number): Attack => a({
+    name: n === 3 ? "Aerial Finisher" : `Air Strike ${n}`,
+    type: blade, wind: fast ? 0.09 : 0.14, active: 0.09,
+    recover: n === 3 ? 0.37 : 0.23,
+    dmg, guard: n === 3 ? 18 : 12, stun: n === 3 ? 0.34 : 0.21,
+    knock, reach: kit === "greatsword" ? 2.35 : 1.95, lunge: 0,
+    speed: 21, size: 0.8, style: ranged ? (kit === "bow" ? "arrow" : baseLight.style) : "bolt",
+    pose_w: n === 1 ? windPose : n === 2 ? (base.l2?.pose_w ?? windPose) : (base.l3?.pose_w ?? windPose),
+    pose_s: n === 1 ? hitPose : n === 2 ? (base.l2?.pose_s ?? hitPose) : (base.l3?.pose_s ?? hitPose),
+    next,
+  });
+  // Gale remains the only dive/ground-smash specialist. These finishers knock away sideways.
+  return {
+    anti_air: anti,
+    air_l1: mk(1, fast ? 28 : 32, "air_l2", 0.8),
+    air_l2: mk(2, fast ? 32 : 36, "air_l3", 1.0),
+    air_l3: mk(3, fast ? 42 : 48, "", 4.0),
+    air_heavy: a({ name: "Air Heavy", type: ranged ? "projectile" : "melee",
+      wind: fast ? 0.15 : 0.24, active: 0.1, recover: 0.48,
+      dmg: fast ? 63 : 74, guard: 25, knock: 5.2, stun: 0.38, heavy: true,
+      reach, lunge: 0, speed: 23, size: 1.1,
+      style: ranged ? (kit === "bow" ? "arrow" : baseLight.style) : "bolt",
+      pose_w: windPose, pose_s: hitPose }),
   };
 }
 
@@ -412,6 +471,33 @@ const KNIGHT: Record<string, Pose> = {
   l2_s: P([0.1, -0.7, 0], [0, 0.6, 0], [-1.7, -1.1, 0], [1.3, 0, 0.3], [-0.8, -0.2, 0.3], [0, 0, -1.0], [-0.45, 0, 0.06], [0.35, 0, -0.06], -0.1),
   l3_w: P([-0.1, -0.2, 0], [0.1, 0.2, 0], [-2.9, 0, -0.1], [0.6, 0, 0], [-1.0, 0, 0.4], [0, 0, -1.0], [-0.3, 0, 0.06], [0.3, 0, -0.06], -0.02),
   l3_s: P([0.4, -0.1, 0], [-0.2, 0, 0], [-0.9, 0, -0.05], [1.2, 0, 0], [-0.6, -0.3, 0.5], [0, 0, -1.2], [-0.6, 0, 0.08], [0.5, 0, -0.08], -0.18),
+};
+
+// SWORD_AND_CYCLONE_V1: Aster is a practiced one-handed swordsman; shield stays near the ribs.
+// These poses are exclusive to his light-element knight, not Vesper.
+const ASTER_SWINGS: Record<string, Pose> = {
+  l1_w: P([0.14, -0.92, -0.04], [0, 0.75, 0], [-0.9, -1.25, -0.26], [0.68, 0, 0], [-1.22, -0.3, 0.15], [0, 0, -0.8], [-0.46, 0, 0.08], [0.36, 0, -0.07], -0.13),
+  l1_s: P([0.27, 0.72, 0.08], [-0.04, -0.5, 0], [-1.7, 0.95, -0.08], [0.18, 0, 0], [-1.15, -0.22, 0.14], [0, 0, -0.8], [-0.62, 0, 0.09], [0.42, 0, -0.08], -0.15),
+  l2_w: P([0.15, 0.77, 0.06], [0, -0.6, 0], [-1.6, 1.1, 0.1], [0.42, 0, 0], [-1.2, -0.25, 0.15], [0, 0, -0.8], [-0.52, 0, 0.08], [0.42, 0, -0.08], -0.13),
+  l2_s: P([0.27, -0.85, -0.07], [-0.05, 0.6, 0], [-1.6, -1.15, -0.06], [0.25, 0, 0], [-1.21, -0.25, 0.15], [0, 0, -0.8], [-0.64, 0, 0.09], [0.48, 0, -0.08], -0.15),
+  l3_w: P([-0.12, -0.36, 0.02], [0.06, 0.3, 0], [-2.7, -0.45, -0.08], [0.57, 0, 0], [-1.31, -0.15, 0.18], [0, 0, -0.85], [-0.42, 0, 0.09], [0.45, 0, -0.09], -0.12),
+  l3_s: P([0.42, 0.38, -0.06], [-0.12, -0.26, 0], [-1.16, 0.55, -0.04], [0.2, 0, 0], [-1.3, -0.22, 0.16], [0, 0, -0.8], [-0.72, 0, 0.12], [0.52, 0, -0.09], -0.19),
+  charge: P([0.16, -1.0, 0], [0, 0.85, 0], [-0.66, -1.55, -0.14], [0.85, 0, 0], [-1.4, -0.21, 0.19], [0, 0, -0.8], [-0.54, 0, 0.12], [0.47, 0, -0.1], -0.17),
+  heavy_s: P([0.38, 1.02, 0.04], [-0.13, -0.76, 0], [-1.48, 1.25, -0.06], [0.2, 0, 0], [-1.28, -0.22, 0.15], [0, 0, -0.8], [-0.7, 0, 0.1], [0.5, 0, -0.1], -0.2),
+};
+
+// Slow, braced two-handed cutting arcs. The chest and feet transfer the weight;
+// left hand is held to the blade grip by FighterModel / VrmRig IK.
+const GARRICK_SWINGS: Record<string, Pose> = {
+  idle: P([0.09, -0.24, 0], [-0.03, 0.18, 0], [-1.06, -0.17, -0.14], [-0.36, 0, 0], [-1.04, 0.17, 0.11], [-0.36, 0, 0], [-0.12, 0, 0.05], [0.12, 0, -0.05], -0.075),
+  l1_w: P([0.2, -1.17, -0.12], [-0.06, 0.8, 0], [-1.18, -1.21, -0.2], [0.74, 0, 0], [-1.13, -0.88, 0.2], [0.7, 0, 0], [-0.67, 0, 0.13], [0.45, 0, -0.1], -0.22),
+  l1_s: P([0.42, 0.95, 0.15], [-0.18, -0.64, 0], [-1.7, 1.1, -0.02], [0.12, 0, 0], [-1.65, 1.35, 0.18], [0.12, 0, 0], [-0.92, 0, 0.15], [0.55, 0, -0.11], -0.28),
+  l2_w: P([0.21, 0.95, 0.1], [-0.08, -0.65, 0], [-1.51, 1.24, 0.1], [0.55, 0, 0], [-1.45, 1.5, 0.17], [0.52, 0, 0], [-0.72, 0, 0.13], [0.48, 0, -0.1], -0.22),
+  l2_s: P([0.4, -1.04, -0.14], [-0.2, 0.65, 0], [-1.76, -1.18, -0.04], [0.13, 0, 0], [-1.72, -0.83, 0.2], [0.1, 0, 0], [-0.92, 0, 0.15], [0.58, 0, -0.11], -0.28),
+  l3_w: P([-0.07, -0.52, 0], [-0.02, 0.35, 0], [-3.04, -0.45, -0.2], [0.65, 0, 0], [-3.0, -0.08, 0.18], [0.55, 0, 0], [-0.69, 0, 0.12], [0.5, 0, -0.1], -0.16),
+  l3_s: P([0.57, 0.34, 0.04], [-0.28, -0.28, 0], [-0.83, 0.65, 0], [0.2, 0, 0], [-0.82, 0.98, 0.2], [0.2, 0, 0], [-1.05, 0, 0.14], [0.67, 0, -0.12], -0.36),
+  charge: P([0.21, -1.2, -0.12], [-0.07, 0.74, 0], [-1.17, -1.5, -0.22], [0.67, 0, 0], [-1.15, -1.2, 0.22], [0.61, 0, 0], [-0.8, 0, 0.14], [0.6, 0, -0.12], -0.28),
+  heavy_s: P([0.52, 1.11, 0.13], [-0.27, -0.64, 0], [-1.61, 1.22, -0.14], [0.16, 0, 0], [-1.56, 1.5, 0.16], [0.16, 0, 0], [-1.1, 0, 0.16], [0.73, 0, -0.12], -0.36),
 };
 
 /** Two-handed versions of the knight swings: the left hand follows the sword hand onto the hilt. */
@@ -511,6 +597,11 @@ const KICKS: Record<string, Pose> = {
   idle: K(P([-0.05, -0.3, 0], [0.1, 0.25, 0.04], EASY_R, NO, EASY_L, NO, [-0.18, 0, 0.08], [0.2, 0, -0.06], -0.04), 0.08, 0.22),
   // Leg check: knee up as a barrier, upper body calm.
   block: K(P([-0.08, -0.25, 0], [0.08, 0.2, 0], [0.1, 0.1, -0.35], NO, [0.1, -0.1, 0.35], NO, [-1.35, 0, 0.05], [0.2, 0, -0.08], -0.05), 1.75, 0.3),
+  // SWORD_AND_CYCLONE_V1: actual alternate-leg turning kicks for Kira Z.
+  cy1_w: K(P([-0.12, -0.72, 0], [0, 0.65, 0], OUT_R, NO, OUT_L, NO, [0.12, 0, 0], [-1.31, 0.55, 0], -0.15), 0.48, 1.55),
+  cy1_s: K(P([-0.22, 0.68, 0], [0, -0.5, 0], OUT_R, NO, OUT_L, NO, [0.15, 0, 0], [-1.93, -0.75, 0], -0.12), 0.45, 0.06),
+  cy2_s: K(P([-0.28, -0.74, 0], [0, 0.58, 0], OUT_R, NO, OUT_L, NO, [-1.94, 0.68, 0], [0.21, 0, 0], -0.13), 0.06, 0.45),
+  cy3_s: K(P([-0.38, 0.8, -0.05], [0.1, -0.66, 0], OUT_R, NO, OUT_L, NO, [0.15, 0, 0], [-2.17, 0.85, 0.06], -0.16), 0.4, 0.02),
   // Front snap kick (right).
   kk1_w: K(P([-0.08, -0.2, 0], [0.08, 0.2, 0], EASY_R, NO, EASY_L, NO, [0.15, 0, 0.05], [-1.45, 0, -0.05], -0.05), 0.3, 1.9),
   kk1_s: K(P([-0.3, -0.2, 0], [0.15, 0.2, 0], [-0.1, 0.2, -0.6], NO, [-0.1, -0.2, 0.5], NO, [0.2, 0, 0.05], [-1.7, 0, 0], -0.08), 0.28, 0.08),
@@ -559,7 +650,7 @@ const TABLES: Record<string, Record<string, Pose>> = {
   mage: MAGE,
   sickle: SICKLE,
   assassin: ASSASSIN,
-  greatsword: twoHanded(KNIGHT),
+  greatsword: { ...twoHanded(KNIGHT), ...GARRICK_SWINGS },
   katana: twoHanded(KNIGHT),
   bow: BOW,
   knuckles: KNUCKLES,
@@ -600,8 +691,8 @@ const TABLES: Record<string, Record<string, Pose>> = {
   kicks: KICKS,
 };
 
-export function poses(kit: string): Record<string, Pose> {
-  const t = { ...COMMON, ...(TABLES[kit] ?? KNIGHT) };
+export function poses(kit: string, element?: string): Record<string, Pose> {
+  const t = { ...COMMON, ...(TABLES[kit] ?? KNIGHT), ...(kit === "knight" && element === "light" ? ASTER_SWINGS : {}) };
   if (!t.charge) t.charge = t.mh_w ?? t.ash_w ?? KNIGHT.charge;
   return t;
 }
