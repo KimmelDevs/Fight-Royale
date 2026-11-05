@@ -1367,7 +1367,19 @@ export class Game implements MobHost {
     f.invulnT = Math.min(f.invulnT, 0.08);
     this.fxp("smoke", f.root.position.clone(), "#ed345d");
     this.snd("teleport", 0.65);
-    const center = target.root.position.clone().setY(this.plat ? 0 : target.root.position.y);
+    // Anchor Blood Festival to the arena floor, never the target's jump height.
+    // In 3D duel/team/survival, the ground is y=0. In platform brawl,
+    // pick the highest platform directly below the target, if any.
+    const festivalGroundY = this.plat
+      ? STAGE.plats.reduce((ground, platform) => {
+          const abovePlatform = target.root.position.y + 0.05 >= platform.y;
+          const overPlatform = target.root.position.x >= platform.x0 && target.root.position.x <= platform.x1;
+          return abovePlatform && overPlatform ? Math.max(ground, platform.y) : ground;
+        }, 0)
+      : 0;
+    const center = new THREE.Vector3(
+      target.root.position.x, festivalGroundY, this.plat ? 0 : target.root.position.z
+    );
     const radius = a.radius > 0 ? a.radius : 3.5;
     const { visual, blades } = makeBloodFestivalVisual(radius);
     visual.position.copy(center);
