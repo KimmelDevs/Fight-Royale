@@ -133,8 +133,6 @@ class Projectile {
 }
 
 const BOMB_GRAVITY = 16;
-/** Share of a bomb's damage dealt to the bomber himself and his teammates. */
-const FRIENDLY_FIRE = 0.5;
 
 /** A mine or powder keg on the field. */
 interface Trap {
@@ -274,6 +272,8 @@ export class Game implements MobHost {
   private remoteBrains = new Map<string, RemoteBrain>();
   private strikeMarks: { target: any; land: number; id: number }[] = [];
   private round = 0;
+  /** Best of three (first to two): round wins for team/player 0 and 1. */
+  private matchWins: [number, number] = [0, 0];
   roundOver = false;
   canRestart = false;
   /** Pause menu open: offline matches freeze; online matches keep running but ignore your input. */
@@ -431,6 +431,9 @@ export class Game implements MobHost {
 
   restart() {
     if (this.cfg.role === "client") return;
+    // Rematch is a fresh best-of-three series, not another round of the old match.
+    this.matchWins = [0, 0];
+    this.emit(["roundScore", 0, 0]);
     this.startRound();
   }
 
@@ -987,17 +990,7 @@ export class Game implements MobHost {
           this.applyHit(owner, d, a, power, d.chest(), dir, true);
         }
       }
-      // Friendly fire: the bomber and his teammates caught in the blast take half damage.
-      for (const d of [...this.entities.values()]) {
-        if (d.team !== team || d.isDown()) continue;
-        const to = d.root.position.clone().sub(g);
-        const dy = Math.abs(to.y);
-        to.setY(0);
-        if (to.length() <= a.radius + d.radius * 0.5 && dy < 1.5) {
-          const dir = to.length() > 0.05 ? to.normalize() : new THREE.Vector3(1, 0, 0);
-          this.applyHit(owner, d, a, power * FRIENDLY_FIRE, d.chest(), dir, true);
-        }
-      }
+      // Bombs, mines and powder kegs cannot hurt the bomber or allies.
       for (const t of [...this.traps]) if (t.kind === "barrel" && t.team !== team && t.pos.distanceTo(g) <= a.radius + 0.4) this.detonate(t);
     };
     one(pos);
@@ -1461,6 +1454,13 @@ export class Game implements MobHost {
   /** 1v1 modes (3D duel and platform brawl). */
   private isDuel() { return this.cfg.mode === "duel" || this.cfg.mode === "brawl"; }
 
+  /** Record a round win and synchronize the series score with online guests. */
+  private awardRound(team: number): boolean {
+    this.matchWins[team]++;
+    this.emit(["roundScore", this.matchWins[0], this.matchWins[1]]);
+    return this.matchWins[team] >= 2;
+  }
+
   private onFighterKo(f: Fighter) {
     this.snd("ko", 0.9);
     if (this.isDuel()) {
@@ -1472,13 +1472,21 @@ export class Game implements MobHost {
       this.hitStop(0.9, 0.25);
       this.later(0.4, () => {
         winner.win();
+        const matchFinished = this.awardRound(winner.team);
+        const [a, b] = this.matchWins;
         const iWon = winner.owner === this.cfg.localPeer;
         const name = winner.look.name;
+        if (!matchFinished) {
+          this.banner(`${name.toUpperCase()} WINS ROUND ${a + b}`, "#ffe08a", `Score ${a} - ${b} | Next round coming up`, 1.8);
+          this.later(2.5, () => this.startRound());
+          return;
+        }
+        // Only the series victor earns gold and a ranked/wager result.
         if (!isCpu(winner.owner)) this.sendReward(winner.owner, "duel", WIN_GOLD);
         this.onEvent({ type: "result", winner: winner.team });
         this.emit(["result", winner.team]);
         const text = this.cfg.role === "offline" ? (iWon ? "VICTORY" : "DEFEAT") : `${name.toUpperCase()} WINS`;
-        this.over(text, this.cfg.role === "client" ? "" : "Press R or click Rematch", iWon || this.cfg.role !== "offline" ? "#ffe08a" : "#ff7b7b");
+        this.over(text, `Final Score: ${a} - ${b} | Press R or click Rematch`, iWon || this.cfg.role !== "offline" ? "#ffe08a" : "#ff7b7b");
         this.canRestart = true;
       });
     } else if (this.cfg.mode === "team") {
@@ -1489,11 +1497,20 @@ export class Game implements MobHost {
       for (const x of this.fighters) x.brain = null;
       this.hitStop(0.9, 0.25);
       this.later(0.5, () => {
-        for (const x of this.fighters) if (x.team === winner) { x.win(); if (!isCpu(x.owner)) this.sendReward(x.owner, "team", WIN_GOLD); }
+        for (const x of this.fighters) if (x.team === winner) x.win();
+        const matchFinished = this.awardRound(winner);
+        const [a, b] = this.matchWins;
+        const side = winner === 0 ? "Blue" : "Red";
+        if (!matchFinished) {
+          this.banner(`TEAM ${side.toUpperCase()} WINS ROUND ${a + b}`, "#ffe08a", `Score ${a} - ${b} | Next round coming up`, 1.8);
+          this.later(2.5, () => this.startRound());
+          return;
+        }
+        for (const x of this.fighters) if (x.team === winner && !isCpu(x.owner)) this.sendReward(x.owner, "team", WIN_GOLD);
         this.onEvent({ type: "result", winner });
         this.emit(["result", winner]);
         const mine = this.local?.team ?? 0;
-        this.over(winner === mine ? "VICTORY" : "DEFEAT", `Team ${winner === 0 ? "Blue" : "Red"} wins`, winner === mine ? "#ffe08a" : "#ff7b7b");
+        this.over(winner === mine ? "VICTORY" : "DEFEAT", `Team ${side} wins | Final Score: ${a} - ${b}`, winner === mine ? "#ffe08a" : "#ff7b7b");
         this.canRestart = true;
       });
     } else {
@@ -1709,6 +1726,7 @@ export class Game implements MobHost {
       case "banner": this.onEvent({ type: "banner", text: ev[1], color: ev[2], sub: ev[3], hold: ev[4] }); break;
       case "over": this.onEvent({ type: "over", text: ev[1], sub: ev[2], color: ev[3] }); break;
       case "result": this.onEvent({ type: "result", winner: ev[1] }); break;
+      case "roundScore": this.matchWins = [ev[1], ev[2]]; break;
     }
   }
 
@@ -1779,6 +1797,10 @@ export class Game implements MobHost {
     return {
       mode: this.cfg.mode,
       plat: this.plat,
+      matchWins: [this.matchWins[0], this.matchWins[1]] as [number, number],
+      roundLabel: this.matchWins.some((wins) => wins >= 2)
+        ? "FINAL"
+        : `ROUND ${this.matchWins[0] + this.matchWins[1] + 1}`,
       all: this.plat ? this.fighters.map((f) => ({ ...info(f), me: f === me, cpu: isCpu(f.owner) })) : [],
       me: me ? info(me) : null,
       other: other ? { ...info(other), tag: isCpu(other.owner) ? `CPU - ${LEVELS[this.cfg.difficulty ?? 1]}` : "" } : null,

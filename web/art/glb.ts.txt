@@ -1,0 +1,180 @@
+// GLB bodies: a static textured mesh (TRELLIS image-to-3D from a ChatGPT full-body
+// reference) skinned at load time onto the procedural rig's joint groups. The joints keep
+// animating exactly as before, so every pose, attack and skill drives the new body.
+import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+
+const cache = new Map<string, Promise<THREE.Mesh[]>>();
+let ramp: THREE.DataTexture | null = null;
+
+/** Two-step light ramp for the cel look (shadow side ~0.45, lit side 1). */
+function toonRamp() {
+  if (!ramp) {
+    ramp = new THREE.DataTexture(new Uint8Array([115, 255]), 2, 1, THREE.RedFormat);
+    ramp.minFilter = ramp.magFilter = THREE.NearestFilter;
+    ramp.generateMipmaps = false;
+    ramp.needsUpdate = true;
+  }
+  return ramp;
+}
+
+/** Loads /models/<id>.glb once: meshes with transforms baked in and cel-shaded materials. */
+export function loadBody(id: string): Promise<THREE.Mesh[]> {
+  let p = cache.get(id);
+  if (!p) {
+    p = new GLTFLoader().loadAsync(`/models/${id}.glb`).then((gltf) => {
+      const out: THREE.Mesh[] = [];
+      gltf.scene.updateMatrixWorld(true);
+      gltf.scene.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (!m.isMesh) return;
+        const geo = m.geometry.clone().applyMatrix4(m.matrixWorld);
+        const src = m.material as THREE.MeshStandardMaterial;
+        // Color management is off game-wide: use texels as authored (no sRGB decode).
+        if (src.map) src.map.colorSpace = THREE.NoColorSpace;
+        const mat = new THREE.MeshToonMaterial({ map: src.map ?? null, color: src.map ? 0xffffff : src.color, gradientMap: toonRamp() });
+        out.push(new THREE.Mesh(geo, mat));
+      });
+      return out;
+    });
+    cache.set(id, p);
+  }
+  return p;
+}
+
+export interface Joints {
+  root: THREE.Object3D; hips: THREE.Object3D; torso: THREE.Object3D; head: THREE.Object3D;
+  arm_l: THREE.Object3D; hand_l: THREE.Object3D; arm_r: THREE.Object3D; hand_r: THREE.Object3D;
+  leg_l: THREE.Object3D; leg_r: THREE.Object3D;
+}
+
+/** Proportions of the reference art, as fractions of total height H (A-pose, facing +Z). */
+const NECK = 0.835, SHOULDER = 0.8, HIPJ = 0.5;
+
+interface Seg { a: THREE.Vector3; b: THREE.Vector3; bone: number }
+
+function segDist(p: THREE.Vector3, s: Seg) {
+  const ab = s.b.clone().sub(s.a);
+  const t = THREE.MathUtils.clamp(p.clone().sub(s.a).dot(ab) / Math.max(ab.lengthSq(), 1e-9), 0, 1);
+  return p.distanceTo(s.a.clone().addScaledVector(ab, t));
+}
+
+/**
+ * Fits the meshes to the rig and skins them. Call with the joints at rest (zero rotations)
+ * and the root unrotated. Moves the shoulder/hip/neck pivots onto the mesh's own landmarks.
+ * Returns the skinned meshes (already added to the root).
+ */
+export function skinBody(parts: THREE.Mesh[], j: Joints, height: number): THREE.SkinnedMesh[] {
+  const root = j.root;
+  root.updateMatrixWorld(true);
+
+  // 1. Fit: scale to the rig's height, feet on y = 0, centered (root frame).
+  const box = new THREE.Box3();
+  for (const m of parts) { m.geometry.computeBoundingBox(); box.union(m.geometry.boundingBox!); }
+  const s = height / Math.max(box.max.y - box.min.y, 1e-6);
+  const fit = new THREE.Matrix4().makeScale(s, s, s).premultiply(new THREE.Matrix4().makeTranslation(
+    -(box.min.x + box.max.x) / 2 * s, -box.min.y * s, -(box.min.z + box.max.z) / 2 * s));
+  const geos = parts.map((m) => m.geometry.clone().applyMatrix4(fit));
+  const H = height;
+
+  // 2. Landmarks from the mesh: hand tips are the most lateral points at arm height.
+  const tip = [new THREE.Vector3(), new THREE.Vector3()]; // [left (+x), right (-x)]
+  const best = [-Infinity, -Infinity];
+  const p = new THREE.Vector3();
+  for (const g of geos) {
+    const pos = g.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      p.fromBufferAttribute(pos, i);
+      if (p.y < 0.38 * H || p.y > 0.78 * H) continue;
+      const side = p.x > 0 ? 0 : 1;
+      if (Math.abs(p.x) > best[side]) { best[side] = Math.abs(p.x); tip[side].copy(p); }
+    }
+  }
+  const shoulderX = 0.085 * H;
+  const shoulder = [new THREE.Vector3(shoulderX, SHOULDER * H, 0), new THREE.Vector3(-shoulderX, SHOULDER * H, 0)];
+  const hipJ = [new THREE.Vector3(0.055 * H, HIPJ * H, 0), new THREE.Vector3(-0.055 * H, HIPJ * H, 0)];
+  const neck = new THREE.Vector3(0, NECK * H, 0);
+  // Wrist sits a palm's length short of the fingertips.
+  const wrist = tip.map((t, i) => t.clone().lerp(shoulder[i], 0.1));
+
+  // 3. Move the rig's pivots onto those landmarks and aim the arms down each mesh arm.
+  const place = (o: THREE.Object3D, rootPos: THREE.Vector3) => {
+    const w = rootPos.clone().applyMatrix4(root.matrixWorld);
+    o.position.copy(o.parent!.worldToLocal(w));
+    o.updateMatrixWorld(true);
+  };
+  place(j.head, neck);
+  const arms = [j.arm_l, j.arm_r], hands = [j.hand_l, j.hand_r], legs = [j.leg_l, j.leg_r];
+  for (let i = 0; i < 2; i++) {
+    place(legs[i], hipJ[i]);
+    place(arms[i], shoulder[i]);
+    // Arm length along local -Y; the hand pivot (weapon mount) goes at the wrist.
+    const len = wrist[i].distanceTo(shoulder[i]); // root units
+    const scaleY = arms[i].getWorldScale(new THREE.Vector3()).y / root.getWorldScale(new THREE.Vector3()).y;
+    hands[i].position.set(0, -len / scaleY, 0);
+  }
+  // Temporarily bend the arms into the mesh's A-pose for binding.
+  const restRot = arms.map((a) => a.quaternion.clone());
+  for (let i = 0; i < 2; i++) {
+    const a = arms[i];
+    a.quaternion.identity();
+    a.updateMatrixWorld(true);
+    const parentQ = new THREE.Quaternion();
+    a.parent!.getWorldQuaternion(parentQ);
+    const rootQ = root.getWorldQuaternion(new THREE.Quaternion());
+    const dirWorld = wrist[i].clone().sub(shoulder[i]).normalize().applyQuaternion(rootQ);
+    const downWorld = new THREE.Vector3(0, -1, 0).applyQuaternion(parentQ);
+    const q = new THREE.Quaternion().setFromUnitVectors(downWorld, dirWorld);
+    a.quaternion.copy(parentQ.clone().invert().multiply(q).multiply(parentQ));
+  }
+  root.updateMatrixWorld(true);
+
+  // 4. Bones = the rig's joint groups. Segments in the root frame (bind pose).
+  const bones = [j.hips, j.torso, j.head, j.arm_l, j.hand_l, j.arm_r, j.hand_r, j.leg_l, j.leg_r];
+  const segs: Seg[] = [
+    { a: hipJ[0].clone().setX(0).setY(0.46 * H), b: new THREE.Vector3(0, 0.6 * H, 0), bone: 0 },
+    { a: new THREE.Vector3(0, 0.6 * H, 0), b: neck.clone(), bone: 1 },
+    { a: neck.clone(), b: new THREE.Vector3(0, H, 0), bone: 2 },
+  ];
+  for (let i = 0; i < 2; i++) {
+    segs.push({ a: shoulder[i].clone(), b: wrist[i].clone(), bone: 3 + i * 2 });
+    segs.push({ a: wrist[i].clone(), b: tip[i].clone(), bone: 4 + i * 2 });
+    segs.push({ a: hipJ[i].clone(), b: hipJ[i].clone().setY(0), bone: 7 + i });
+  }
+
+  const out: THREE.SkinnedMesh[] = [];
+  const d = new Array(segs.length).fill(0);
+  geos.forEach((g, gi) => {
+    const pos = g.attributes.position;
+    const idx = new Uint16Array(pos.count * 4), wts = new Float32Array(pos.count * 4);
+    for (let i = 0; i < pos.count; i++) {
+      p.fromBufferAttribute(pos, i);
+      // Head and hair above the neck belong to the head alone.
+      if (p.y > neck.y + 0.01 * H && Math.abs(p.x) < 0.14 * H) { idx[i * 4] = 2; wts[i * 4] = 1; continue; }
+      for (let k = 0; k < segs.length; k++) d[k] = segDist(p, segs[k]);
+      const order = d.map((v, k) => k).sort((a, b) => d[a] - d[b]).slice(0, 3);
+      let sum = 0;
+      const w = order.map((k) => { const v = 1 / Math.pow(d[k] + 0.01 * H, 4); sum += v; return v; });
+      // Merge duplicates of the same bone and write the top 3.
+      const acc = new Map<number, number>();
+      order.forEach((k, n) => acc.set(segs[k].bone, (acc.get(segs[k].bone) ?? 0) + w[n] / sum));
+      let n = 0;
+      for (const [b, v] of acc) { idx[i * 4 + n] = b; wts[i * 4 + n] = v; n++; }
+    }
+    g.setAttribute("skinIndex", new THREE.Uint16BufferAttribute(idx, 4));
+    g.setAttribute("skinWeight", new THREE.Float32BufferAttribute(wts, 4));
+    const sm = new THREE.SkinnedMesh(g, parts[gi].material);
+    sm.castShadow = true;
+    sm.frustumCulled = false;
+    sm.userData.fill = true;
+    root.add(sm);
+    sm.updateMatrixWorld(true);
+    sm.bind(new THREE.Skeleton(bones as THREE.Bone[]), sm.matrixWorld.clone());
+    out.push(sm);
+  });
+
+  // Back to the pose the caller had.
+  arms.forEach((a, i) => a.quaternion.copy(restRot[i]));
+  root.updateMatrixWorld(true);
+  return out;
+}

@@ -101,7 +101,7 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
     const iv = setInterval(() => setHud(g.hud()), 80);
     const key = (e: KeyboardEvent) => {
       if (e.code === "Escape") { e.preventDefault(); const p = !g.paused; g.paused = p; setPausedState(p); }
-      if (e.code === "KeyR" && g.canRestart) { setOver(null); g.restart(); }
+      if (e.code === "KeyR" && g.canRestart) { setOver(null); setRankChange(null); rankDone.current = false; g.restart(); }
     };
     window.addEventListener("keydown", key);
     return () => {
@@ -122,6 +122,22 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
       <div ref={overlay} className="overlay" />
       {hud && (
         <div className="hud">
+          {hud.mode !== "survival" && (
+            <div className="match-score" style={{
+              position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)",
+              display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
+              padding: "7px 18px", borderRadius: 12, color: "#ffffff",
+              background: "rgba(10, 19, 36, 0.82)", border: "1px solid rgba(255,255,255,0.25)",
+              zIndex: 5, pointerEvents: "none", whiteSpace: "nowrap", textShadow: "0 1px 2px #000",
+            }}>
+              <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.16em", color: "#ffdf8d" }}>{hud.roundLabel} · FIRST TO 2</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 14, fontWeight: 800 }}>
+                <span style={{ fontSize: 10, color: "#8ccfff" }}>{hud.mode === "team" ? "BLUE" : "P1"}</span>
+                <span style={{ fontSize: 21, fontVariantNumeric: "tabular-nums" }}>{hud.matchWins[0]} - {hud.matchWins[1]}</span>
+                <span style={{ fontSize: 10, color: "#ff9a9a" }}>{hud.mode === "team" ? "RED" : "P2"}</span>
+              </div>
+            </div>
+          )}
           {hud.plat && (
             <div className="brawl-hud">
               {hud.all.map((f, i) => (
