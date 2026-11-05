@@ -10,6 +10,17 @@ const MUSIC: Record<Exclude<MusicTrack, "">, string> = { menu: "music_menu", bat
 
 interface Volumes { master: number; sfx: number; music: number }
 
+/**
+ * Longest an effect may ring (seconds) before it fades out. Library sounds often have long
+ * tails (some are 10-20 s ambiences); this keeps every effect short and punchy.
+ */
+const DEFAULT_MAX = 1.6;
+const MAX_LEN: Record<string, number> = {
+  explosion: 2.5, thunder: 2.5, meteor: 2.2, rocks: 1.8, slam: 2, ready: 1.5, fight: 2.5,
+  victory: 5, defeat: 5, wave: 4, heal: 2.5, burn: 1.5, shock: 1.2, water: 1.6, splash: 1.4, cast: 1.2,
+  rage: 1.8, teleport: 1.4, ko: 2,
+};
+
 class SoundEngine {
   vol: Volumes = { master: 0.8, sfx: 0.9, music: 0.45 };
   private ctx: AudioContext | null = null;
@@ -84,9 +95,18 @@ class SoundEngine {
       src.buffer = buf;
       src.playbackRate.value = 1 + (Math.random() * 2 - 1) * vary;
       const g = ctx.createGain();
-      g.gain.value = Math.min(vol, 1.5);
+      const v = Math.min(vol, 1.5);
+      const t0 = ctx.currentTime;
+      const max = MAX_LEN[name] ?? DEFAULT_MAX;
+      g.gain.setValueAtTime(v, t0);
       src.connect(g).connect(this.out);
-      src.start();
+      src.start(t0);
+      if (buf.duration / src.playbackRate.value > max) {
+        // Fade out over the last 0.3 s, then stop.
+        g.gain.setValueAtTime(v, t0 + max - 0.3);
+        g.gain.linearRampToValueAtTime(0, t0 + max);
+        src.stop(t0 + max + 0.02);
+      }
     };
     const buf = this.buffers.get(name);
     if (buf !== undefined) start(buf);
