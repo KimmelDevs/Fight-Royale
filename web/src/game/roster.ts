@@ -86,7 +86,7 @@ export const CHARACTERS: Character[] = [
   { id: "bob", title: "Mad Bomber", role: "Bomber - Explosives",
     desc: "Lobs firecrackers, plants mines and parks a powder keg he can blow up whenever he likes. Keep your distance from his traps.",
     stats: { power: 4, speed: 2, range: 4, defense: 2 },
-    look: { name: "Bob", body: "m", vrm: "gale", kit: "bomb", element: "blast", outfit: "brawler", style: "short", hat: "none",
+    look: { name: "Bob", body: "m", vrm: "bob", kit: "bomb", element: "blast", outfit: "brawler", style: "short", hat: "none",
       hair: "#3a2a1a", hair_shade: "#b89a7a", iris_top: "#b34a12", iris_bottom: "#ffb347", eye_dark: "#331405",
       tunic: "#c8641e", band: "#2a2a30", pants: "#2a2a30", boots: "#2a2a30", metal: "#9a9aa8", trim: "#ffb347",
       cape: "#c8641e", cape_bottom: "#ffb347", glow: "#ff9a3d", shield: "#c8641e", emblem: "#ffb347" } },
