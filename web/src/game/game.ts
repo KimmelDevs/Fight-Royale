@@ -1211,55 +1211,53 @@ export class Game implements MobHost {
     });
   }
 
-  /** KAIZEN_BIND_ZAREK_COUNTER_V4: only a chosen forward/backward key resolves the bind. */
+  /** KAIZEN_SERPENT_SLAM_V10: actual multi-impact chained grab, host-authoritative. */
   private resolveChainBind(f: Fighter, dir: "forward" | "backward", kind: "x" | "v") {
     const d = f.chainBindTarget;
     if (!d || d.isDown() || f.isDown()) return;
-    const toward = d.root.position.clone().sub(f.root.position).setY(0);
-    if (toward.lengthSq() < .001) toward.set(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
-    toward.normalize();
     const facing = f.stage ? new THREE.Vector3(f.facing, 0, 0) :
       new THREE.Vector3(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
-    const pos = d.chest();
     if (kind === "x") {
-      if (dir === "forward") {
-        // Move Kaizen towards the restrained opponent, without handing out dash i-frames.
-        const p = d.root.position.clone().addScaledVector(toward, -1.2);
-        if (f.stage) f.root.position.x = THREE.MathUtils.clamp(p.x, f.stage.blast.l + 2, f.stage.blast.r - 2);
-        else { const flat = Math.hypot(p.x, p.z); if (flat > f.arenaRadius) p.multiplyScalar(f.arenaRadius / flat);
-          f.root.position.x = p.x; f.root.position.z = p.z; }
-        this.fxp("slashes", f.chest(), "#ff637a");
-      } else {
-        const p = f.root.position.clone().addScaledVector(toward, 1.2);
-        if (d.stage) d.root.position.x = THREE.MathUtils.clamp(p.x, d.stage.blast.l + 1, d.stage.blast.r - 1);
-        else { const flat = Math.hypot(p.x, p.z); if (flat > d.arenaRadius) p.multiplyScalar(d.arenaRadius / flat);
-          d.root.position.x = p.x; d.root.position.z = p.z; }
-        this.fxp("slashes", d.chest(), "#ff637a");
-      }
-      this.fxp("num", pos.add(new THREE.Vector3(0, .8, 0)), dir === "forward" ? "PREDATOR CHASE" : "CHAIN YANK", "#ffb2bb", .85);
-    } else if (dir === "forward") {
-      d.velY = Math.max(d.velY, 7.8); d.onGround = false;
-      this.fxp("num", d.chest(), "SERPENT LAUNCH", "#ff9dad", .8);
-      const round = this.round;
-      this.later(.39, () => {
-        if (round !== this.round || d.isDown()) return;
-        d.velY = -14; d.onGround = false;
-        this.fxp("slashes", d.chest(), "#ff6479");
-      });
-      this.later(.67, () => {
-        if (round !== this.round || d.isDown() || f.isDown()) return;
-        const finisher = { ...f.attacks.v, dmg: 93, guard: 26, knock: 2.8, stun: .43, heavy: true } as Attack;
-        this.applyHit(f, d, finisher, f.atkPower, d.chest(), facing, false);
-        this.fxp("ring", d.root.position.clone().add(new THREE.Vector3(0, .1, 0)), "#ff6e82", 1.12, .20, .75);
-      });
-    } else {
-      const p = f.root.position.clone().addScaledVector(facing, -1.65);
-      if (d.stage) d.root.position.x = THREE.MathUtils.clamp(p.x, d.stage.blast.l + 1, d.stage.blast.r - 1);
-      else { const flat = Math.hypot(p.x, p.z); if (flat > d.arenaRadius) p.multiplyScalar(d.arenaRadius / flat);
-        d.root.position.x = p.x; d.root.position.z = p.z; }
-      d.velY = Math.max(2.5, d.velY); d.onGround = false;
-      this.fxp("num", d.chest(), "BACK THROW", "#ffb2bb", .8);
+      // Predator Hook stays separate: Kaizen can walk during bind, X again pulls.
+      this.fxp("slashes", d.chest(), "#ff637a");
+      this.fxp("sparks", d.chest(), "#ff92a2", 18, 4);
+      this.fxp("num", d.chest().add(new THREE.Vector3(0, 0.8, 0)),
+        "CHAIN PULL", "#ffb2bb", 0.85);
+      return;
     }
+    const round = this.round;
+    const victim = d;
+    const active = () => round === this.round && !f.isDown() && !victim.isDown() &&
+      f.chainBindKind === "v" && f.chainBindTarget === victim && victim.chainBoundBy === f;
+    this.fxp("ring", victim.chest(), "#ff687f", 0.72, 0.16, 0.7);
+    this.fxp("slashes", victim.chest(), "#ff7185");
+    this.fxp("num", victim.chest().add(new THREE.Vector3(0, 0.7, 0)),
+      dir === "forward" ? "SERPENT LIFT" : "SERPENT OVERTHROW", "#ffb5c3", 0.9);
+    const impacts = dir === "forward" ? [0.71, 1.17, 1.65] : [0.72, 1.15, 1.65];
+    impacts.forEach((delay, i) => this.later(delay, () => {
+      if (!active()) return;
+      const finisher = i === impacts.length - 1;
+      const strike = { ...f.attacks.v, dmg: [24, 32, 80][i], guard: [7, 10, 24][i],
+        knock: finisher ? 2.5 : 0, stun: finisher ? 0.45 : 0.14,
+        heavy: finisher, no_parry: true } as Attack;
+      const pos = victim.chest();
+      const direction = dir === "backward" ? facing.clone().negate() : facing;
+      const result = this.applyHit(f, victim, strike, f.atkPower, pos, direction, false);
+      if (result === "hit" || result === "crit" || result === "ko") {
+        this.fxp("ring", victim.root.position.clone().add(new THREE.Vector3(0, 0.07, 0)),
+          finisher ? "#ff8ca2" : "#ff5671", finisher ? 1.7 : 1.05, 0.20, 0.82);
+        this.fxp("slashes", pos, finisher ? "#ffced8" : "#ff6b85");
+        this.fxp("sparks", pos, "#ffc3cb", finisher ? 35 : 19, finisher ? 8 : 5);
+        this.add_trauma(finisher ? 0.45 : 0.18);
+        if (finisher) this.fxp("num", pos.clone().add(new THREE.Vector3(0, 0.65, 0)),
+          "SERPENT FINISH", "#fff0f2", 0.9);
+      }
+      // The victim remains attached to the chain until the cinematic ends;
+      // collision and ordinary physics never interrupt the grappling trajectory.
+      if (!victim.isDown()) {
+        victim.vx = 0; victim.velY = 0; victim.knock = 0;
+      }
+    }));
   }
 
   /** Serpent Bind is a real four-second immobilization, not an immediate animation. */
@@ -1327,7 +1325,9 @@ export class Game implements MobHost {
       if (f.kit === "chainblade" && a.style === "chain_predator_hook" &&
           ["hit", "crit"].includes(result) && d instanceof Fighter) {
         f.beginChainBind(d, 'x');
+        // The long tether becomes visible on contact; wraps follow the victim.
         this.fxp("ring", d.chest(), "#ff607d", 0.75, 0.25, 0.7);
+        this.fxp("slashes", d.chest(), "#ff7188");
         this.fxp("num", d.chest().add(new THREE.Vector3(0, 0.7, 0)), "CHAIN-BOUND", "#ff8999", 0.8);
       }
       if (f.kit === "chainblade" && a.style === "chain_hook" &&
@@ -2556,7 +2556,8 @@ export class Game implements MobHost {
     const boss = this.mobs.find((m) => m.def.boss && !m.dead);
     const other = this.isDuel() ? this.fighters.find((f) => f !== me) : null;
     const info = (f: Fighter) => ({ id: CHARACTERS[f.charIndex].id, name: f.look.name + (isCpu(f.owner) && f.owner !== "cpu" ? " (CPU)" : ""), hp: f.hp, maxHp: f.maxHp, guard: f.guard, maxGuard: f.maxGuard, down: f.isDown(), glow: f.look.glow,
-      pct: f.pct, stocks: f.stocks, out: f.out, team: f.team, status: f.status.kinds(), bloodlust: f.bloodlust, bloodFrenzyT: f.bloodFrenzyT, bloodFestivalT: f.bloodFestivalT, clashMomentum: f.clashMomentum, chainBindT: f.chainBindT }); // KAIZEN_BIND_ZX_V6
+      pct: f.pct, stocks: f.stocks, out: f.out, team: f.team, status: f.status.kinds(), bloodlust: f.bloodlust, bloodFrenzyT: f.bloodFrenzyT, bloodFestivalT: f.bloodFestivalT, clashMomentum: f.clashMomentum, chainBindT: f.chainBindT,
+      chainBindKind: f.chainBindKind }); // KAIZEN_PREDATOR_HOOK_V9
     return {
       mode: this.cfg.mode,
       plat: this.plat,
@@ -2575,6 +2576,12 @@ export class Game implements MobHost {
         // In the air, show the air version of a skill when it has one.
         const a = !me.onGround && me.attacks[k + "_air"] ? me.attacks[k + "_air"] : me.attacks[k];
         // KAIZEN_BIND_ZX_V6: bound follow-ups have no extra cooldown and replace Z/X icons.
+        // KAIZEN_PREDATOR_HOOK_V9: only X can resolve Predator's Hook. All
+        // other skills are locked until pull or timeout; V still uses Z/X.
+        if (me.kit === "chainblade" && me.chainBindT > 0 && me.chainBindKind === "x") {
+          if (k === "x") return { key: k, id: "backward", name: "PULL (X)", cd: 0, max: 1 };
+          return { key: k, id: a.id, name: a.name + " (Locked)", cd: me.chainBindT, max: 4 };
+        }
         if (me.kit === "chainblade" && me.chainBindT > 0 && (k === "z" || k === "x"))
           return { key: k, id: k === "z" ? "forward" : "backward", name: k === "z" ? "Forward" : "Backward", cd: 0, max: 1 };
         // During Blood Festival all special skills are locked, regardless of remaining cooldown.

@@ -261,9 +261,9 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
               <div key={s.key} className="sk">
                 <div className="icon" style={{ borderColor: me?.glow }}>
                   <Icon src={hud.kit === "chainblade" && (hud.me?.chainBindT ?? 0) > 0 &&
-                    (s.key === "z" || s.key === "x")
+                    (hud.me?.chainBindKind === "x" ? s.key === "x" : (s.key === "z" || s.key === "x"))
                       ? `/icons/skills/kaizen-${s.key === "z" ? "forward" : "backward"}.webp`
-                      : skillIcon(hud.kit, hud.element, s.id)} alt={s.name} size={60} /> {/* KAIZEN_BIND_ZX_V6 */}
+                      : skillIcon(hud.kit, hud.element, s.id)} alt={s.name} size={60} /> {/* KAIZEN_PREDATOR_HOOK_V9 */}
                   <div className="cool" style={{ height: `${Math.min(s.cd / Math.max(s.max, 0.01), 1) * 100}%` }} />
                   <b>{label(SKILL_ACTION[s.key])}</b>
                   {s.cd > 0.05 && <em>{s.cd.toFixed(1)}</em>}

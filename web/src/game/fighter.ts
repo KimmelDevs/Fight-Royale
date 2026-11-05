@@ -197,6 +197,9 @@ export class Fighter implements Entity {
   // KAIZEN_BIND_FOLLOWUP_V7: after selecting Z/X, both remain bound until the action finishes.
   chainBindFinishT = 0;
   chainResolveDirection: "forward" | "backward" | "" = "";
+  // KAIZEN_SERPENT_SLAM_V10: authoritative animation begins at the actual victim position.
+  chainBindFinishDuration = 0;
+  chainBindStartPos = new THREE.Vector3();
   onChainBindResolve: (f: Fighter, dir: "forward" | "backward", kind: "x" | "v") => void = () => {};
   bloodlust = 0;
   bloodFrenzyT = 0;
@@ -301,55 +304,102 @@ export class Fighter implements Entity {
     this.tickStatus(dt);
     if (this.chainBindTarget && (this.chainBindTarget.isDown() || this.state === S.KO))
       this.releaseChainBind();
+    // KAIZEN_PREDATOR_HOOK_V9: X bind allows Kaizen to walk, but locks other attacks/skills.
+    // X recast pulls the victim toward Kaizen; Serpent Bind (V) keeps Z/X throws.
     if (this.chainBindTarget && this.chainBindT > 0) {
+      const hook = this.chainBindKind === "x";
       if (this.chainBindFinishT > 0) {
-        // KAIZEN_BIND_FOLLOWUP_V7: the chosen move owns the bind until it completes.
-        // NEVER pass this key to readSkill() as an ordinary Z or X cast.
         this.intent.skill = "";
         this.chainBindFinishT = Math.max(0, this.chainBindFinishT - dt);
         this.chainBindT = this.chainBindFinishT;
         if (this.chainBindFinishT === 0) this.releaseChainBind();
       } else {
-        // Four seconds to choose Z (forward) or X (backward).
         this.chainBindT = Math.max(0, this.chainBindT - dt);
         const choice = this.intent.skill;
         if (!choice) this.chainChoiceArmed = true;
-        else if (this.chainChoiceArmed && (choice === "z" || choice === "x")) {
-          const direction = choice === "z" ? "forward" : "backward";
+        else if (this.chainChoiceArmed && (hook ? choice === "x" : choice === "z" || choice === "x")) {
+          const direction = hook || choice === "x" ? "backward" : "forward";
           const kind = this.chainBindKind as "x" | "v";
           this.chainChoiceArmed = false;
           this.chainResolveDirection = direction;
-          // Serpent Bind's forward launch and delayed landing hit ends at 0.67s.
-          // Other follow-ups finish sooner but still need a short chained animation.
-          this.chainBindFinishT = kind === "v" && direction === "forward" ? 0.85
-            : kind === "v" ? 0.48 : 0.38;
+          // Serpent Bind: a full reel-in, lift, three-impact throw sequence.
+          // X hook is still a short single yank, with free movement while bound.
+          this.chainBindFinishT = hook ? 0.40 : 1.85;
+          this.chainBindFinishDuration = this.chainBindFinishT;
+          this.chainBindStartPos.copy(this.chainBindTarget.root.position);
           this.chainBindT = this.chainBindFinishT;
-          this.intent.skill = ""; // consume the selection so the normal Z/X cannot fire
+          this.intent.skill = ""; // recast is consumed, NEVER cast another ordinary X
           this.onChainBindResolve(this, direction, kind);
         }
         if (this.chainBindT === 0) this.releaseChainBind();
       }
     }
-    // Both fighters remain input-locked for the entire follow-up (not just the key press).
-    if (this.chainBindT > 0 || (this.chainBoundBy && this.chainBoundBy.chainBindT > 0)) {
-      // The target must be allowed to travel vertically during Serpent Bind's forward
-      // launch/slam, but still cannot steer, attack, dash or activate skills.
-      const launchingVictim = !!this.chainBoundBy &&
-        this.chainBoundBy.chainBindFinishT > 0 &&
-        this.chainBoundBy.chainBindKind === "v" &&
-        this.chainBoundBy.chainResolveDirection === "forward";
-      this.vx = 0;
-      if (!launchingVictim) this.velY = 0;
-      this.knock = 0; this.dashT = 0;
+    const hookOwner = this.chainBindT > 0 && this.chainBindTarget !== null && this.chainBindKind === "x";
+    const boundOwner = this.chainBoundBy && this.chainBoundBy.chainBindT > 0 ? this.chainBoundBy : null;
+    if (hookOwner) {
+      // Kaizen walks normally while the target is tethered, but can't cast, attack, dodge,
+      // jump or parry for free. The model continues to draw a chain to the victim.
+      this.intent.skill = ""; this.intent.attack = false;
+      this.intent.block = false; this.intent.jump = false;
+      this.vx = 0; this.knock = 0; this.dashT = 0;
+      if (this.state !== S.IDLE) this.setState(S.IDLE);
+      if (this.stage) { this.movePlat(dt); this.verticalPlat(dt); }
+      else { this.move(dt); this.vertical(dt); }
+      this.poseName = "cbh_s";
+      this.model.chainPose = "cbh_s";
+      this.model.chainBindTargetWorld = this.chainBindTarget!.chest();
+      this.model.blend(this.poses[this.poseName] ?? this.poses.idle, dt, 13);
+      this.trail.update(dt);
+      return;
+    }
+    // The bound opponent stays still until the recast. During the 0.4s pull, the
+    // host smoothly draws them toward Kaizen (never moves Kaizen automatically).
+    if (boundOwner && boundOwner.chainBindKind === "x") {
+      this.vx = 0; this.velY = 0; this.knock = 0; this.dashT = 0;
+      this.airChaseMoveT = 0;
+      if (boundOwner.chainBindFinishT > 0) {
+        const toward = boundOwner.root.position.clone().sub(this.root.position).setY(0);
+        const dist = toward.length();
+        const amount = Math.min(Math.max(0, dist - 1.25), 17 * dt);
+        if (amount > 0.001) {
+          this.root.position.addScaledVector(toward.multiplyScalar(1 / dist), amount);
+          if (this.stage) {
+            this.root.position.x = THREE.MathUtils.clamp(this.root.position.x,
+              this.stage.blast.l + 1, this.stage.blast.r - 1);
+          } else {
+            const radial = Math.hypot(this.root.position.x, this.root.position.z);
+            if (radial > this.arenaRadius) {
+              this.root.position.x *= this.arenaRadius / radial;
+              this.root.position.z *= this.arenaRadius / radial;
+            }
+          }
+        }
+      }
+      this.model.walk = 0; this.trail.emitting = false;
+      this.poseName = "hit";
+      this.model.blend(this.poses.hit ?? this.poses.idle, dt, 13);
+      this.trail.update(dt);
+      return;
+    }
+    // KAIZEN_SERPENT_SLAM_V10: Keep the chain locked for the ENTIRE animation,
+    // drive the victim through alternating slams, and freeze all regular controls.
+    if (this.chainBindT > 0 || boundOwner) {
+      this.vx = 0; this.velY = 0; this.knock = 0; this.dashT = 0;
       this.airChaseMoveT = 0; this.model.walk = 0; this.trail.emitting = false;
-      this.model.chainPose = this.kit === "chainblade" ? "cbv_s" : "idle";
+      this.intent.attack = false; this.intent.skill = ""; this.intent.jump = false;
       this.model.chainBindTargetWorld = this.chainBindTarget?.chest() ?? null;
-      this.poseName = this.kit === "chainblade" ? "cbv_s" : "hit";
-      this.poseSpeed = 13;
-      this.model.blend(this.poses[this.poseName] ?? this.poses.idle, dt, this.poseSpeed);
-      if (launchingVictim) {
-        if (this.stage) this.verticalPlat(dt);
-        else this.vertical(dt);
+      if (boundOwner && boundOwner.chainBindKind === "v" && boundOwner.chainBindFinishT > 0) {
+        this.animateSerpentBound(boundOwner, dt);
+      } else if (this.chainBindTarget && this.chainBindKind === "v" && this.chainBindFinishT > 0) {
+        const t = this.chainBindFinishDuration - this.chainBindFinishT;
+        this.poseName = t < 0.26 ? "cbh_s" : t < 0.59 ? "cbv_s" :
+          t < 0.95 ? "cbx1_s" : t < 1.27 ? "cbx2_s" : "cbx3_s";
+        this.model.chainPose = this.poseName;
+        this.model.blend(this.poses[this.poseName] ?? this.poses.idle, dt, 34);
+      } else {
+        this.poseName = this.kit === "chainblade" ? "cbv_s" : "hit";
+        this.model.chainPose = this.poseName;
+        this.model.blend(this.poses[this.poseName] ?? this.poses.idle, dt, 16);
       }
       this.trail.update(dt);
       return;
@@ -546,6 +596,68 @@ export class Fighter implements Entity {
     }
   }
 
+  /** KAIZEN_SERPENT_SLAM_V10: animated grappling, no instant teleports. */
+  private animateSerpentBound(owner: Fighter, dt: number) {
+    const t = Math.max(0, owner.chainBindFinishDuration - owner.chainBindFinishT);
+    const forward = owner.stage ? new THREE.Vector3(owner.facing, 0, 0) :
+      new THREE.Vector3(Math.sin(owner.root.rotation.y), 0, Math.cos(owner.root.rotation.y));
+    // Side view: use the combat line instead of shoving fighters into invisible depth.
+    const side = owner.stage ? forward.clone() : new THREE.Vector3(forward.z, 0, -forward.x);
+    const origin = owner.root.position;
+    const back = owner.chainResolveDirection === "backward";
+    // Each pose: [time, forward offset, sideways offset, vertical lift, body tilt].
+    const frames: number[][] = back ? [
+      [0.23, 1.05, 0, 0.18, 0],
+      [0.47, 0.20, 0, 1.65, 0.55],
+      [0.72, -0.90, 0.50, 0.04, 0.88],
+      [0.90, -0.20, 0.0, 1.10, -0.50],
+      [1.15, -1.05, -0.50, 0.04, -0.90],
+      [1.34, -0.10, 0, 1.50, 0.30],
+      [1.65, -1.25, 0, 0.05, -0.80],
+      [1.85, -1.35, 0, 0.05, 0]
+    ] : [
+      [0.23, 1.08, 0, 0.18, 0],
+      [0.46, 0.90, 0, 1.72, -0.45],
+      [0.71, 0.78, -0.90, 0.05, -0.95],
+      [0.88, 0.80, -0.15, 1.16, 0.48],
+      [1.17, 0.88, 0.90, 0.05, 0.95],
+      [1.36, 0.90, 0, 1.62, -0.40],
+      [1.65, 1.03, 0, 0.05, 0.75],
+      [1.85, 1.10, 0, 0.05, 0]
+    ];
+    const from = [0, 0, 0, 0, 0];
+    let prev = from, next = frames[0], prevT = 0;
+    if (t > frames[0][0]) {
+      for (let i = 0; i < frames.length; i++) {
+        if (t <= frames[i][0] || i === frames.length - 1) {
+          next = frames[i];
+          prev = i === 0 ? from : frames[i - 1];
+          prevT = i === 0 ? 0 : frames[i - 1][0];
+          break;
+        }
+      }
+    }
+    const u0 = THREE.MathUtils.clamp((t - prevT) / Math.max(0.001, next[0] - prevT), 0, 1);
+    const u = u0 * u0 * (3 - 2 * u0); // eased acceleration/recoil
+    const value = (i: number) => THREE.MathUtils.lerp(prev[i], next[i], u);
+    // First segment reels the victim from exactly where the bind caught them.
+    const p = origin.clone().addScaledVector(forward, value(1)).addScaledVector(side, value(2));
+    p.y += value(3);
+    if (t < frames[0][0]) p.lerpVectors(owner.chainBindStartPos, p, u);
+    if (this.stage) {
+      p.x = THREE.MathUtils.clamp(p.x, this.stage.blast.l + 1, this.stage.blast.r - 1);
+      p.z = owner.root.position.z;
+    } else {
+      const radial = Math.hypot(p.x, p.z);
+      if (radial > this.arenaRadius) { p.x *= this.arenaRadius / radial; p.z *= this.arenaRadius / radial; }
+    }
+    this.root.position.copy(p);
+    this.root.rotation.z = value(4); // visible flips as the chain whips the body around
+    this.onGround = false;
+    this.poseName = t < 0.45 ? "hit" : t < 1.35 ? "stagger" : "hit";
+    this.model.blend(this.poses[this.poseName] ?? this.poses.hit ?? this.poses.idle, dt, 28);
+  }
+
   private chainRelativeDirection(): "forward" | "backward" | "left" | "right" | "neutral" {
     const m = this.intent.skillMove ?? this.intent.move;
     if (m.lengthSq() < 0.04) return "neutral";
@@ -568,6 +680,8 @@ export class Fighter implements Entity {
     this.chainBindT = 4;
     this.chainChoiceArmed = false; // require a new key press after the bind connects
     this.chainBindFinishT = 0;
+    this.chainBindFinishDuration = 0;
+    this.chainBindStartPos.copy(victim.root.position);
     this.chainResolveDirection = "";
     victim.chainBoundBy = this;
     this.chainHookTarget = victim;
@@ -575,16 +689,24 @@ export class Fighter implements Entity {
     this.velY = 0; this.vx = 0; this.knock = 0;
     victim.velY = 0; victim.vx = 0; victim.knock = 0;
     this.model.chainBindTargetWorld = victim.chest();
+    if (kind === "x" && this.state === S.ATTACK) {
+      this.finishAttack();
+      this.setState(S.IDLE);
+    }
   }
 
   releaseChainBind() {
     const victim = this.chainBindTarget;
-    if (victim && victim.chainBoundBy === this) victim.chainBoundBy = null;
+    if (victim && victim.chainBoundBy === this) {
+      victim.chainBoundBy = null;
+      victim.root.rotation.z = 0; // restore upright posture after the cinematic
+    }
     this.chainBindTarget = null;
     this.chainBindKind = "";
     this.chainBindT = 0;
     this.chainChoiceArmed = false;
     this.chainBindFinishT = 0;
+    this.chainBindFinishDuration = 0;
     this.chainResolveDirection = "";
     // KAIZEN_BIND_FOLLOWUP_V7: prevent the selection key firing after release.
     this.intent.skill = "";

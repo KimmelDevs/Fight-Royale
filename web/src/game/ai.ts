@@ -40,6 +40,8 @@ export class AiBrain implements Brain {
   private seenSwing = -1;
   private seenCharge = false;
   private seen = new Set<number>();
+  // KAIZEN_PREDATOR_HOOK_V9: use the second X press instead of waiting for WASD.
+  private chainDecisionT = 0;
 
   constructor(private threats: Threats, level: number) {
     this.p = PRESETS[Math.max(0, Math.min(level, PRESETS.length - 1))];
@@ -48,6 +50,25 @@ export class AiBrain implements Brain {
   think(f: Fighter, dt: number) {
     const o = f.opponent as Fighter | null;
     if (!o || o.isDown()) return;
+    // During X binding, decide when to yank. AI can step nearer while the enemy is held.
+    // During V, choose Z/X as before. Neither fighter casts ordinary skills in this state.
+    if (f.chainBindTarget && f.chainBindT > 0) {
+      this.chainDecisionT += dt;
+      const target = f.chainBindTarget;
+      if (f.chainBindKind === "x" && f.chainBindFinishT <= 0) {
+        const move = target.root.position.clone().sub(f.root.position).setY(0);
+        if (move.length() > 2.3) {
+          move.normalize();
+          f.intent.move.copy(f.stage ? new THREE.Vector3(Math.sign(move.x), 0, 0) : move);
+        }
+      }
+      if (f.chainBindFinishT <= 0 && f.chainChoiceArmed && this.chainDecisionT >= 0.7) {
+        f.intent.skill = f.chainBindKind === "x" ? "x" : Math.random() < 0.5 ? "z" : "x";
+      }
+      return;
+    }
+    this.chainDecisionT = 0;
+    if (f.chainBoundBy && f.chainBoundBy.chainBindT > 0) return;
     if (f.stage) { if (this.platform(f, o, dt)) return; }
     this.react(f, o);
     if (!f.stage) { this.dodge(f); this.position(f, o, dt); }
