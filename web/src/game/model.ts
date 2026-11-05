@@ -929,8 +929,7 @@ export class FighterModel extends THREE.Group {
     }
     if (this.kit === "greatsword") { this.vrmRig.restSword = true; this.vrmRig.grip.left = true; }
     if (this.kit === "knuckles") { this.vrmRig.boxer = true; this.vrmRig.bladed = 0.65; }
-    // Kicker: bouncing side-on guard with loose fists by the chin.
-    if (this.kit === "kicks") { this.vrmRig.boxer = true; this.vrmRig.grip = { left: true, right: true }; }
+    // Kicker: relaxed, hands-free upper body; the legs do everything.
     // A longbow is about 85-90% of body height.
     if (this.kit === "bow") { this.vrmRig.archer = true; this.vrmRig.followArm = 0; this.bowPivot?.scale.setScalar(1.45); }
     for (const h of [this.hand_l, this.hand_r]) h.scale.multiplyScalar(VRM_WEAPON_SCALE);

@@ -32,6 +32,8 @@ function extra(a: Attack): string {
   }
   if (a.type === "buff") x.push(`${a.mode}${a.duration ? ` ${n(a.duration)}s` : ""}`);
   if (a.type === "blink") x.push(`blink ${a.mode}`);
+  if (a.type === "phantom") x.push(`teleport behind + strike x${a.repeat}, every ${n(a.interval)}s`);
+  if (a.no_parry) x.push("blockable, not parryable");
   if (a.type === "melee") x.push(`reach ${n(a.reach)}`);
   if (a.lunge) x.push(`lunge ${n(a.lunge)}`);
   if (a.effect) x.push(`**${a.effect}** ${n(a.effect_t)}s${a.effect_p ? ` (${n(a.effect_p)})` : ""}`);

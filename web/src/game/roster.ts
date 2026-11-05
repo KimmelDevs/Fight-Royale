@@ -58,7 +58,7 @@ export const CHARACTERS: Character[] = [
   { id: "marina", title: "Tide Sorceress", role: "Mage - Water",
     desc: "Controls space with water: bubble wards, geyser rings, and a crushing ocean sphere.",
     stats: { power: 4, speed: 3, range: 5, defense: 3 },
-    look: { name: "Marina", body: "f", kit: "mage", element: "water", outfit: "mage", style: "bob", hat: "beret",
+    look: { name: "Marina", body: "f", vrm: "marina", kit: "mage", element: "water", outfit: "mage", style: "bob", hat: "beret",
       hair: "#8cc3f0", hair_shade: "#adbdf2", iris_top: "#1f6fd0", iris_bottom: "#73dcf5", eye_dark: "#1a2a66",
       tunic: "#23307a", band: "#f6f7ff", pants: "#f6f7ff", boots: "#23307a", metal: "#d5deef", trim: "#e6c26e",
       cape: "#4f97dc", cape_bottom: "#a3e6f0", glow: "#59bfff", shield: "#23307a", emblem: "#23307a" } },

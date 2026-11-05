@@ -159,6 +159,8 @@ input:focus { border-color: #e6c26e; }
 .skill-pick { flex: 1 1 45%; display: flex; flex-direction: column; align-items: flex-start; padding: 6px 8px; border-radius: 8px; border: 2px solid rgba(255,255,255,.2); background: rgba(255,255,255,.05); color: #fff; font-size: 12px; text-align: left; }
 .skill-pick.on { border-color: #e6c26e; background: rgba(230,194,110,.18); }
 .skill-pick.locked { opacity: .55; }
+.skill-pick:not(.on):not(.locked) { opacity: .7; }
+.skill-pick.on em { color: #ffd47a; }
 .skill-pick em { font-style: normal; color: #b9c6e6; }
 .card { position: relative; }
 .card .lock { position: absolute; inset: 0; display: grid; place-items: center; border-radius: 8px; background: rgba(0,0,0,.55); font-style: normal; font-size: 11px; font-weight: 800; letter-spacing: 1px; color: #ffe08a; }

@@ -49,7 +49,7 @@ All numbers live in code; the tables in **Balance reference** below are generate
 - **Clash**: two melee hits that meet at the same moment knock both fighters back.
 
 **Hit reactions.** `Stun` = how long the target can't act. `Knock` = push-back speed. `heavy` / `staggers` attacks put the target in the longer stagger state.
-- **One stun per skill**: a multi-hit skill (Thousand Cuts, Hundred Kicks, Whirlwind...) stuns once; later ticks only deal damage.
+- **One stun per skill**: a multi-hit skill (Thousand Cuts, Phantom Step, Whirlwind...) stuns once; later ticks only deal damage.
 - **Diminishing stun**: each new stun within 3 s of the last is **x0.6** shorter (0.3 s, then 0.18 s, ... minimum 0.1 s), so no fighter can be stun-locked.
 - **Status effects** (`src/game/status.ts`): element skills leave an effect on a clean hit (not when blocked, parried or absorbed). The power number is damage per second, or a multiplier.
   - **Burn** (Ember: all skills; Vesper: Blade Wave, Judgment): 4 s of fire damage.
@@ -285,8 +285,8 @@ Z / X / C are the default loadout; V is the locked bonus skill (unlock: 2000 gol
 |---|---|---|---|---|---|---|---|---|---|
 | Z | Cyclone Kick | strike | 65 | 20 | 0.08 / 0.08 / 0.4 | 3 | 0.3 | 6s | around self, radius 2, lands after 0.05s, x3 every 0.15s |
 | X | Crescent Gale | projectile | 110 | 30 | 0.14 / 0.08 / 0.35 | 3 | 0.45 | 6s | 1 x proj, speed 20, pierces |
-| C | Hundred Kicks | strike | 40 | 10 | 0.15 / 0.08 / 0.6 | 0.8 | 0.3 | 10s | at target, radius 1.5, lands after 0.2s, x8 every 0.06s |
-| V | Dragon Ascent | melee | 170 | 40 | 0.08 / 0.12 / 0.4 | 5 | 0.7 | 8s | reach 1.9, lunge 3, self-launch 8, staggers |
+| C | Phantom Step | phantom | 115 | 30 | 0.12 / 0.05 / 1.35 | 1.2 | 2 | 12s | teleport behind + strike x3, every 0.5s, blockable, not parryable, heavy, staggers |
+| V | Hundred Kicks | strike | 40 | 10 | 0.15 / 0.08 / 0.6 | 0.8 | 0.3 | 10s | at target, radius 1.5, lands after 0.2s, x8 every 0.06s |
 
 #### Raven (mage, electric)
 

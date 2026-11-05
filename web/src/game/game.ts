@@ -746,6 +746,7 @@ export class Game implements MobHost {
       case "strike": this.runStrike(f, a, f.atkPower); break;
       case "buff": this.applyBuff(f, a); break;
       case "blink": this.blink(f, a); break;
+      case "phantom": this.phantom(f, a); break;
       default: this.melee(f, a);
     }
   }
@@ -944,6 +945,27 @@ export class Game implements MobHost {
       this.fxp("flash", f.chest(), f.look.glow, 0.5, 0.2, 0.6);
       this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.9, 0)), "COUNTER STANCE", "#ffd1da", 0.7);
     }
+  }
+
+  /** Teleport behind the target and kick, `repeat` times `interval` apart (alternating sides). */
+  private phantom(f: Fighter, a: Attack) {
+    const kicks = ["kk3_s", "kk2_s", "kk1_s", "kk4_s"];
+    const power = f.atkPower;
+    for (let i = 0; i < a.repeat; i++) this.later(i * a.interval, () => {
+      const o = f.opponent;
+      if (f.isDown() || f.state !== S.ATTACK || !o || o.isDown()) return;
+      const from = f.root.position.clone();
+      const d = o.root.position.clone().sub(from).setY(0);
+      if (d.lengthSq() < 1e-4) d.set(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
+      d.normalize();
+      this.fxp("smoke", from, f.look.glow);
+      f.teleport(o.root.position.clone().addScaledVector(d, 1.1));
+      f.root.rotation.y = Math.atan2(-d.x, -d.z);
+      f.poseOverride = kicks[i % kicks.length];
+      this.fxp("smoke", f.root.position.clone(), f.look.glow);
+      this.fxp("ring", f.root.position.clone().add(new THREE.Vector3(0, 0.1, 0)), f.look.glow, 1.4, 0.25, 0.8);
+      this.applyHit(f, o, a, power, o.chest(), d.clone().negate(), false);
+    });
   }
 
   private blink(f: Fighter, a: Attack) {

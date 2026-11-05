@@ -55,35 +55,47 @@ export function Showcase({ index }: { index: number }) {
   );
 }
 
-/** Pick which 3 of the 4 skills go on Z / X / C. The bonus skill must be unlocked first. */
+/**
+ * Pick which 3 of the 4 skills go on Z / X / C. Click to turn a skill on or off; the loadout
+ * saves as soon as exactly 3 are on (until then the last saved one is used). The bonus skill
+ * must be unlocked in the shop first.
+ */
 function LoadoutEditor({ index }: { index: number }) {
   const acc = useAccount();
   const ch = CHARACTERS[index];
   const atks = Kits.attacks(ch.look.kit, ch.look.element);
-  const slots = acc.loadout(ch.id);
+  const saved = acc.loadout(ch.id);
+  const [draft, setDraft] = useState<string[]>(saved);
   const [msg, setMsg] = useState("");
+  const savedKey = saved.join(",");
+  useEffect(() => { setDraft(saved); setMsg(""); }, [ch.id, savedKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const order = (l: string[]) => ["z", "x", "c", "v"].filter((s) => l.includes(s));
   const toggle = async (k: string) => {
     setMsg("");
-    let next = slots.includes(k) ? slots.filter((s) => s !== k) : [...slots, k];
-    if (next.length > 3) next = next.slice(1);
-    if (next.length < 3) { setMsg("Pick exactly 3 skills"); return; }
-    try { await account.setLoadout(ch.id, ["z", "x", "c", "v"].filter((s) => next.includes(s))); }
-    catch (e: any) { setMsg(e.message); }
+    if (!draft.includes(k) && draft.length >= 3) { setMsg("3 skills are on - turn one off first"); return; }
+    const next = order(draft.includes(k) ? draft.filter((s) => s !== k) : [...draft, k]);
+    setDraft(next);
+    if (next.length === 3) {
+      try { await account.setLoadout(ch.id, next); }
+      catch (e: any) { setMsg(e.message); }
+    }
   };
+  const on = order(draft);
   return (
     <div className="loadout">
-      <div className="small">Loadout - click to swap (3 of 4):</div>
+      <div className="small">Skills - click to turn on / off (3 of 4):</div>
       {(["z", "x", "c", "v"] as const).map((k) => {
         const locked = k === "v" && !acc.ownsSkill(ch.id);
-        const on = slots.includes(k);
+        const slot = on.indexOf(k);
         return (
-          <button key={k} className={"skill-pick" + (on ? " on" : "") + (locked ? " locked" : "")} disabled={locked}
+          <button key={k} className={"skill-pick" + (slot >= 0 ? " on" : "") + (locked ? " locked" : "")} disabled={locked}
             title={[atks[k].desc, ...Kits.skillTags(atks[k])].join(" - ")} onClick={() => toggle(k)}>
             <Icon src={skillIcon(ch.look.kit, ch.look.element, k)} alt={atks[k].name} size={34} />
-            <span><b>{atks[k].name}</b><em>{locked ? "Locked - Shop" : `${atks[k].cd}s`}</em></span>
+            <span><b>{atks[k].name}</b><em>{locked ? "Locked - Shop" : slot >= 0 ? `ON - key ${["Z", "X", "C"][slot]} - ${atks[k].cd}s` : `OFF - ${atks[k].cd}s`}</em></span>
           </button>
         );
       })}
+      {on.length < 3 && <div className="error">Pick {3 - on.length} more skill{on.length === 2 ? "" : "s"} (the last saved loadout is used until then)</div>}
       {msg && <div className="error">{msg}</div>}
     </div>
   );

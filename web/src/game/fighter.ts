@@ -394,7 +394,9 @@ export class Fighter implements Entity {
     this.comboTimer = a.next ? 0.45 : 0;
   }
 
-  private setState(s: S) { this.state = s; this.stateT = 0; }
+  private setState(s: S) { this.state = s; this.stateT = 0; this.poseOverride = ""; }
+  /** Pose forced by the arena during an attack (e.g. each kick of a teleport combo). */
+  poseOverride = "";
 
   // --- movement ---------------------------------------------------------------------
   private move(dt: number) {
@@ -505,11 +507,11 @@ export class Fighter implements Entity {
     if (this.state === S.KO) return "none";
     if (this.invulnT > 0) return "miss";
     if (this.wardT > 0) { this.model.recoil = 0.4; return "warded"; }
-    if (this.counterT > 0) { this.counterT = 0; return "counter"; }
+    if (this.counterT > 0 && !a.no_parry) { this.counterT = 0; return "counter"; }
     let dmg = a.dmg * power;
     this.knockFrom = attacker ? attacker.root.position.x : this.root.position.x - this.facing;
     if (this.state === S.BLOCK) {
-      if (this.stateT <= this.parryWindow) {
+      if (this.stateT <= this.parryWindow && !a.no_parry) {
         this.guard = Math.min(this.guard + 20, this.maxGuard);
         this.model.flash("#99e6ff", 0.15);
         return "parry";
@@ -755,6 +757,7 @@ export class Fighter implements Entity {
       case S.BLOCK: p = "block"; sp = 30; break;
       case S.CHARGE: p = this.attacks.heavy.pose_w; sp = 10; break;
       case S.ATTACK:
+        if (this.poseOverride) { p = this.poseOverride; sp = 40; break; }
         if (a?.mode === "leap") {
           if (this.atkPhase === 0) { p = a.pose_w; sp = 16; }
           else if (this.atkPhase === 1) { p = "slam_air"; sp = 14; }

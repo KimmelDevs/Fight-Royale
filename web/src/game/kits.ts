@@ -5,6 +5,7 @@
 //   strike     - area hit at the target or self after `delay`, `repeat` times
 //   buff       - self effect (ward absorbs hits, counter auto-parries and strikes back)
 //   blink      - instant reposition (back / behind)
+//   phantom    - teleport behind the target and strike, `repeat` times `interval` apart
 
 import { STATUS, type StatusKind } from "./status";
 
@@ -26,6 +27,8 @@ export interface Attack {
   cd: number; name: string; desc: string; element: string;
   /** Status effect left on hit (see status.ts): kind, duration (s) and power (dmg/s or multiplier). */
   effect: string; effect_t: number; effect_p: number;
+  /** Can be blocked but never parried (or countered). */
+  no_parry: boolean;
 }
 
 export const STATS: Record<string, { hp: number; guard: number; move: number; walk: number; parry: number; jump: number }> = {
@@ -47,7 +50,7 @@ const DEFAULT: Omit<Attack, "id" | "element"> = {
   at: "target", delay: 0.4, radius: 1.5, repeat: 1, interval: 0.3,
   stagger: false, self_jump: 0, mode: "", duration: 0,
   cd: 0, name: "", desc: "",
-  effect: "", effect_t: 0, effect_p: 0,
+  effect: "", effect_t: 0, effect_p: 0, no_parry: false,
 };
 
 const a = (d: Partial<Attack>): Attack => ({ ...DEFAULT, id: "", element: "", ...d }) as Attack;
@@ -93,6 +96,7 @@ const ELEMENT_EFFECT: Record<string, [StatusKind, number, number, string[]]> = {
 export function skillTags(a: Attack): string[] {
   const out: string[] = [];
   if (a.type !== "buff" && a.type !== "blink" && a.dmg > 0 && a.stun >= 0.5) out.push(`Stun ${a.stun}s`);
+  if (a.no_parry) out.push("Blockable, can't be parried");
   const info = STATUS[a.effect as StatusKind];
   if (info) out.push(info.text(a.effect_t, a.effect_p));
   return out;
@@ -116,7 +120,7 @@ function bonusSkill(kit: string, element: string): Attack {
     case "knuckles":
       return a({ name: "Iron Body", desc: "Shrug off every hit for 2.5 seconds.", cd: 13, type: "buff", mode: "ward", duration: 2.5, wind: 0.1, recover: 0.25, pose_w: "block", pose_s: "block" });
     case "kicks":
-      return a({ name: "Dragon Ascent", desc: "A soaring rising kick that launches you skyward.", cd: 8, wind: 0.08, active: 0.12, recover: 0.4, dmg: 170, guard: 40, reach: 1.9, lunge: 3, knock: 5, stun: 0.7, stagger: true, self_jump: 8, pose_w: "kk4_w", pose_s: "fly_s" });
+      return a({ name: "Hundred Kicks", desc: "Blitz the target with a storm of eight rapid kicks.", cd: 10, type: "strike", wind: 0.15, recover: 0.6, dmg: 40, guard: 10, knock: 0.8, stun: 0.3, delay: 0.2, radius: 1.5, repeat: 8, interval: 0.06, style: "slashes", pose_w: "kk1_w", pose_s: "kk1_s" });
     default:
       return a({ name: "Judgment", desc: "A pillar of holy light crashes onto the enemy.", cd: 10, type: "strike", wind: 0.2, recover: 0.5, dmg: 220, guard: 60, knock: 5, stun: 0.7, heavy: true, delay: 0.5, radius: 1.6, style: "lightning", pose_w: "l3_w", pose_s: "l3_s" });
   }
@@ -238,7 +242,7 @@ function kicks(): Record<string, Attack> {
     heavy: a({ wind: 0.12, active: 0.16, recover: 0.5, dmg: 230, guard: 55, reach: 2.0, lunge: 7, knock: 6.5, stun: 0.8, heavy: true, self_jump: 4, pose_w: "charge", pose_s: "fly_s" }),
     z: a({ name: "Cyclone Kick", desc: "A spinning kick that hits everyone around you three times.", cd: 6, type: "strike", at: "self", wind: 0.08, recover: 0.4, dmg: 65, guard: 20, knock: 3, stun: 0.3, delay: 0.05, radius: 2.0, repeat: 3, interval: 0.15, style: "spin", pose_w: "kk3_w", pose_s: "kk3_s" }),
     x: a({ name: "Crescent Gale", desc: "A kick so fast it launches a cutting wind across the arena.", cd: 6, type: "projectile", wind: 0.14, recover: 0.35, dmg: 110, guard: 30, knock: 3, stun: 0.45, speed: 20, size: 1.4, style: "wave", pierce: true, pose_w: "kk2_w", pose_s: "kk2_s" }),
-    c: a({ name: "Hundred Kicks", desc: "Blitz the target with a storm of eight rapid kicks.", cd: 10, type: "strike", wind: 0.15, recover: 0.6, dmg: 40, guard: 10, knock: 0.8, stun: 0.3, delay: 0.2, radius: 1.5, repeat: 8, interval: 0.06, style: "slashes", pose_w: "kk1_w", pose_s: "kk1_s" }),
+    c: a({ name: "Phantom Step", desc: "Vanish and reappear behind the enemy for a kick, three times. The first kick stuns for 2 seconds, holding them for the rest.", cd: 12, type: "phantom", wind: 0.12, active: 0.05, recover: 1.35, dmg: 115, guard: 30, knock: 1.2, stun: 2.0, stagger: true, heavy: true, repeat: 3, interval: 0.5, no_parry: true, pose_w: "kk1_w", pose_s: "kk3_s" }),
   };
 }
 
@@ -357,27 +361,33 @@ const GUARD_R: Vec3 = [-1.0, 0.4, -0.3];
 const GUARD_L: Vec3 = [-1.1, -0.3, 0.3];
 /** Adds knee bend to a pose. */
 const K = (p: Pose, l: number, r: number): Pose => ({ ...p, knee: [l, r] });
-// Kicker: light, side-on guard (hands loose by the chin), every kick goes chamber (knee up,
-// shin folded) -> snap out -> recoil, the hips leading and the torso leaning away.
+// Kicker: a relaxed, almost casual upper body (hands low and slightly behind, never a boxing
+// guard), weight on the rear leg, asymmetric stance; the legs do all the work. Kicks go
+// chamber (knee up, shin folded) -> snap -> recoil, arms swinging out only for balance.
+const EASY_R: Vec3 = [0.3, 0.15, -0.12];
+const EASY_L: Vec3 = [0.3, -0.15, 0.12];
+const OUT_R: Vec3 = [-0.3, 0.2, -0.9];
+const OUT_L: Vec3 = [-0.3, -0.2, 0.9];
+const NO: Vec3 = [0, 0, 0];
 const KICKS: Record<string, Pose> = {
-  idle: K(P([0.1, -0.45, 0], [-0.05, 0.4, 0], GUARD_R, [0.8, 0, 0], GUARD_L, [0.8, 0, 0], [-0.35, 0, 0.1], [0.35, 0, -0.1], -0.08), 0.1, 0.15),
-  // Raised-knee check: shin up in front, guard high.
-  block: K(P([0.2, -0.15, 0], [0.12, 0.1, 0], [-1.7, 0.55, 0], [0.9, 0, 0], [-1.7, -0.55, 0], [0.9, 0, 0], [-1.3, 0, 0.05], [0.25, 0, -0.08], -0.06), 1.7, 0.35),
-  // Front snap kick (right): chamber, then snap.
-  kk1_w: K(P([-0.05, -0.2, 0], [0.05, 0.2, 0], GUARD_R, [0.8, 0, 0], GUARD_L, [0.8, 0, 0], [0.15, 0, 0.05], [-1.45, 0, -0.05], -0.05), 0.35, 1.9),
-  kk1_s: K(P([-0.3, -0.2, 0], [0.15, 0.2, 0], [-0.7, 0.2, -0.6], [0.6, 0, 0], GUARD_L, [0.8, 0, 0], [0.2, 0, 0.05], [-1.62, 0, 0], -0.1), 0.3, 0.12),
-  // Roundhouse (left): hips turn over, knee folded, then whip out.
-  kk2_w: K(P([0, -0.7, 0], [0, 0.65, 0], GUARD_R, [0.8, 0, 0], GUARD_L, [0.8, 0, 0], [-1.25, 1.1, 0], [0.15, 0, -0.05], -0.06), 1.7, 0.35),
-  kk2_s: K(P([-0.2, 0.7, 0], [0, -0.55, 0], [-0.6, 0.2, -0.7], [0.6, 0, 0], GUARD_L, [0.8, 0, 0], [-1.5, -0.6, 0], [0.15, 0, -0.05], -0.08), 0.18, 0.3),
+  idle: K(P([-0.05, -0.3, 0], [0.1, 0.25, 0.04], EASY_R, NO, EASY_L, NO, [-0.18, 0, 0.08], [0.2, 0, -0.06], -0.04), 0.08, 0.22),
+  // Leg check: knee up as a barrier, upper body calm.
+  block: K(P([-0.08, -0.25, 0], [0.08, 0.2, 0], [0.1, 0.1, -0.35], NO, [0.1, -0.1, 0.35], NO, [-1.35, 0, 0.05], [0.2, 0, -0.08], -0.05), 1.75, 0.3),
+  // Front snap kick (right).
+  kk1_w: K(P([-0.08, -0.2, 0], [0.08, 0.2, 0], EASY_R, NO, EASY_L, NO, [0.15, 0, 0.05], [-1.45, 0, -0.05], -0.05), 0.3, 1.9),
+  kk1_s: K(P([-0.3, -0.2, 0], [0.15, 0.2, 0], [-0.1, 0.2, -0.6], NO, [-0.1, -0.2, 0.5], NO, [0.2, 0, 0.05], [-1.7, 0, 0], -0.08), 0.28, 0.08),
+  // Roundhouse (left): hips turn over, knee folded, then whip out; arms open for balance.
+  kk2_w: K(P([-0.05, -0.75, 0], [0, 0.7, 0], EASY_R, NO, OUT_L, NO, [-1.25, 1.1, 0], [0.15, 0, -0.05], -0.06), 1.7, 0.3),
+  kk2_s: K(P([-0.25, 0.75, 0], [0, -0.6, 0], OUT_R, NO, OUT_L, NO, [-1.6, -0.6, 0], [0.15, 0, -0.05], -0.08), 0.12, 0.28),
   // Spinning back kick (right): head turns first, heel chambered, then driven straight back.
-  kk3_w: K(P([0, 0.9, 0], [0, -0.8, 0], GUARD_R, [0.8, 0, 0], GUARD_L, [0.8, 0, 0], [0.1, 0, 0.05], [-1.3, -1.2, 0], -0.1), 0.5, 1.6),
-  kk3_s: K(P([0.15, -0.9, 0], [0, 0.8, 0], GUARD_R, [0.8, 0, 0], [-0.6, -0.2, 0.7], [0.6, 0, 0], [0.15, 0, 0.05], [-1.85, 0.6, 0], -0.1), 0.35, 0.08),
-  // Axe kick (left): straight leg lifted to the apex, dropped with gravity.
-  kk4_w: K(P([-0.25, 0, 0], [-0.2, 0, 0], [-0.6, 0.2, -0.7], [0.6, 0, 0], GUARD_L, [0.8, 0, 0], [-2.6, 0.15, 0], [0.2, 0, -0.05], -0.03), 0.12, 0.35),
-  kk4_s: K(P([0.35, 0, 0], [-0.2, 0, 0], [-0.6, 0, -0.6], [0.6, 0, 0], [-0.6, 0, 0.6], [0.6, 0, 0], [-0.55, 0, 0.05], [0.3, 0, -0.05], -0.2), 0.3, 0.45),
-  charge: K(P([0.45, -0.3, 0], [-0.3, 0.3, 0], [-0.4, -0.3, -0.5], [0.6, 0, 0], [-0.4, 0.3, 0.5], [0.6, 0, 0], [-0.75, 0, 0.1], [0.55, 0, -0.1], -0.28), 0.2, 0.25),
-  // Flying kick: front knee tucked, rear leg fully extended.
-  fly_s: K(P([-0.35, 0, 0], [0.2, 0, 0], [-0.5, 0, -1.0], [0.6, 0, 0], [-0.5, 0, 1.0], [0.6, 0, 0], [-1.3, 0, 0.05], [-1.6, 0, -0.05], 0), 1.8, 0.05),
+  kk3_w: K(P([0, 0.95, 0], [0, -0.85, 0], OUT_R, NO, EASY_L, NO, [0.1, 0, 0.05], [-1.3, -1.2, 0], -0.1), 0.45, 1.6),
+  kk3_s: K(P([0.2, -0.95, 0], [0, 0.85, 0], OUT_R, NO, OUT_L, NO, [0.15, 0, 0.05], [-1.9, 0.6, 0], -0.1), 0.3, 0.05),
+  // High vertical kick (left): straight leg to the sky, torso counter-leans back.
+  kk4_w: K(P([-0.35, 0, 0], [-0.2, 0, 0], OUT_R, NO, EASY_L, NO, [-2.75, 0.15, 0], [0.2, 0, -0.05], -0.03), 0.08, 0.3),
+  kk4_s: K(P([0.35, 0, 0], [-0.2, 0, 0], OUT_R, NO, OUT_L, NO, [-0.55, 0, 0.05], [0.3, 0, -0.05], -0.2), 0.3, 0.45),
+  charge: K(P([0.35, -0.3, 0], [-0.25, 0.3, 0], [0.4, 0.1, -0.3], NO, [0.4, -0.1, 0.3], NO, [-0.75, 0, 0.1], [0.55, 0, -0.1], -0.28), 0.2, 0.25),
+  // Airborne: one leg long, one folded, arms spread loose.
+  fly_s: K(P([-0.4, 0.2, 0.1], [0.2, -0.1, 0], [-0.4, 0, -1.2], NO, [-0.4, 0, 1.2], NO, [-1.3, 0, 0.05], [-1.65, 0, -0.05], 0), 1.8, 0.0),
 };
 
 const TABLES: Record<string, Record<string, Pose>> = {
