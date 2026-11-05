@@ -157,6 +157,7 @@ export class FighterModel extends THREE.Group {
       case "bow": this.buildBow(); break;
       case "knuckles": this.buildKnuckles(); break;
       case "wind": this.buildWind(); break;
+      case "bomb": this.buildBomb(); break;
       case "kicks": this.buildKicks(); break;
       default: this.buildSword(); this.buildShield();
     }
@@ -793,6 +794,20 @@ export class FighterModel extends THREE.Group {
     this.bladeBase = pivot(r, [0, 0.12, 0]);
     this.bladeTip = pivot(r, [0, 0.46, 0]);
     this.castPoint = this.bladeTip;
+    this.shieldNode = this.hand_l;
+  }
+
+  /** Bomber: a round black bomb with a lit fuse in the right hand. */
+  private buildBomb() {
+    const b = pivot(this.hand_r, [0, -0.1, 0.02]);
+    mesh(b, sphere(0.1, 16), this.tn("#26262e", true, 0.6));
+    mesh(b, cyl(0.035, 0.035, 0.04, 10), this.metal(), [0, 0.1, 0]);
+    mesh(b, cyl(0.008, 0.008, 0.07, 6), this.tn("#c9a46a"), [0.02, 0.15, 0], [0, 0, -0.5]);
+    mesh(b, sphere(0.022, 8), this.glowMat, [0.04, 0.19, 0]);
+    for (const h of [this.hand_r, this.hand_l]) mesh(h, torus(0.045, 0.058), this.tn(this.look.trim), [0, 0.06, 0], [PI / 2, 0, 0], [1, 1, 0.6]);
+    this.bladeBase = pivot(this.hand_r, [0, 0.04, 0]);
+    this.bladeTip = b;
+    this.castPoint = b;
     this.shieldNode = this.hand_l;
   }
 

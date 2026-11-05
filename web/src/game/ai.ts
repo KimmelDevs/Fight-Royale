@@ -19,7 +19,7 @@ export interface Threats {
 }
 
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
-const RANGED = new Set(["mage", "bow"]);
+const RANGED = new Set(["mage", "bow", "bomb"]);
 
 export class AiBrain implements Brain {
   private p = PRESETS[1];
@@ -50,6 +50,11 @@ export class AiBrain implements Brain {
     if (!f.stage) { this.dodge(f); this.position(f, o, dt); }
     this.offense(f, o, dt);
     if (f.kit === "wind" && !f.stage) this.airDive(f, o, dt);
+    // Bomber: set off the keg when the enemy walks near it.
+    if (f.barrelOut && o.root.position.clone().setY(0).distanceTo(f.barrelPos) < 3) {
+      const k = ["z", "x", "c"].find((key) => f.attacks[key].type === "barrel");
+      if (k && Math.random() < dt * 6) f.intent.skill = k;
+    }
     if (this.jumpWait >= 0) { this.jumpWait -= dt; if (this.jumpWait < 0) { this.jumpPulse = !this.jumpPulse; f.intent.jump = true; } }
     if (this.blockWait >= 0) { this.blockWait -= dt; if (this.blockWait < 0) this.blockHold = this.blockDur; }
     if (this.blockHold > 0) {
@@ -217,6 +222,9 @@ export class AiBrain implements Brain {
         else if (a.type === "strike") ok = a.at !== "self" || dist < a.radius;
         else if (a.type === "buff") ok = a.mode === "counter" ? dist < 2.5 : f.hp < f.maxHp * 0.7;
         else if (a.type === "blink") ok = (a.mode === "behind" && dist < 6) || (a.mode === "back" && dist < 2.5);
+        else if (a.type === "mine") ok = dist < 4.5;
+        else if (a.type === "lob") ok = dist < 9;
+        else if (a.type === "barrel") ok = !f.barrelOut && dist < 6;
         if (ok && this.trySkill(f, key)) return;
       }
     }

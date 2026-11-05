@@ -6,6 +6,11 @@
 //   buff       - self effect (ward absorbs hits, counter auto-parries and strikes back)
 //   blink      - instant reposition (back / behind)
 //   phantom    - teleport behind the target and strike, `repeat` times `interval` apart
+//   lob        - a bomb thrown in an arc (lands at the target after `delay` s) that explodes in
+//                `radius` on landing or on hitting someone; `repeat` > 1 splits into a cluster
+//   mine       - planted at the feet; arms after 0.5 s and blows up when an enemy steps on it
+//   barrel     - a powder keg set down in front; press the skill again to detonate it (an enemy
+//                hitting the keg sets it off too). The cooldown starts when it explodes.
 // A skill key with an "_air" twin (e.g. z_air) uses the twin when cast in the air.
 // mode "dive": dive from the air to the ground (`speed` down, up to `lunge` toward the target)
 // and the strike lands where the fighter hits the ground.
@@ -46,6 +51,7 @@ export const STATS: Record<string, { hp: number; guard: number; move: number; wa
   knuckles: { hp: 2300, guard: 90, move: 4.0, walk: 3.2, parry: 0.2, jump: 8.0 },
   kicks: { hp: 2300, guard: 85, move: 4.1, walk: 3.2, parry: 0.2, jump: 8.6 },
   wind: { hp: 2200, guard: 80, move: 4.1, walk: 3.3, parry: 0.2, jump: 8.4 },
+  bomb: { hp: 2100, guard: 70, move: 3.5, walk: 2.8, parry: 0.16, jump: 7.0 },
 };
 
 const DEFAULT: Omit<Attack, "id" | "element"> = {
@@ -71,6 +77,7 @@ export function attacks(kit: string, element: string): Record<string, Attack> {
     bow: bow,
     knuckles: knuckles,
     wind: wind,
+    bomb: bomb,
     kicks: kicks,
   } as Record<string, () => Record<string, Attack>>)[kit]?.() ?? knight();
   t.v = bonusSkill(kit, element);
@@ -104,6 +111,7 @@ export function skillTags(a: Attack): string[] {
   const out: string[] = [];
   if (a.type !== "buff" && a.type !== "blink" && a.dmg > 0 && a.stun >= 0.5) out.push(`Stun ${a.stun}s`);
   if (a.no_parry) out.push("Blockable, can't be parried");
+  if (a.type === "lob" || a.type === "mine" || a.type === "barrel") out.push(`Blast radius ${a.radius} m`);
   if (a.parry_stun) out.push(`Weakness: if parried, you're stunned ${a.parry_stun}s`);
   const info = STATUS[a.effect as StatusKind];
   if (info) out.push(info.text(a.effect_t, a.effect_p));
@@ -125,6 +133,8 @@ function bonusSkill(kit: string, element: string): Attack {
       return a({ name: "Iaido Flash", desc: "An instant cross-arena draw cut.", cd: 8, wind: 0.08, active: 0.16, recover: 0.45, dmg: 200, guard: 50, reach: 2.2, lunge: 18, knock: 5, stun: 0.7, heavy: true, pose_w: "charge", pose_s: "heavy_s" });
     case "bow":
       return a({ name: "Piercing Volley", desc: "Five arrows that fly through every enemy in line.", cd: 9, type: "projectile", wind: 0.2, recover: 0.4, dmg: 55, guard: 14, knock: 2, stun: 0.3, speed: 32, count: 5, spread: 0.25, style: "arrow", pierce: true, pose_w: "bow_w", pose_s: "bow_s" });
+    case "bomb":
+      return a({ name: "Cluster Bomb", desc: "A big bomb that bursts into four blasts around where it lands.", cd: 10, type: "lob", wind: 0.2, recover: 0.4, dmg: 80, guard: 22, knock: 4, stun: 0.45, delay: 0.75, radius: 1.5, repeat: 4, interval: 0.12, style: "bomb", size: 1.6, pose_w: "throw_w", pose_s: "throw_s" });
     case "wind":
       return a({ name: "Gust Barrage", desc: "Three wind blades fly out in a fan.", cd: 7, parry_stun: 1.5, type: "projectile", wind: 0.14, recover: 0.35, dmg: 60, guard: 16, knock: 2, stun: 0.35, speed: 22, count: 3, spread: 0.25, size: 1.2, style: "wave", pierce: true, pose_w: "w2_w", pose_s: "w2_s" });
     case "knuckles":
@@ -226,6 +236,19 @@ function bow(): Record<string, Attack> {
     z: a({ name: "Leap Back", desc: "Spring away to open distance.", cd: 4, type: "blink", mode: "back", wind: 0.04, recover: 0.12, pose_w: "jump", pose_s: "jump" }),
     x: a({ name: "Arrow Rain", desc: "A volley falls on the target area three times.", cd: 8, type: "strike", wind: 0.22, recover: 0.4, dmg: 80, guard: 20, knock: 2, stun: 0.35, delay: 0.7, radius: 1.8, repeat: 3, interval: 0.25, style: "arrows", pose_w: "rain_w", pose_s: "rain_s" }),
     c: a({ name: "Hunter's Snare", desc: "A barbed arrow that pins the target in place.", cd: 10, type: "projectile", wind: 0.2, recover: 0.4, dmg: 100, guard: 30, knock: 0.5, stun: 1.6, stagger: true, speed: 32, size: 1.3, style: "arrow", pose_w: "bow_w", pose_s: "bow_s" }),
+  };
+}
+
+/** Bomber: lobs firecrackers, plants mines, throws a paralyzing bomb and parks a powder keg. */
+function bomb(): Record<string, Attack> {
+  return {
+    l1: a({ type: "lob", wind: 0.14, active: 0.05, recover: 0.24, dmg: 48, guard: 12, knock: 1.6, stun: 0.3, delay: 0.5, radius: 1.1, style: "bomb", size: 0.7, pose_w: "throw_w", pose_s: "throw_s", next: "l2" }),
+    l2: a({ type: "lob", wind: 0.14, active: 0.05, recover: 0.26, dmg: 52, guard: 12, knock: 1.8, stun: 0.3, delay: 0.5, radius: 1.1, style: "bomb", size: 0.7, pose_w: "throw_w", pose_s: "throw_s", next: "l3" }),
+    l3: a({ type: "lob", wind: 0.2, active: 0.05, recover: 0.4, dmg: 34, guard: 10, knock: 2.5, stun: 0.35, delay: 0.55, radius: 1.0, count: 3, spread: 0.35, style: "bomb", size: 0.6, pose_w: "throw_w", pose_s: "throw_s" }),
+    heavy: a({ type: "lob", wind: 0.12, active: 0.05, recover: 0.5, dmg: 210, guard: 55, knock: 7, stun: 0.7, heavy: true, delay: 0.7, radius: 2.4, style: "bomb", size: 1.8, pose_w: "throw_w", pose_s: "throw_s" }),
+    z: a({ name: "Land Mine", desc: "Plant a mine at your feet. It arms after half a second and blows up when an enemy steps on it (3 at most).", cd: 6, type: "mine", wind: 0.18, recover: 0.3, dmg: 150, guard: 40, knock: 6, stun: 0.8, radius: 1.6, pose_w: "plant_w", pose_s: "plant_s" }),
+    x: a({ name: "Paralyze Bomb", desc: "Lob a crackling bomb that paralyzes everyone in the blast.", cd: 8, type: "lob", wind: 0.18, recover: 0.4, dmg: 90, guard: 25, knock: 2, stun: 0.4, delay: 0.65, radius: 2.4, style: "bomb", size: 1.3, effect: "paralyze", effect_t: 2.5, pose_w: "throw_w", pose_s: "throw_s" }),
+    c: a({ name: "Powder Keg", desc: "Set down a huge powder keg, then press again to detonate it whenever you like. An enemy hitting the keg sets it off too.", cd: 14, type: "barrel", wind: 0.25, recover: 0.4, dmg: 300, guard: 80, knock: 9, stun: 1.0, heavy: true, radius: 3.4, pose_w: "barrel_w", pose_s: "barrel_s" }),
   };
 }
 
@@ -428,6 +451,21 @@ const TABLES: Record<string, Record<string, Pose>> = {
   katana: twoHanded(KNIGHT),
   bow: BOW,
   knuckles: KNUCKLES,
+  bomb: {
+    // Bomb held in the right hand near the chest, left hand loose.
+    idle: P([0.02, -0.3, 0], [0, 0.25, 0], [-0.7, 0.45, -0.25], [0.5, 0, 0], [-0.25, -0.15, 0.22], [0.2, 0, 0], [-0.25, 0, 0.08], [0.25, 0, -0.08], -0.04),
+    block: P([0.15, 0, 0], [0.1, 0, 0], [-1.3, 0.7, 0], [0.9, 0, 0], [-1.3, -0.7, 0], [0.9, 0, 0], [-0.4, 0, 0.08], [0.4, 0, -0.08], -0.1),
+    // Throw: arm cocked back over the shoulder, then the bomb is lobbed forward.
+    throw_w: P([-0.1, -0.5, 0], [0, 0.45, 0], [-2.5, 0.35, -0.45], [0.6, 0, 0], [-0.9, -0.3, 0.3], [0.2, 0, 0], [-0.35, 0, 0.08], [0.35, 0, -0.08], -0.06),
+    throw_s: P([0.25, 0.35, 0], [-0.05, -0.3, 0], [-1.25, 0.1, -0.1], [0.2, 0, 0], [-0.3, -0.2, 0.35], [0.2, 0, 0], [-0.5, 0, 0.08], [0.45, 0, -0.08], -0.1),
+    charge: P([-0.2, -0.7, 0], [0, 0.6, 0], [-2.7, 0.4, -0.5], [0.6, 0, 0], [-1.1, -0.35, 0.35], [0.2, 0, 0], [-0.5, 0, 0.1], [0.5, 0, -0.1], -0.14),
+    // Mine: crouch and set it on the ground.
+    plant_w: K(P([0.5, -0.2, 0], [-0.25, 0.2, 0], [-0.6, 0.2, -0.3], [0.5, 0, 0], [-0.3, -0.1, 0.3], [0.2, 0, 0], [-0.9, 0, 0.12], [-0.2, 0, -0.08], -0.3), 0.6, 1.2),
+    plant_s: K(P([0.7, -0.1, 0], [-0.35, 0.1, 0], [-0.95, 0.15, -0.15], [0.3, 0, 0], [-0.3, -0.1, 0.3], [0.2, 0, 0], [-1.0, 0, 0.12], [-0.3, 0, -0.08], -0.38), 0.7, 1.3),
+    // Keg: heave it down in front with both hands.
+    barrel_w: P([0.35, 0, 0], [-0.2, 0, 0], [-1.2, 0.25, -0.1], [0.6, 0, 0], [-1.2, -0.25, 0.1], [0.6, 0, 0], [-0.6, 0, 0.1], [0.5, 0, -0.1], -0.2),
+    barrel_s: P([0.55, 0, 0], [-0.3, 0, 0], [-0.8, 0.2, -0.1], [0.3, 0, 0], [-0.8, -0.2, 0.1], [0.3, 0, 0], [-0.8, 0, 0.1], [0.6, 0, -0.1], -0.3),
+  },
   wind: {
     ...KNUCKLES,
     // Relaxed: arms low at the sides, so any raised fist reads as an attack coming.

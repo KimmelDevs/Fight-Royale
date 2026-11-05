@@ -33,7 +33,7 @@ export interface Plat { x0: number; x1: number; y: number; solid: boolean }
 export interface Stage { plats: Plat[]; blast: { l: number; r: number; b: number; t: number }; respawn: THREE.Vector3 }
 export const STOCKS = 3;
 /** After a ranged combo's last hit, normal attacks rest this long (per kit). */
-export const RANGED_COMBO_REST: Record<string, number> = { mage: 1.2, bow: 1.3 };
+export const RANGED_COMBO_REST: Record<string, number> = { mage: 1.2, bow: 1.3, bomb: 1.2 };
 /** Berserk (rage buff) damage multiplier. */
 export const RAGE_MULT = 1.2;
 /** Re-stuns within this window are shortened (diminishing returns). */
@@ -157,6 +157,11 @@ export class Fighter implements Entity {
   /** Time left in the double-jump wind-ride pose. */
   private airJumpT = 0;
   onAirJump: (f: Fighter) => void = () => {};
+  /** Bomber: a powder keg is out on the field (the skill becomes its trigger). */
+  barrelOut = false;
+  barrelPos = new THREE.Vector3();
+  /** Pressing the keg's skill while it is out asks the arena to detonate it. */
+  onTrigger: (f: Fighter) => void = () => {};
   private ground: Plat | null = null;
   private dropT = 0;
   private respawnT = 0;
@@ -335,11 +340,18 @@ export class Fighter implements Entity {
 
   private readSkill() {
     const k = this.intent.skill;
-    if (!k || (this.cooldowns[k] ?? 1) > 0) return;
+    if (!k) return;
+    // Powder keg out: the same key is the detonator (works any time you're not stunned).
+    if (this.barrelOut && this.attacks[k]?.type === "barrel") {
+      if (![S.HITSTUN, S.STAGGER, S.KO, S.WIN].includes(this.state)) this.onTrigger(this);
+      return;
+    }
+    if ((this.cooldowns[k] ?? 1) > 0) return;
     const free = [S.IDLE, S.BLOCK, S.CHARGE].includes(this.state) || (this.state === S.ATTACK && this.atkPhase === 2);
     if (!free) return;
     this.holding = false;
-    this.cooldowns[k] = this.attacks[k].cd * this.cdMult;
+    // The keg's cooldown starts when it explodes (the arena sets it).
+    this.cooldowns[k] = this.attacks[k].type === "barrel" ? 0.6 : this.attacks[k].cd * this.cdMult;
     // Cast in the air, a skill with an air version uses it instead.
     this.startAttack(!this.onGround && this.attacks[k + "_air"] ? k + "_air" : k);
   }
@@ -823,7 +835,7 @@ export class Fighter implements Entity {
       this.state, this.poseName, this.poseSpeed, Math.round(this.hp), Math.round(this.guard),
       +this.model.walk.toFixed(2), +this.model.charge.toFixed(2), this.trail.emitting ? 1 : 0,
       +this.model.recoil.toFixed(2), this.cooldowns.z, this.cooldowns.x, this.cooldowns.c, this.maxHp,
-      +this.pct.toFixed(1), this.stocks, this.out ? 1 : 0, +this.atkLock.toFixed(2), +this.dashCd.toFixed(2), this.status.mask];
+      +this.pct.toFixed(1), this.stocks, this.out ? 1 : 0, +this.atkLock.toFixed(2), +this.dashCd.toFixed(2), this.status.mask, this.barrelOut ? 1 : 0];
   }
 
   applySnapshot(s: any[]) {
@@ -842,7 +854,7 @@ export class Fighter implements Entity {
     this.cooldowns.z = s[14]; this.cooldowns.x = s[15]; this.cooldowns.c = s[16];
     this.maxHp = s[17];
     if (s.length > 18) {
-      this.pct = s[18]; this.stocks = s[19]; this.atkLock = s[21] ?? 0; this.dashCd = s[22] ?? 0; this.status.mask = s[23] ?? 0;
+      this.pct = s[18]; this.stocks = s[19]; this.atkLock = s[21] ?? 0; this.dashCd = s[22] ?? 0; this.status.mask = s[23] ?? 0; this.barrelOut = s[24] === 1;
       const out = s[20] === 1;
       if (out !== this.out) { this.out = out; this.root.visible = !out; if (!out) this.root.position.copy(this.netPos); }
     }

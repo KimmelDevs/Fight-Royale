@@ -17,6 +17,7 @@ const CONTROLS: Record<string, string> = {
   bow: "Tap: 3 arrows (third is a spread)  -  Hold: piercing power shot  -  Block: arm guard",
   kicks: "Tap: 4-kick combo (snap, roundhouse, high spin, axe)  -  Hold: flying kick  -  Block: arm guard (wide parry)",
   knuckles: "Tap: 5-hit punch combo  -  Hold: rising uppercut  -  Block: forearm guard (wide parry)",
+  bomb: "Tap: 3 lobbed firecrackers  -  Hold: big bomb  -  Block: arms up  -  Powder Keg: press its key again to detonate",
   wind: "Tap: 3-hit wind punches  -  Hold: gale palm blast  -  Jump twice to double jump  -  Skills in the air dive and smash the ground",
 };
 const LEVEL_COLORS = ["#6fcf7f", "#5fa8e3", "#f2994a", "#e8534a"];

@@ -117,6 +117,8 @@ class Projectile {
   life = 2.2;
   hitIds = new Set<number>();
   done = false;
+  /** Downward pull (m/s^2) for thrown bombs; 0 = straight flight. */
+  gravity = 0;
   constructor(id: number, public shooter: Entity | null, public team: number, public atk: Attack | null,
     public power: number, pos: THREE.Vector3, vel: THREE.Vector3, public style: string, element: string,
     public size: number, public color: string, public pierce: boolean, public visualOnly: boolean, public target: Entity | null) {
@@ -130,8 +132,67 @@ class Projectile {
   get pos() { return this.group.position; }
 }
 
+const BOMB_GRAVITY = 16;
+
+/** A mine or powder keg on the field. */
+interface Trap {
+  id: number; kind: "mine" | "barrel"; owner: Fighter | null; team: number; atk: Attack; power: number;
+  pos: THREE.Vector3; mesh: THREE.Group; arm: number; life: number; t: number;
+}
+
+function buildTrap(kind: string, color: string): THREE.Group {
+  const g = new THREE.Group();
+  if (kind === "mine") {
+    const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.28, 0.07, 16), new THREE.MeshLambertMaterial({ color: "#3a3d44" }));
+    disc.position.y = 0.035;
+    g.add(disc);
+    const light = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 6), new THREE.MeshBasicMaterial({ color: "#ff3b3b" }));
+    light.position.y = 0.09;
+    light.name = "light";
+    g.add(light);
+  } else {
+    const wood = new THREE.MeshLambertMaterial({ color: "#8a5a32" });
+    const band = new THREE.MeshLambertMaterial({ color: "#5a5a66" });
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.95, 20), wood);
+    body.position.y = 0.475;
+    g.add(body);
+    for (const y of [0.12, 0.475, 0.83]) {
+      const r = new THREE.Mesh(new THREE.TorusGeometry(0.43, 0.025, 6, 24), band);
+      r.rotation.x = Math.PI / 2;
+      r.position.y = y;
+      g.add(r);
+    }
+    const fuse = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.22, 6), new THREE.MeshLambertMaterial({ color: "#c9a46a" }));
+    fuse.position.set(0.1, 1.05, 0);
+    fuse.rotation.z = -0.4;
+    g.add(fuse);
+    const spark = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), new THREE.MeshBasicMaterial({ color }));
+    spark.position.set(0.16, 1.15, 0);
+    spark.name = "light";
+    g.add(spark);
+  }
+  return g;
+}
+
+/** Mines blink faster once armed; a keg's fuse spark flickers. */
+function animateTrap(t: Trap, dt: number) {
+  const light = t.mesh.getObjectByName("light");
+  if (!light) return;
+  const rate = t.kind === "mine" ? (t.arm > 0 ? 2 : 6) : 14;
+  light.visible = Math.sin(t.t * rate * Math.PI) > (t.kind === "mine" ? 0 : -0.6);
+  if (t.kind === "barrel") light.scale.setScalar(0.8 + Math.random() * 0.5);
+}
+
 function buildProjectile(g: THREE.Group, style: string, element: string, size: number, color: string) {
   const glow = new THREE.MeshBasicMaterial({ color });
+  if (style === "bomb") {
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.11 * size, 12, 8), new THREE.MeshBasicMaterial({ color: "#2a2a32" }));
+    g.add(body);
+    const spark = new THREE.Mesh(new THREE.SphereGeometry(0.045 * size, 8, 6), glow);
+    spark.position.y = 0.13 * size;
+    g.add(spark);
+    return;
+  }
   if (style === "arrow") {
     const shaft = new THREE.Mesh(new THREE.BoxGeometry(0.02 * size, 0.02 * size, 0.7 * size), new THREE.MeshBasicMaterial({ color: "#f4e6c0" }));
     g.add(shaft);
@@ -186,6 +247,8 @@ export class Game implements MobHost {
   mobs: Mob[] = [];
   entities = new Map<number, Entity>();
   projectiles: Projectile[] = [];
+  /** Mines and powder kegs on the field (host simulates; guests only show them). */
+  traps: Trap[] = [];
   local: Fighter | null = null;
 
   private sun = new THREE.DirectionalLight(0xffffff, 1.9);
@@ -376,6 +439,8 @@ export class Game implements MobHost {
     this.mobs = [];
     for (const p of this.projectiles) this.scene.remove(p.group);
     this.projectiles = [];
+    for (const t of this.traps) this.scene.remove(t.mesh);
+    this.traps = [];
     this.timers = [];
     this.strikeMarks = [];
     this.fx.clear();
@@ -396,7 +461,7 @@ export class Game implements MobHost {
       const sx = this.plat ? 3 : 2;
       const f1 = this.spawnFighter(a, 0, new THREE.Vector3(-sx, 0, 0), Math.PI / 2);
       const f2 = this.spawnFighter(b, 1, new THREE.Vector3(sx, 0, 0), -Math.PI / 2);
-      if (b.peer === "cpu" && !this.plat) f2.autoApproach = !["mage", "bow"].includes(f2.kit);
+      if (b.peer === "cpu" && !this.plat) f2.autoApproach = !["mage", "bow", "bomb"].includes(f2.kit);
       f1.opponent = f2;
       f2.opponent = f1;
 
@@ -418,7 +483,7 @@ export class Game implements MobHost {
         const k = counts[team]++;
         const z = (k - 1.5) * 1.8;
         const f = this.spawnFighter(p, team, new THREE.Vector3(team === 0 ? -5 : 5, 0, z), team === 0 ? Math.PI / 2 : -Math.PI / 2);
-        if (isCpu(p.peer)) f.autoApproach = !["mage", "bow"].includes(f.kit);
+        if (isCpu(p.peer)) f.autoApproach = !["mage", "bow", "bomb"].includes(f.kit);
         spawned.push(f);
       });
       const id = this.round;
@@ -552,6 +617,10 @@ export class Game implements MobHost {
     f.onSwing = (x) => this.onSwing(x);
     f.onKo = (x) => this.onFighterKo(x);
     f.onLanded = (x) => { this.fx.ring(x.root.position, "#ffffff", 0.8, 0.25, 0.5); this.snd("land", 0.35); };
+    f.onTrigger = (x) => {
+      const t = this.traps.find((k) => k.kind === "barrel" && k.owner === x);
+      if (t) { this.snd("click", 0.8); this.detonate(t); } else x.barrelOut = false;
+    };
     f.onAirJump = (x) => {
       // A burst of wind under the feet: two expanding rings like a gust platform, a flash,
       // air blasting downward and motes swirling up around him.
@@ -630,6 +699,7 @@ export class Game implements MobHost {
     for (const m of this.mobs) m.update(dt);
     this.statusFx(dt);
     this.updateProjectiles(dt);
+    this.updateTraps(dt);
     if (this.cfg.role !== "client") {
       this.drainDots();
       for (const m of [...this.mobs]) {
@@ -786,7 +856,8 @@ export class Game implements MobHost {
     let name = "hit_blunt";
     if (attacker instanceof Fighter) {
       const k = attacker.kit;
-      if (a.type === "projectile" && a.style === "arrow") name = "arrow_hit";
+      if (a.type === "lob" || a.type === "mine" || a.type === "barrel") name = heavy ? "hit_big" : "hit_blunt";
+      else if (a.type === "projectile" && a.style === "arrow") name = "arrow_hit";
       else if (a.type === "projectile" && k === "mage") name = a.element === "fire" ? "explosion" : a.element === "electric" ? "zap" : a.element === "water" ? "splash" : "hit_blunt";
       else if (k === "kicks") name = heavy ? "hit_big" : "hit_kick";
       else if (k === "knuckles") name = heavy ? "hit_big" : Math.random() < 0.5 ? "hit_blunt" : "hit_blunt2";
@@ -819,6 +890,9 @@ export class Game implements MobHost {
       case "buff": this.applyBuff(f, a); break;
       case "blink": this.blink(f, a); break;
       case "phantom": this.phantom(f, a); break;
+      case "lob": this.throwBombs(f, a); break;
+      case "mine": this.plantMine(f, a); break;
+      case "barrel": this.placeBarrel(f, a); break;
       default: this.melee(f, a);
     }
   }
@@ -840,6 +914,13 @@ export class Game implements MobHost {
       const hitPos = d.chest().addScaledVector(dir, -0.15);
       this.applyHit(f, d, a, f.atkPower, hitPos, dir, false);
     }
+    // Hitting an enemy's powder keg sets it off.
+    for (const t of [...this.traps]) {
+      if (t.kind !== "barrel" || t.team === f.team) continue;
+      const to = t.pos.clone().sub(f.root.position).setY(0);
+      const dist = to.length();
+      if (dist - 0.45 <= a.reach && (dist < 0.6 || to.normalize().dot(fwd) > 0.15)) this.detonate(t);
+    }
   }
 
   private fireProjectiles(f: Fighter, a: Attack) {
@@ -857,18 +938,155 @@ export class Game implements MobHost {
   }
 
   private spawnProjectile(shooter: Entity | null, team: number, a: Attack, power: number, pos: THREE.Vector3, vel: THREE.Vector3,
-    style: string, element: string, size: number, color: string, pierce: boolean, target: Entity | null) {
+    style: string, element: string, size: number, color: string, pierce: boolean, target: Entity | null): Projectile {
     const p = new Projectile(this.nextId++, shooter, team, a, power, pos, vel, style, element, size, color, pierce, false, target);
     this.scene.add(p.group);
     this.projectiles.push(p);
     this.emit(["proj", p.id, style, element, size, color, pos, vel]);
+    return p;
+  }
+
+  // --- bomber -------------------------------------------------------------------------------
+  /** Lob bombs in an arc that lands at the target (or ahead) after `a.delay` seconds. */
+  private throwBombs(f: Fighter, a: Attack) {
+    const origin = f.model.castPoint.getWorldPosition(new THREE.Vector3());
+    const fwd = new THREE.Vector3(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
+    const o = f.opponent;
+    const aim = o && !o.isDown() ? o.root.position.clone().setY(0) : f.root.position.clone().addScaledVector(fwd, 5).setY(0);
+    const T = Math.max(a.delay, 0.3), g = BOMB_GRAVITY;
+    for (let i = 0; i < a.count; i++) {
+      const off = a.count === 1 ? 0 : -a.spread + (2 * a.spread * i) / (a.count - 1);
+      const to = aim.clone().sub(origin).setY(0).applyAxisAngle(new THREE.Vector3(0, 1, 0), off);
+      const land = origin.clone().setY(0).add(to);
+      const vel = new THREE.Vector3((land.x - origin.x) / T, (0.08 - origin.y + 0.5 * g * T * T) / T, (land.z - origin.z) / T);
+      const p = this.spawnProjectile(f, f.team, a, f.atkPower, origin, vel, "bomb", a.element, a.size, f.look.glow, false, o);
+      p.gravity = g;
+      p.life = T + 1;
+    }
+    this.snd("whoosh_light", 0.6);
+  }
+
+  /** A bomb goes off at `pos`: hits enemies in `a.radius` (cluster bombs burst `repeat` times). */
+  private bombBlast(owner: Entity | null, a: Attack, power: number, pos: THREE.Vector3, team: number) {
+    const round = this.round;
+    const one = (at: THREE.Vector3) => {
+      if (round !== this.round) return;
+      const g = at.clone().setY(0);
+      this.fxp("explosion", g, "#ffb347", a.radius);
+      this.fxp("smoke", g, "#6a5a4a");
+      if (a.effect === "paralyze") { this.fxp("lightning", g, "#ffe066"); this.fxp("sparks", g.clone().setY(0.4), "#ffe066", 30, 7); }
+      this.add_trauma(Math.min(0.15 + a.radius * 0.12, 0.7));
+      for (const d of this.enemiesOfTeam(team)) {
+        const to = d.root.position.clone().sub(g);
+        const dy = Math.abs(to.y);
+        to.setY(0);
+        if (to.length() <= a.radius + d.radius * 0.5 && dy < 1.5) {
+          const dir = to.length() > 0.05 ? to.normalize() : new THREE.Vector3(1, 0, 0);
+          this.applyHit(owner, d, a, power, d.chest(), dir, true);
+        }
+      }
+      for (const t of [...this.traps]) if (t.kind === "barrel" && t.team !== team && t.pos.distanceTo(g) <= a.radius + 0.4) this.detonate(t);
+    };
+    one(pos);
+    for (let i = 1; i < a.repeat; i++) {
+      const an = (i / (a.repeat - 1)) * Math.PI * 2 + Math.random();
+      const at = pos.clone().add(new THREE.Vector3(Math.cos(an), 0, Math.sin(an)).multiplyScalar(a.radius * 0.9));
+      this.later(a.interval * i, () => one(at));
+    }
+  }
+
+  private plantMine(f: Fighter, a: Attack) {
+    const fwd = new THREE.Vector3(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
+    const mine = this.addTrap("mine", f, a, f.root.position.clone().addScaledVector(fwd, 0.6).setY(0));
+    mine.arm = 0.5;
+    mine.life = 25;
+    // At most 3 mines each: the oldest one fizzles.
+    const mines = this.traps.filter((t) => t.kind === "mine" && t.owner === f);
+    if (mines.length > 3) this.removeTrap(mines[0], true);
+    this.snd("land", 0.6);
+  }
+
+  private placeBarrel(f: Fighter, a: Attack) {
+    const old = this.traps.find((t) => t.kind === "barrel" && t.owner === f);
+    if (old) this.detonate(old);
+    const fwd = new THREE.Vector3(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
+    const keg = this.addTrap("barrel", f, a, f.root.position.clone().addScaledVector(fwd, 1.2).setY(0));
+    keg.life = 25;
+    f.barrelOut = true;
+    f.barrelPos.copy(keg.pos);
+    this.fxp("ring", keg.pos.clone(), "#c98a52", 1.4, 0.3, 0.7);
+    this.snd("slam", 0.5);
+  }
+
+  private addTrap(kind: "mine" | "barrel", owner: Fighter, a: Attack, pos: THREE.Vector3): Trap {
+    const t: Trap = { id: this.nextId++, kind, owner, team: owner.team, atk: a, power: owner.atkPower, pos, mesh: buildTrap(kind, owner.look.glow), arm: 0, life: 25, t: 0 };
+    t.mesh.position.copy(pos);
+    this.scene.add(t.mesh);
+    this.traps.push(t);
+    this.emit(["trap", t.id, kind, [+pos.x.toFixed(2), 0, +pos.z.toFixed(2)], owner.look.glow]);
+    return t;
+  }
+
+  private removeTrap(t: Trap, fizzle = false) {
+    this.scene.remove(t.mesh);
+    this.traps = this.traps.filter((x) => x !== t);
+    this.emit(["trapEnd", t.id]);
+    if (fizzle) this.fxp("smoke", t.pos.clone(), "#8a8a8a");
+    if (t.kind === "barrel" && t.owner) {
+      t.owner.barrelOut = false;
+      // The keg's cooldown starts now.
+      for (const k of ["z", "x", "c"]) if (t.owner.attacks[k]?.type === "barrel") t.owner.cooldowns[k] = t.atk.cd * t.owner.cdMult;
+    }
+  }
+
+  /** Blow up a mine or keg (a keg's blast is huge). */
+  private detonate(t: Trap) {
+    if (!this.traps.includes(t)) return;
+    this.removeTrap(t);
+    if (t.kind === "barrel") { this.fxp("rocks", t.pos.clone(), 26, 1.5); this.add_trauma(0.7); this.hitStop(0.08); }
+    this.bombBlast(t.owner, t.atk, t.power, t.pos.clone(), t.team);
+  }
+
+  private updateTraps(dt: number) {
+    for (const t of [...this.traps]) {
+      t.t += dt;
+      animateTrap(t, dt);
+      if (this.cfg.role === "client") continue;
+      t.life -= dt;
+      if (t.kind === "mine") {
+        t.arm -= dt;
+        if (t.arm <= 0 && this.enemiesOfTeam(t.team).some((e) => !e.airborne() && e.root.position.clone().setY(0).distanceTo(t.pos) < 1.0 + e.radius * 0.5)) {
+          this.snd("click", 0.7);
+          this.detonate(t);
+          continue;
+        }
+        if (t.life <= 0) this.removeTrap(t, true);
+      } else if (t.life <= 0) this.detonate(t);
+    }
   }
 
   private updateProjectiles(dt: number) {
     for (const p of this.projectiles) {
       if (p.done) continue;
+      if (p.gravity) { p.vel.y -= p.gravity * dt; p.spin.rotation.x += dt * 9; }
       p.pos.addScaledVector(p.vel, dt);
       p.life -= dt;
+      if (!p.visualOnly && p.atk) {
+        const keg = this.traps.find((t) => t.kind === "barrel" && t.team !== p.team && p.pos.distanceTo(t.pos.clone().setY(0.45)) < 0.75);
+        if (keg) {
+          this.detonate(keg);
+          if (p.atk.type === "lob") this.bombBlast(p.shooter, p.atk, p.power, p.pos.clone(), p.team);
+          if (!p.pierce || p.atk.type === "lob") { p.done = true; continue; }
+        }
+      }
+      if (!p.visualOnly && p.atk?.type === "lob") {
+        const hitE = this.enemiesOfTeam(p.team).find((e) => p.pos.distanceTo(e.chest()) < 0.35 * p.size + e.radius);
+        if (hitE || p.pos.y <= 0.08) {
+          this.bombBlast(p.shooter, p.atk, p.power, p.pos.clone(), p.team);
+          p.done = true;
+          continue;
+        }
+      }
       if (p.style === "shuriken") p.spin.rotation.y += dt * 30;
       else if (p.style === "bolt") p.spin.rotation.z += dt * 12;
       if (!p.visualOnly && p.atk) {
@@ -886,7 +1104,7 @@ export class Game implements MobHost {
       const flat = Math.hypot(p.pos.x, p.pos.z);
       const gone = this.plat ? Math.abs(p.pos.x) > 20 || p.pos.y < -10 || this.hitsStage(p.pos) : p.pos.y < 0.05 || flat > 16;
       if (p.life <= 0 || gone) {
-        if (!p.visualOnly) this.fxp("sparks", p.pos.clone(), p.color, 8, 3);
+        if (!p.visualOnly && p.atk?.type !== "lob") this.fxp("sparks", p.pos.clone(), p.color, 8, 3);
         p.done = true;
       }
     }
@@ -932,6 +1150,7 @@ export class Game implements MobHost {
             this.fxp("num", d.chest().add(new THREE.Vector3(0, 0.8, 0)), "DODGE", "#c9d3e6", 0.7);
           }
         }
+        for (const t of [...this.traps]) if (t.kind === "barrel" && t.team !== f.team && t.pos.distanceTo(at) <= a.radius + 0.4) this.detonate(t);
         if (i + 1 < a.repeat) one(i + 1);
       });
     };
@@ -1456,11 +1675,24 @@ export class Game implements MobHost {
       case "fx": this.runFx(ev[1], ev[2]); break;
       case "proj": {
         const p = new Projectile(ev[1], null, 0, null, 0, v3(ev[6]), v3(ev[7]), ev[2], ev[3], ev[4], ev[5], true, true, null);
+        if (ev[2] === "bomb") { p.gravity = BOMB_GRAVITY; p.life = 3; }
         this.scene.add(p.group);
         this.projectiles.push(p);
         break;
       }
       case "projEnd": { const p = this.projectiles.find((x) => x.id === ev[1]); if (p) p.done = true; break; }
+      case "trap": {
+        const t: Trap = { id: ev[1], kind: ev[2], owner: null, team: -1, atk: null as any, power: 0, pos: v3(ev[3]), mesh: buildTrap(ev[2], ev[4]), arm: 0, life: 99, t: 0 };
+        t.mesh.position.copy(t.pos);
+        this.scene.add(t.mesh);
+        this.traps.push(t);
+        break;
+      }
+      case "trapEnd": {
+        const t = this.traps.find((x) => x.id === ev[1]);
+        if (t) { this.scene.remove(t.mesh); this.traps = this.traps.filter((x) => x !== t); }
+        break;
+      }
       case "banner": this.onEvent({ type: "banner", text: ev[1], color: ev[2], sub: ev[3], hold: ev[4] }); break;
       case "over": this.onEvent({ type: "over", text: ev[1], sub: ev[2], color: ev[3] }); break;
       case "result": this.onEvent({ type: "result", winner: ev[1] }); break;
@@ -1544,6 +1776,8 @@ export class Game implements MobHost {
       skills: me ? ["z", "x", "c"].map((k) => {
         // In the air, show the air version of a skill when it has one.
         const a = !me.onGround && me.attacks[k + "_air"] ? me.attacks[k + "_air"] : me.attacks[k];
+        // Powder keg out: the slot becomes its trigger.
+        if (a.type === "barrel" && me.barrelOut) return { key: k, id: a.id + "_trigger", name: "Detonate", cd: 0, max: 1 };
         return { key: k, id: a.id, name: a.name, cd: me.cooldowns[k], max: me.attacks[k].cd * me.cdMult };
       }) : [],
       kit: me?.kit ?? "", element: me?.look.element ?? "",

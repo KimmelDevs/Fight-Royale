@@ -10,7 +10,7 @@ insert into public.admins (email) values ('jaynesadibo@gmail.com') on conflict d
 
 create or replace function public.all_characters() returns text[] language sql immutable as $$
   select array['aster','vesper','garrick','kaede','ember','marina','nyx','rook','kira',
-               'raven','ash','gale']
+               'raven','ash','gale','bob']
 $$;
 
 -- Unlocks everything for an admin's profile; no-op for everyone else.
