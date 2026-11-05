@@ -86,6 +86,10 @@ input:focus { border-color: #e6c26e; }
 .hp.right .guard { margin-left: auto; }
 .guard .bar { height: 7px; }
 .tags { display: block; color: #ffd47a; font-size: 12px; font-weight: 600; margin-top: 2px; }
+.volumes { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 14px; }
+.vol-row { display: grid; grid-template-columns: 90px 1fr 48px; align-items: center; gap: 10px; }
+.vol-row input { width: 100%; accent-color: #e6c26e; }
+.vol-row em { font-style: normal; color: #b9c6e6; text-align: right; }
 .status-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .status-chips.right { justify-content: flex-end; }
 .status-chips span { font-size: 11px; font-weight: 800; letter-spacing: .04em; padding: 1px 6px; border: 1.5px solid; border-radius: 4px; background: rgba(10, 14, 40, .7); }

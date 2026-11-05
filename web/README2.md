@@ -281,7 +281,29 @@ see (a new bar, an effect flag), append it to the end of the snapshot array and 
 
 ---
 
-## 10. Things to know
+## 10. Sound effects and music
+
+- **Files:** sounds live in `public/sfx/*.mp3`. They were picked from the Mixkit library in
+  `Desktop\DCODE\Story Maker\sfx` and renamed to short names (`swing`, `hit_blade`, `parry`,
+  `fireball`, `music_battle`, ...). The Mixkit license is free and needs no credit, but don't
+  share the raw files as a sound pack.
+- **Engine:** `src/game/sound.ts`. `Sound.play(name, volume)` plays an effect with a little
+  pitch variation. `Sound.setMusic("menu" | "battle" | "")` crossfades the music. Volumes
+  (master / music / effects) are set in Settings and saved per browser.
+- **Where sounds play:**
+  - In `game.ts`, `swingSound()` (attack whooshes, casts, arrows) and `hitSound()` (impacts by
+    weapon type) pick the sound for each attack.
+  - `runFx()` plays a sound with each big effect: explosion, lightning, meteor, rocks, waves.
+  - `this.snd(name, vol)` plays a sound on every player's machine in online matches.
+  - Banners, victory/defeat and gold are in `GameView.tsx`; button clicks and menu music are in
+    `App.tsx`; shop buy/error is in `Shop.tsx`.
+- **Changing a sound:** copy a new mp3 over the file with the same name in `public/sfx`. No
+  code change is needed. **Adding one:** copy it in under a new name and call
+  `Sound.play("newname")` where it should play.
+- **Size:** keep effects short (under about 300 KB each). The two music tracks are the biggest
+  files (~3.5 MB each) and stream instead of downloading up front.
+
+## 11. Things to know
 
 - **License:** the VRoid models are by Fruit. Keep the credits line when you add or replace
   models.

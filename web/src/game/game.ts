@@ -16,6 +16,7 @@ import { MOB_GOLD, WIN_GOLD } from "./economy";
 import * as Kits from "./kits";
 import type { Attack } from "./kits";
 import { STATUS, type StatusKind } from "./status";
+import { Sound, MATCH_SOUNDS } from "./sound";
 import { Input, type RawInput } from "./input";
 import type { Net, Msg } from "./net";
 
@@ -224,6 +225,7 @@ export class Game implements MobHost {
     this.cfg = cfg;
     this.net = net;
     this.plat = cfg.mode === "brawl";
+    Sound.preload(MATCH_SOUNDS);
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -498,6 +500,7 @@ export class Game implements MobHost {
 
   private creditMobKill(attacker: Fighter | null, d: Mob) {
     this.kills++;
+    this.snd("mob_die", 0.4);
     if (attacker) {
       const g = (MOB_GOLD[d.type] ?? 2) * (d.elite ? 2 : 1);
       this.earned.set(attacker.owner, (this.earned.get(attacker.owner) ?? 0) + g);
@@ -546,8 +549,9 @@ export class Game implements MobHost {
     f.root.rotation.y = rotY;
     f.onSwing = (x) => this.onSwing(x);
     f.onKo = (x) => this.onFighterKo(x);
-    f.onLanded = (x) => this.fx.ring(x.root.position, "#ffffff", 0.8, 0.25, 0.5);
+    f.onLanded = (x) => { this.fx.ring(x.root.position, "#ffffff", 0.8, 0.25, 0.5); this.snd("land", 0.35); };
     f.onDash = (x) => {
+      this.snd("dash", 0.6);
       this.fxp("smoke", x.root.position.clone(), x.look.glow);
       this.fxp("ring", x.root.position.clone().add(new THREE.Vector3(0, 0.1, 0)), x.look.glow, 1.2, 0.2, 0.7);
     };
@@ -690,6 +694,16 @@ export class Game implements MobHost {
   private runFx(name: string, a: any[]) {
     const fx = this.fx;
     switch (name) {
+      case "snd": Sound.play(a[0], a[1] ?? 1); return;
+      case "lightning": Sound.play("thunder", 0.8); break;
+      case "explosion": Sound.play("explosion", 0.8); break;
+      case "meteor": Sound.play("meteor", 0.9); break;
+      case "rocks": if ((a[1] ?? 0) >= 16) Sound.play("rocks", 0.55); break;
+      case "slashes": Sound.play("hit_blade2", 0.7); break;
+      case "arrows": Sound.play("arrow", 0.7); break;
+      case "wave": Sound.play("splash", 0.7); break;
+    }
+    switch (name) {
       case "sparks": fx.sparks(v3(a[0]), a[1], a[2], a[3], a[4] ? v3(a[4]) : null); break;
       case "splash": fx.splash(v3(a[0]), a[1], a[2], a[3]); break;
       case "flash": fx.flash(v3(a[0]), a[1], a[2], a[3], a[4]); break;
@@ -726,8 +740,52 @@ export class Game implements MobHost {
   }
 
   // --- attack resolution ----------------------------------------------------------------
+  /** Play a sound on every machine in the match (host and online guests). */
+  private snd(name: string, vol = 1) { this.fxp("snd", name, vol); }
+
+  /** The whoosh / cast / release sound when an attack comes out. */
+  private swingSound(f: Fighter, a: Attack) {
+    const heavy = a.heavy || f.atkId === "heavy";
+    if (a.type === "melee") {
+      if (f.kit === "knuckles" || f.kit === "kicks") this.snd(heavy ? "swing_heavy" : "whoosh_light", 0.7);
+      else if (f.kit === "assassin") this.snd(heavy ? "swing2" : "dagger", 0.7);
+      else if (f.kit === "greatsword" || heavy) this.snd("swing_heavy", 0.8);
+      else this.snd(Math.random() < 0.5 ? "swing" : "swing2", 0.7);
+    } else if (a.type === "projectile") {
+      if (a.style === "arrow") this.snd("arrow", 0.7);
+      else if (a.style === "shuriken") this.snd("dagger", 0.7);
+      else if (f.kit === "knuckles" || f.kit === "kicks") this.snd("swing_heavy", 0.7);
+      else if (a.element === "fire") this.snd("fireball", 0.6);
+      else if (a.element === "electric") this.snd("zap", 0.6);
+      else if (a.element === "water") this.snd("water", 0.5);
+      else this.snd("cast", 0.6);
+    } else if (a.type === "strike") {
+      if (f.kit === "mage") this.snd(a.element === "water" ? "water" : "cast", 0.6);
+      else if (a.style === "spin") this.snd("spin", 0.7);
+      else this.snd("swing_heavy", 0.6);
+    } else if (a.type === "blink") this.snd("teleport", 0.7);
+  }
+
+  /** The impact sound for a clean hit, by what hit it. */
+  private hitSound(attacker: Entity | null, a: Attack, crit: boolean) {
+    const heavy = a.heavy;
+    let name = "hit_blunt";
+    if (attacker instanceof Fighter) {
+      const k = attacker.kit;
+      if (a.type === "projectile" && a.style === "arrow") name = "arrow_hit";
+      else if (a.type === "projectile" && k === "mage") name = a.element === "fire" ? "explosion" : a.element === "electric" ? "zap" : a.element === "water" ? "splash" : "hit_blunt";
+      else if (k === "kicks") name = heavy ? "hit_big" : "hit_kick";
+      else if (k === "knuckles") name = heavy ? "hit_big" : Math.random() < 0.5 ? "hit_blunt" : "hit_blunt2";
+      else if (heavy) name = "hit_heavy";
+      else name = Math.random() < 0.5 ? "hit_blade" : "hit_blade2";
+    }
+    this.snd(name, name === "explosion" ? 0.5 : 0.8);
+    if (crit) this.snd("crit", 0.55);
+  }
+
   private onSwing(f: Fighter) {
     const a = f.atk!;
+    this.swingSound(f, a);
     const el = f.look.element;
     const big = ["z", "x", "c", "v", "heavy", "l3"].includes(f.atkId);
     if (el === "earth" && big) {
@@ -924,6 +982,7 @@ export class Game implements MobHost {
   private applyBuff(f: Fighter, a: Attack) {
     // PvP versions of defensive magic are weaker than in survival.
     const pvp = this.cfg.mode !== "survival";
+    this.snd(a.mode === "heal" ? "heal" : a.mode === "rage" ? "rage" : "ward", 0.7);
     if (a.mode === "ward") {
       const dur = pvp ? Math.min(a.duration, 2) : a.duration;
       f.wardT = dur;
@@ -959,6 +1018,7 @@ export class Game implements MobHost {
       if (d.lengthSq() < 1e-4) d.set(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
       d.normalize();
       this.fxp("smoke", from, f.look.glow);
+      this.snd("teleport", 0.7);
       f.teleport(o.root.position.clone().addScaledVector(d, 1.1));
       f.root.rotation.y = Math.atan2(-d.x, -d.z);
       f.poseOverride = kicks[i % kicks.length];
@@ -987,6 +1047,7 @@ export class Game implements MobHost {
     switch (result) {
       case "hit": case "crit": case "ko": {
         const crit = d.lastCrit;
+        this.hitSound(attacker, a, crit);
         this.fxp("sparks", hitPos, glow, heavy ? 30 : 18, heavy ? 8 : 6, dir);
         this.fxp("flash", hitPos, glow, heavy ? 0.45 : 0.3, 0.14, 0.8);
         if (a.heavy) this.fxp("ring", hitPos, glow, 2.2, 0.35, 0.9);
@@ -1002,11 +1063,14 @@ export class Game implements MobHost {
         const info = STATUS[a.effect as StatusKind];
         if (info && result !== "ko" && this.time - (this.statusLabelAt.get(d) ?? -9) > 1.2) {
           this.statusLabelAt.set(d, this.time);
+          const ss: Record<string, string> = { burn: "burn", paralyze: "shock", poison: "poison", bleed: "bleed" };
+          if (ss[a.effect]) this.snd(ss[a.effect], 0.6);
           this.fxp("num", d.chest().add(new THREE.Vector3(0, 0.95, 0)), info.label, info.color, 0.85);
         }
         break;
       }
       case "blocked":
+        this.snd("block", 0.7);
         this.fxp("sparks", shieldPos, "#ffd27a", 16, 5, dir.clone().negate().add(new THREE.Vector3(0, 0.3, 0)));
         this.fxp("flash", shieldPos, "#ffd980", 0.35, 0.1, 0.6);
         this.fxp("num", shieldPos.clone().add(new THREE.Vector3(0, 0.4, 0)), "BLOCK", "#c9d3e6", 0.7);
@@ -1017,6 +1081,7 @@ export class Game implements MobHost {
       case "parry":
         if (!ranged && attacker instanceof Fighter) attacker.stagger(0.95);
         else if (!ranged && attacker instanceof Mob) attacker.receiveHit(d, { ...a, dmg: 0, knock: 4 }, 0);
+        this.snd("parry", 0.9);
         this.fxp("sparks", shieldPos, "#aee9ff", 40, 9);
         this.fxp("flash", shieldPos, "#b3f2ff", 0.5, 0.2, 0.9);
         this.fxp("ring", shieldPos, "#b3f2ff", 1.6, 0.35, 0.9);
@@ -1038,12 +1103,14 @@ export class Game implements MobHost {
         this.fxp("sparks", hitPos, "#ffb347", 40, 9);
         this.fxp("flash", hitPos, "#ffb34d", 0.5, 0.2, 0.9);
         this.fxp("num", hitPos.clone().add(new THREE.Vector3(0, 0.55, 0)), "GUARD BREAK", "#ff8a50", 1.2);
+        this.snd("guard_break", 0.9);
         this.add_trauma(0.55);
         this.hitStop(0.12);
         break;
       case "warded":
         this.fxp("flash", hitPos, "#80d9ff", 0.5, 0.15, 0.7);
         this.fxp("num", hitPos.clone().add(new THREE.Vector3(0, 0.5, 0)), "ABSORBED", "#8fe6ff", 0.8);
+        this.snd("ward", 0.6);
         break;
       case "miss":
         this.fxp("num", hitPos.clone().add(new THREE.Vector3(0, 0.5, 0)), "MISS", "#c9d3e6", 0.8);
@@ -1060,6 +1127,7 @@ export class Game implements MobHost {
     this.fxp("flash", pos, "#fff2cc", 0.55, 0.18, 0.95);
     this.fxp("ring", pos, "#ffe699", 3, 0.45, 0.9);
     this.fxp("num", pos.clone().add(new THREE.Vector3(0, 0.45, 0)), "CLASH!", "#ffe08a", 1.3);
+    this.snd("clash", 1);
     this.add_trauma(0.45);
     this.hitStop(0.13);
   }
@@ -1144,6 +1212,7 @@ export class Game implements MobHost {
   private isDuel() { return this.cfg.mode === "duel" || this.cfg.mode === "brawl"; }
 
   private onFighterKo(f: Fighter) {
+    this.snd("ko", 0.9);
     if (this.isDuel()) {
       if (this.roundOver) return;
       this.roundOver = true;

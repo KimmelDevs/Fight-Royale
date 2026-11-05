@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { Sound } from "@/game/sound";
 import { ACTIONS, RESERVED, bind, bindings, keyLabel, loadBindings, onBindingsChange, resetBindings, type Action } from "@/game/keys";
 
 /** Re-renders when key bindings change. */
@@ -13,6 +14,7 @@ export default function Settings({ onBack }: { onBack: () => void }) {
   const b = useBindings();
   const [wait, setWait] = useState<{ action: Action; slot: 0 | 1 } | null>(null);
   const [msg, setMsg] = useState("");
+  const [vol, setVol] = useState({ ...Sound.vol });
 
   // While waiting, the next key or mouse button becomes the binding (Esc cancels).
   useEffect(() => {
@@ -42,6 +44,18 @@ export default function Settings({ onBack }: { onBack: () => void }) {
   return (
     <div className="menu">
       <div className="menu-card settings">
+        <h1 className="logo small">SOUND</h1>
+        <div className="volumes">
+          {([["master", "Master"], ["music", "Music"], ["sfx", "Effects"]] as const).map(([k, label]) => (
+            <label key={k} className="vol-row">
+              <span className="act">{label}</span>
+              <input type="range" min={0} max={100} value={Math.round(vol[k] * 100)}
+                onChange={(e) => { Sound.setVolume(k, +e.target.value / 100); setVol({ ...Sound.vol }); }}
+                onMouseUp={() => k === "sfx" && Sound.play("hit_blade", 0.8)} />
+              <em>{Math.round(vol[k] * 100)}%</em>
+            </label>
+          ))}
+        </div>
         <h1 className="logo small">CONTROLS</h1>
         <p className="tag">Click a slot, then press a key or mouse button. Esc cancels. Each action can have two inputs.</p>
         <div className="binds">

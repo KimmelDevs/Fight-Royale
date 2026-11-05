@@ -1,4 +1,5 @@
 "use client";
+import { Sound } from "@/game/sound";
 import { useEffect, useState } from "react";
 import Select from "./Select";
 import Lobby from "./Lobby";
@@ -32,8 +33,17 @@ export default function App() {
     try { const n = localStorage.getItem("fr-name"); if (n) setGuestName(n); } catch {}
     // Start downloading every VRoid model now so fighters appear without a wait later.
     for (const c of CHARACTERS) if (c.look.vrm) prefetchVrm(c.look.vrm);
+    // Menu music, and a click on every button outside the arena.
+    const click = (e: MouseEvent) => {
+      const b = (e.target as HTMLElement | null)?.closest?.("button");
+      if (!b || b.disabled) return;
+      Sound.play(/back/i.test(b.textContent ?? "") ? "back" : "click", 0.45, 0.02);
+    };
+    window.addEventListener("click", click, true);
     const q = new URLSearchParams(window.location.search).get("purchase");
     if (q) { setScreen({ s: "shop", tab: "diamonds" }); account.refresh(); window.history.replaceState(null, "", "/"); }
+    Sound.setMusic("menu");
+    return () => window.removeEventListener("click", click, true);
   }, []);
   const saveName = (n: string) => {
     setGuestName(n);

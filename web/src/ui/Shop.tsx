@@ -1,4 +1,5 @@
 "use client";
+import { Sound } from "@/game/sound";
 import { useState } from "react";
 import { account, useAccount } from "@/lib/account";
 import { adsAvailable, adsAreDemo, showRewardedAd } from "@/lib/ads";
@@ -20,7 +21,7 @@ export default function Shop({ onBack, onAccount, start = "fighters" }: { onBack
 
   const run = async (fn: () => Promise<any>, ok: string) => {
     setMsg("");
-    try { await fn(); setMsg(ok); } catch (e: any) { setMsg(e.message); }
+    try { await fn(); setMsg(ok); Sound.play("buy", 0.8, 0); } catch (e: any) { setMsg(e.message); Sound.play("error", 0.6, 0); }
   };
 
   const watchAd = async () => {

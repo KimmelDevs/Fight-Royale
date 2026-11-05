@@ -1,5 +1,6 @@
 "use client";
 import { STATUS, type StatusKind } from "@/game/status";
+import { Sound } from "@/game/sound";
 import { useEffect, useRef, useState } from "react";
 import { label, type Action } from "@/game/keys";
 const SKILL_ACTION: Record<string, Action> = { z: "skill1", x: "skill2", c: "skill3" };
@@ -47,20 +48,28 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3000);
   };
 
+  useEffect(() => { Sound.setMusic("battle"); return () => Sound.setMusic("menu"); }, []);
+
   useEffect(() => {
     const g = new Game(canvas.current!, overlay.current!, cfg, net);
     game.current = g;
     let bannerTimer: any;
     g.onEvent = (e: UiEvent) => {
       if (e.type === "banner") {
+        if (e.text === "READY") Sound.play("ready", 0.8, 0);
+        else if (e.text === "FIGHT!") Sound.play("fight", 0.9, 0);
+        else if (e.text.startsWith("WAVE") || e.text.startsWith("BOSS")) Sound.play("wave", 0.8, 0);
         setBanner({ text: e.text, color: e.color, sub: e.sub, key: Math.random() });
         clearTimeout(bannerTimer);
         bannerTimer = setTimeout(() => setBanner(null), ((e.hold ?? 0) + 0.7) * 1000);
       } else if (e.type === "perks") setPerks(e.options);
-      else if (e.type === "over") setOver({ text: e.text, sub: e.sub, color: e.color });
+      else if (e.type === "over") {
+        setOver({ text: e.text, sub: e.sub, color: e.color });
+        Sound.play(/VICTORY|WIN|CLEAR/i.test(e.text) ? "victory" : "defeat", 0.9, 0);
+      }
       else if (e.type === "reward") {
         account.claimReward(e.reason, e.gold).then((got) => {
-          if (got > 0) toast(`+${got} gold`);
+          if (got > 0) { toast(`+${got} gold`); Sound.play("coins", 0.7, 0); }
           else if (account.signedIn) toast("Reward limit reached for now");
         });
       } else if (e.type === "result" && betPlaced) {
