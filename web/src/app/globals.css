@@ -90,6 +90,24 @@ input:focus { border-color: #e6c26e; }
 .vol-row { display: grid; grid-template-columns: 90px 1fr 48px; align-items: center; gap: 10px; }
 .vol-row input { width: 100%; accent-color: #e6c26e; }
 .vol-row em { font-style: normal; color: #b9c6e6; text-align: right; }
+.big.rank { background: linear-gradient(180deg, #b98cff, #6b3fd1); color: #fff; }
+.rank-badge { display: flex; align-items: center; gap: 12px; }
+.rank-badge b { font-size: 20px; letter-spacing: .03em; }
+.rank-badge .stars { display: flex; align-items: center; gap: 2px; margin-top: 2px; }
+.rank-badge .stars img { width: 22px; height: 22px; }
+.rank-badge .mythic-stars { display: flex; align-items: center; gap: 4px; color: #ff8af0; font-weight: 800; }
+.big.rank { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.big.rank img { width: 30px; height: 30px; margin: -6px 0; }
+.rank-ladder { display: flex; flex-wrap: wrap; gap: 6px; }
+.rank-ladder .rung { display: flex; flex-direction: column; align-items: center; width: 64px; font-size: 10px; opacity: .55; }
+.rank-ladder .rung.on { opacity: 1; transform: scale(1.08); }
+.queue { display: flex; align-items: center; gap: 12px; margin: 10px 0; padding: 10px; border-radius: 10px; background: rgba(185, 140, 255, .12); border: 1px solid rgba(185, 140, 255, .4); }
+.spinner { width: 26px; height: 26px; border-radius: 50%; border: 3px solid rgba(255, 255, 255, .2); border-top-color: #b98cff; animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.rank-result { display: flex; flex-direction: column; align-items: center; gap: 6px; margin: 10px 0; }
+.rank-result .delta { font-size: 22px; font-weight: 800; color: #c9d3e6; }
+.rank-result .delta.up { color: #ffd34d; }
+.rank-result .delta.down { color: #ff7b7b; }
 .status-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .status-chips.right { justify-content: flex-end; }
 .status-chips span { font-size: 11px; font-weight: 800; letter-spacing: .04em; padding: 1px 6px; border: 1.5px solid; border-radius: 4px; background: rgba(10, 14, 40, .7); }

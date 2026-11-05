@@ -416,11 +416,75 @@ Tips:
 - When a fighter gets a new VRoid model, regenerate their portrait from the model's real hair
   and eye colors. The hair color table in `README.md` lists them.
 
+**6. Rank emblems** (new chat; it works as a first prompt on its own). Sliced into
+`public/icons/ranks/` as `bronze` ... `mythic`, `star`, `star_empty` and `ranked`:
+> Generate one square image: a 4x4 grid of 16 game rank emblem icons for an anime fantasy action
+> game (Genshin Impact UI style). Exactly 4 columns and 4 rows of equal square cells. Each icon
+> is a glossy painted emblem inside a dark navy circle with a thin gold rim, centered in its
+> cell. Plain dark navy background between cells. No text, no letters, no numbers. These are
+> competitive rank badges that get more ornate and impressive as they go up. Row 1: 1 Bronze
+> rank, simple bronze shield badge with a small sword. 2 Silver rank, polished silver shield with
+> crossed swords. 3 Gold rank, gold shield with crossed swords and small wings. 4 Platinum rank,
+> pale teal platinum crest with wings and a gem. Row 2: 1 Diamond rank, icy blue diamond crystal
+> crest with wings. 2 Master rank, purple amethyst crest with a laurel wreath and a crown.
+> 3 Grandmaster rank, crimson and gold crest with large wings and a crown. 4 Legend rank, radiant
+> golden phoenix crest with flames. Row 3: 1 Mythic rank, cosmic rainbow crystal crest with a
+> dragon, stars and glowing aura, the most impressive of all. 2 a single shiny gold five-pointed
+> star. 3 an empty dark grey five-pointed star outline. 4 two crossed swords on a red banner, a
+> ranked match symbol. Row 4: four plain dark navy circles.
+
+Image generation needs a logged-in ChatGPT account.
+
 **Icons worth redoing:**
 - Kira's `kicks-c` (Phantom Step) still shows the old flying-kick art.
 - The portraits of fighters who got VRoid models were drawn from their old designs.
 
-## 12. Things to know
+## 12. Ranked mode and matchmaking
+
+**The ladder** is in `src/game/rank.ts`, in the `RANKS` table:
+
+| Rank | Tiers | Stars per tier | Notes |
+|---|---|---|---|
+| Bronze | 3 (III-I) | 3 | Protected: losses never cost stars |
+| Silver | 3 | 3 | Protected |
+| Gold | 3 | 4 | |
+| Platinum | 4 (IV-I) | 4 | |
+| Diamond | 4 | 5 | |
+| Master | 5 (V-I) | 5 | |
+| Grandmaster | 5 | 5 | |
+| Legend | 5 | 5 | |
+| Mythic | – | unlimited | Stars just keep counting |
+
+The star rules:
+- **Winning** a ranked duel gives +1 star.
+- **Win streaks:** every 3rd win in a row gives a bonus star.
+- **Promotion:** with the tier full, the next win moves you up a tier with 1 star.
+- **Losing** costs 1 star. At 0 stars you drop a tier. You can never drop into Silver or Bronze
+  once you are above them.
+- To change the ladder, edit the `tiers` / `stars` numbers in `RANKS`.
+
+**Where progress is saved:** in the browser's localStorage (`fr-rank`). It is not tied to an
+account yet, so a player who clears their browser data starts over, and a determined player
+could edit it. To make it server-side later:
+- add a Supabase migration with rank columns and a `ranked_result` function;
+- call that function from `applyResult` when the player is signed in.
+
+**Matchmaking** is in `src/lib/matchmaking.ts` and needs no game server:
+1. Each searching player joins a Supabase Realtime **presence** channel (`fr-ranked-queue`)
+   with their name and rank score (`rankScore`: total stars across the ladder).
+2. Every second, the player who has waited longest picks the closest-ranked opponent. The
+   allowed gap starts at 4 stars and widens by 1 star every 4 seconds of waiting.
+3. That player opens a PeerJS room and sends the room code to the opponent. The opponent joins,
+   and the duel runs peer-to-peer like any online match (`Ranked.tsx` starts it).
+4. After 20 seconds with no opponent, a **FIGHT CPU** button appears. It plays a ranked match
+   against a CPU whose difficulty depends on your rank (`cpuLevel`).
+
+Results arrive as the match's `result` event, and `GameView.tsx` applies them. A rank panel on
+the victory/defeat screen shows the new rank and the stars won or lost.
+
+To test matchmaking alone, open the game in two browser tabs and press FIND MATCH in both.
+
+## 13. Things to know
 
 - **License:** the VRoid models are by Fruit. Keep the credits line when you add or replace
   models.

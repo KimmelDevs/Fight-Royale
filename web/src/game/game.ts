@@ -37,6 +37,8 @@ export interface GameConfig {
   difficulty?: number;
   /** Guest who joined a match already in progress (asks the host for a full sync). */
   late?: boolean;
+  /** Ranked duel: the result moves the local player's rank stars. */
+  ranked?: boolean;
 }
 
 export interface Perk { id: string; name: string; desc: string }
@@ -1225,6 +1227,8 @@ export class Game implements MobHost {
         const iWon = winner.owner === this.cfg.localPeer;
         const name = winner.look.name;
         if (!isCpu(winner.owner)) this.sendReward(winner.owner, "duel", WIN_GOLD);
+        this.onEvent({ type: "result", winner: winner.team });
+        this.emit(["result", winner.team]);
         const text = this.cfg.role === "offline" ? (iWon ? "VICTORY" : "DEFEAT") : `${name.toUpperCase()} WINS`;
         this.over(text, this.cfg.role === "client" ? "" : "Press R or click Rematch", iWon || this.cfg.role !== "offline" ? "#ffe08a" : "#ff7b7b");
         this.canRestart = true;

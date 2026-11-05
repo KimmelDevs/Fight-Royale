@@ -2,6 +2,7 @@
 import { Sound } from "@/game/sound";
 import { useEffect, useState } from "react";
 import Select from "./Select";
+import Ranked from "./Ranked";
 import Lobby from "./Lobby";
 import GameView from "./GameView";
 import AccountScreen, { Wallet } from "./Account";
@@ -18,6 +19,7 @@ type Screen =
   | { s: "menu" }
   | { s: "select"; purpose: "duel" | "brawl" | "survival" | "team" }
   | { s: "online" }
+  | { s: "ranked" }
   | { s: "account" }
   | { s: "settings" }
   | { s: "shop"; tab?: "fighters" | "skills" | "emblems" | "diamonds" }
@@ -85,6 +87,10 @@ export default function App() {
     return <Lobby name={name} onBack={toMenu} onShop={() => setScreen({ s: "shop" })}
       onStart={(cfg, net, matchId, bet, team) => setScreen({ s: "game", cfg, net, matchId, bet, team })} />;
   }
+  if (screen.s === "ranked") {
+    return <Ranked name={name} onBack={toMenu} onShop={() => setScreen({ s: "shop" })}
+      onStart={(cfg, net) => setScreen({ s: "game", cfg, net })} />;
+  }
   if (screen.s === "account") return <AccountScreen onBack={toMenu} />;
   if (screen.s === "shop") return <Shop start={screen.tab} onBack={toMenu} onAccount={() => setScreen({ s: "account" })} />;
   if (screen.s === "game") {
@@ -108,6 +114,7 @@ export default function App() {
         {SHOW_BRAWL && <button className="big brawl" onClick={() => setScreen({ s: "select", purpose: "brawl" })}>Platform Brawl vs CPU</button>}
         <button className="big blue" onClick={() => setScreen({ s: "select", purpose: "team" })}>Team Battle vs CPU (2v2 - 4v4)</button>
         <button className="big" onClick={() => setScreen({ s: "select", purpose: "survival" })}>Survival (solo)</button>
+        <button className="big rank" onClick={() => setScreen({ s: "ranked" })}><img src="/icons/ranks/ranked.webp" alt="" />Ranked</button>
         <button className="big blue" onClick={() => setScreen({ s: "online" })}>Play Online with Friends</button>
         <div className="row two">
           <button className="big ghost" onClick={() => setScreen({ s: "shop" })}>Shop</button>

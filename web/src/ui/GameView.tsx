@@ -1,6 +1,8 @@
 "use client";
 import { STATUS, type StatusKind } from "@/game/status";
 import { Sound } from "@/game/sound";
+import { applyResult, type RankChange } from "@/game/rank";
+import { RankBadge } from "./Ranked";
 import { useEffect, useRef, useState } from "react";
 import { label, type Action } from "@/game/keys";
 const SKILL_ACTION: Record<string, Action> = { z: "skill1", x: "skill2", c: "skill3" };
@@ -38,6 +40,14 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
   const [banner, setBanner] = useState<{ text: string; color: string; sub?: string; key: number } | null>(null);
   const [perks, setPerks] = useState<Perk[] | null>(null);
   const [over, setOver] = useState<{ text: string; sub: string; color: string } | null>(null);
+  const [rankChange, setRankChange] = useState<RankChange | null>(null);
+  const rankDone = useRef(false);
+  /** Ranked: apply the result once per match. */
+  const rankResult = (won: boolean) => {
+    if (!cfg.ranked || rankDone.current) return;
+    rankDone.current = true;
+    setRankChange(applyResult(won));
+  };
   const [lost, setLost] = useState(false);
   const [paused, setPausedState] = useState(false);
   const setPaused = (p: boolean) => { setPausedState(p); if (game.current) game.current.paused = p; };
@@ -72,6 +82,8 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
           if (got > 0) { toast(`+${got} gold`); Sound.play("coins", 0.7, 0); }
           else if (account.signedIn) toast("Reward limit reached for now");
         });
+      } else if (e.type === "result" && cfg.ranked) {
+        rankResult(e.winner === (g.local?.team ?? 0));
       } else if (e.type === "result" && betPlaced) {
         account.reportResult(matchId!, e.winner).then(() => toast(e.winner === team ? "Bet won! Pot paid out." : "Bet settled."));
       }
@@ -100,7 +112,7 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
     };
   }, []);
 
-  const rematch = () => { setOver(null); setPerks(null); game.current?.restart(); };
+  const rematch = () => { setOver(null); setPerks(null); setRankChange(null); rankDone.current = false; game.current?.restart(); };
   const me = hud?.me;
   const other = hud?.other;
 
@@ -251,6 +263,15 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
         <div className="over">
           <div className="txt" style={{ color: over?.color ?? "#ff7b7b" }}>{lost ? "DISCONNECTED" : over!.text}</div>
           <div className="bsub">{lost ? "The host left the match." : over!.sub}</div>
+          {rankChange && (
+            <div className="rank-result">
+              <RankBadge st={rankChange.after} size={64} />
+              <div className={"delta" + (rankChange.delta > 0 ? " up" : rankChange.delta < 0 ? " down" : "")}>
+                {rankChange.delta > 0 ? `+${rankChange.delta} star${rankChange.delta > 1 ? "s" : ""}` : rankChange.delta < 0 ? "-1 star" : "No change"}
+              </div>
+              {rankChange.note && <div className="small">{rankChange.note}</div>}
+            </div>
+          )}
           <div className="row">
             {hud?.canRestart && !lost && <button className="big gold" onClick={rematch}>{cfg.mode === "survival" ? "Try Again" : "Rematch"}</button>}
             <button className="big ghost" onClick={onExit}>Menu</button>
