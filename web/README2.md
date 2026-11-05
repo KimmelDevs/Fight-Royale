@@ -55,6 +55,7 @@ commit the stray `*.webp.import` files. Godot creates those when it opens the fo
 | `public/models/*.vrm` | The shrunk VRoid characters the game loads. |
 | `public/icons/` | Character, skill, emblem and currency icons (`.webp`). |
 | `scripts/shrink_vrm.py` | The model shrinker (see section 4). |
+| `scripts/slice_icons.py` | Cuts a 4x4 ChatGPT icon sheet into round WebP icons (see section 11). |
 | `scripts/balance-doc.ts` | Writes the balance tables into `README.md` (`npm run balance`). |
 | `supabase/migrations/` | Database changes for accounts, shop and economy. |
 
@@ -303,7 +304,123 @@ see (a new bar, an effect flag), append it to the end of the snapshot array and 
 - **Size:** keep effects short (under about 300 KB each). The two music tracks are the biggest
   files (~3.5 MB each) and stream instead of downloading up front.
 
-## 11. Things to know
+## 11. Icons (characters, skills, emblems) – same style every time
+
+All icons came from ChatGPT image generation. Each image is a 4x4 sheet of 16 icons, which
+`scripts/slice_icons.py` cuts into round 128 px WebP files. Two things keep the style
+matching: always open with the **same first prompt**, and ask for "the exact same style and
+4x4 layout" in every follow-up.
+
+### Workflow
+1. In ChatGPT, open a new chat and send **prompt 1** below. It sets the style.
+2. In the **same chat**, send a follow-up for the next 16 icons ("exact same style, framing and
+   4x4 layout, no text"). Staying in one chat keeps the look consistent.
+3. Download the image (a square PNG), then slice it. Give 16 names in reading order and use `-`
+   for any cell you don't want:
+   ```bash
+   python scripts/slice_icons.py sheet.png public/icons chars/kira skills/kicks-c - - - - - - - - - - - - - -
+   ```
+4. Use the file names the game looks for:
+   - Characters: `public/icons/chars/<id>.webp` (e.g. `chars/kira`).
+   - Skills: `public/icons/skills/<kit>-<key>.webp` (e.g. `skills/kicks-c`).
+     - Mages use their element instead of the kit: `skills/mage-fire-z`, `skills/mage-water-x`,
+       `skills/mage-electric-c`.
+     - The keys are `z`, `x`, `c` and `v` (`v` is the shop bonus skill).
+   - Emblems: `public/icons/emblems/<id>.webp` (`fighter`, `tank`, `assassin`, `mage`, `swift`).
+   - Currency and lock: `public/icons/gold.webp`, `diamond.webp`, `lock.webp`.
+5. Run the game and check the select screen and the skill bar.
+
+### The exact prompts used
+
+**1. First sheet (skills; sets the style):**
+> Generate one square image: a 4x4 grid of 16 game skill icons for an anime fantasy action game
+> (Genshin Impact UI style). Exactly 4 columns and 4 rows of equal square cells. Each icon is a
+> glossy painted emblem inside a dark navy circle with a thin gold rim, centered in its cell.
+> Plain dark navy background between cells. No text, no letters, no numbers. Row 1 (sword
+> knight, cyan holy light): 1 shield bash with impact burst, 2 rising sword slash arc upward,
+> 3 glowing crescent blade wave, 4 pillar of holy light from the sky. Row 2 (fire witch, orange
+> flames): 1 fire explosion burst, 2 fan of five fireballs, 3 meteor falling, 4 ring of fire.
+> Row 3 (water sorceress, blue water): 1 protective water bubble, 2 ring of water geysers,
+> 3 giant water sphere, 4 healing rain drops with green sparkle. Row 4 (storm mage, purple and
+> yellow lightning): 1 teleport blink afterimage, 2 chain lightning bolt, 3 thunderstorm cloud
+> with three bolts, 4 static electric field dome.
+
+**2. More skills (same chat):**
+> Great, same exact style and layout (4x4 grid, dark navy circles with thin gold rim, no text).
+> New image with these 16 icons. Row 1 (shadow assassin, purple smoke): 1 vanishing smoke step
+> with shadow silhouette, 2 three spinning shuriken, 3 dash slash with purple speed lines, 4 fan
+> of poisoned green-purple daggers. Row 2 (greatsword warrior, golden earth): 1 greatsword
+> smashing the ground with cracks, 2 spinning whirlwind slash, 3 giant downward cleave splitting
+> the earth, 4 berserk red rage aura. Row 3 (samurai, crimson and moonlight): 1 counter stance
+> katana guard with glint, 2 crescent wind blade, 3 storm of many crossing slashes, 4 instant
+> iaido draw slash flash. Row 4 (ranger archer, green nature): 1 leaping backflip, 2 rain of
+> arrows from the sky, 3 barbed snare arrow with vines, 4 volley of five piercing glowing arrows.
+
+**3. Brawler, kicker, emblems, currency (same chat):**
+> Perfect. One more in the exact same style and 4x4 layout, no text. Row 1 (brawler with golden
+> gauntlets, orange fire): 1 charging rush of fist blows, 2 shockwave punch blast, 3 meteor fist
+> crashing down into a crater, 4 iron body golden shield aura around a muscular figure. Row 2
+> (martial artist kicks, teal chi energy): 1 spinning cyclone kick, 2 crescent kick launching a
+> teal wind blade, 3 hundred rapid kicks blur, 4 dragon ascent flying kick with a teal dragon.
+> Row 3 (emblem badges, each a heraldic emblem): 1 crossed swords (red), 2 sturdy tower shield
+> (blue steel), 3 dagger with a crescent moon (purple), 4 magic staff with glowing orb (violet).
+> Row 4: 1 winged boot (emerald), 2 shiny gold coin with a star, 3 brilliant cyan blue diamond
+> gem, 4 golden padlock.
+
+**4. Character portraits (same chat):**
+> Now character portrait icons in the exact same 4x4 layout and frame style (dark navy circles,
+> thin gold rim, no text). Each is an anime cel-shaded chibi headshot (head and shoulders,
+> facing the viewer, big expressive eyes, Genshin Impact style) on a softly glowing background
+> in the character's color. Row 1: 1 Aster, boy knight with silvery white spiky hair, blue eyes,
+> blue and white armor with gold trim, cyan glow. 2 Vesper, girl with crimson red ponytail, red
+> eyes, black and crimson armor, orange glow. 3 Garrick, young man with sandy brown spiky hair,
+> amber eyes, forest green tunic and steel pauldrons, gold glow. 4 Kaede, samurai girl with
+> black ponytail, crimson eyes, white kimono with red collar, pink moonlight glow. Row 2:
+> 1 Ember, witch girl with orange-red twintails, amber eyes, dark red witch hat with gold band,
+> fire glow. 2 Marina, girl with light blue bob hair, blue eyes, white beret with navy band and
+> a seashell ornament, water glow. [...] Row 3: 1 Nyx, assassin girl with dark purple hood,
+> purple mask over the mouth, violet eyes, shadow glow. 2 Rook, boy with orange spiky hair,
+> amber eyes, red jacket, golden gauntlets raised, flame glow. 3 Kira, martial artist girl with
+> dark ponytail, teal eyes, teal headband, white gi, teal glow. 4 a big golden question mark.
+> Row 4: four empty plain dark navy circles.
+
+`[...]` marks fighters that were removed later. The golden question mark is the "Random"
+opponent icon, `chars/random`.
+
+**5. More portraits (same chat):**
+> Excellent. Six more character portraits, exact same style, framing and 4x4 layout, no text.
+> Row 1: [...] 3 Raven, witch girl with black bob hair, mint green glowing eyes, black witch hat
+> with violet band, black and white dress, green lightning glow. [...] Row 2: [...] 2 Ash,
+> hunter boy with silver hair, red eyes, dark grey hooded cloak with crimson scarf, bow on his
+> back, red glow. 3, 4: plain dark navy circles. Rows 3 and 4: plain dark navy circles.
+
+### Templates for new icons
+Open a **new chat** and send prompt 1 first so the style is set. Then send one of these
+templates. Replace the words in capitals, and fill unused cells with "plain dark navy circle".
+
+> Now character portrait icons in the exact same 4x4 layout and frame style (dark navy circles,
+> thin gold rim, no text). Each is an anime cel-shaded chibi headshot (head and shoulders,
+> facing the viewer, big expressive eyes, Genshin Impact style) on a softly glowing background
+> in the character's color. Row 1: 1 NAME, BOY/GIRL ROLE with HAIR COLOR AND STYLE, EYE COLOR
+> eyes, OUTFIT, COLOR glow. 2-4 and rows 2-4: plain dark navy circles.
+
+> Same exact style and layout (4x4 grid, dark navy circles with thin gold rim, no text). Row 1
+> (FIGHTER TYPE, COLOR ENERGY): 1 SKILL Z PICTURE, 2 SKILL X PICTURE, 3 SKILL C PICTURE,
+> 4 BONUS SKILL PICTURE. Rows 2-4: plain dark navy circles.
+
+Tips:
+- Describe the **picture**, not the skill's name. Write "vanishing afterimage with a teal kick
+  streak", not "Phantom Step".
+- Give each fighter one color of energy.
+- Keep "no text" in every prompt.
+- When a fighter gets a new VRoid model, regenerate their portrait from the model's real hair
+  and eye colors. The hair color table in `README.md` lists them.
+
+**Icons worth redoing:**
+- Kira's `kicks-c` (Phantom Step) still shows the old flying-kick art.
+- The portraits of fighters who got VRoid models were drawn from their old designs.
+
+## 12. Things to know
 
 - **License:** the VRoid models are by Fruit. Keep the credits line when you add or replace
   models.
