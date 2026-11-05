@@ -701,7 +701,7 @@ export class Game implements MobHost {
     f.root.position.copy(pos);
     f.root.rotation.y = rotY;
     f.onSwing = (x) => this.onSwing(x);
-    f.onChainHookRecast = (x, toward) => this.chainHookRecast(x, toward);
+    f.onChainBindResolve = (x, dir, kind) => this.resolveChainBind(x, dir, kind);
     f.onKo = (x) => this.onFighterKo(x);
     f.onLanded = (x) => { this.fx.ring(x.root.position, "#ffffff", 0.8, 0.25, 0.5); this.snd("land", 0.35); };
     f.onSickleRecast = (x) => this.recastBloodSickle(x);
@@ -1088,8 +1088,8 @@ export class Game implements MobHost {
       return;
     }
     if (a.style === "glaive_infinite") {
-      const empowered = f.clashMomentum >= 3;
-      if (empowered) f.clashMomentum -= 3;
+      // Clash Counter is never consumed; the ultimate no longer uses charge stacks.
+      const empowered = false;
       let connected = false;
       for (let i = 0; i < 8; i++) {
         const elapsed = [0, .26, .49, .70, .89, 1.07, 1.24, 1.55][i];
@@ -1124,6 +1124,122 @@ export class Game implements MobHost {
   }
 
   /** KAIZEN_CHAINBLADE_V1: three independent, interruptible chain swipes. */
+  private chainRazorCyclone(f: Fighter, a: Attack) {
+    const round = this.round, serial = f.swingSerial;
+    for (let i = 0; i < 9; i++) this.later(i * 0.18, () => {
+      if (round !== this.round || f.isDown() || f.state !== S.ATTACK || f.swingSerial !== serial) return;
+      if (i >= 4 && f.intent.skillHeld !== "z") return;
+      const reach = 1.65 + Math.min(i, 8) * 0.10;
+      const hit = { ...a, dmg: i >= 4 ? 22 : 28, guard: 8, stun: 0.10, heavy: false } as Attack;
+      this.fxp("ring", f.root.position.clone().add(new THREE.Vector3(0, 1.1, 0)), "#ff5d78", reach, 0.10, 0.6);
+      for (const d of this.enemiesOf(f)) {
+        const diff = d.root.position.clone().sub(f.root.position).setY(0);
+        if (diff.length() > reach + d.radius || Math.abs(d.root.position.y - f.root.position.y) > 1.9) continue;
+        // Real opposing active attacks still create the standard weapon clash.
+        if (d instanceof Fighter && this.isDuel() && d.state === S.ATTACK && d.atk?.type === "melee" && d.atkPhase === 1) {
+          this.clash(f, d, f.chest()); return;
+        }
+        this.applyHit(f, d, hit, f.atkPower, d.chest(), diff.normalize(), false);
+      }
+    });
+  }
+
+  private chainDeathSpiral(f: Fighter, a: Attack) {
+    const round = this.round, serial = f.swingSerial, origin = f.root.position.clone();
+    const times = [0.05, 0.28, 0.51, 0.74, 0.97, 1.20, 1.43];
+    for (let i = 0; i < times.length; i++) this.later(times[i], () => {
+      if (round !== this.round || f.isDown() || f.state !== S.ATTACK || f.swingSerial !== serial) return;
+      const radius = Math.max(1.7, 4.2 - i * 0.40);
+      this.fxp("ring", origin.clone().add(new THREE.Vector3(0, 0.8, 0)), "#fa536c", radius, 0.18, 0.9);
+      this.fxp("slashes", origin.clone().add(new THREE.Vector3(Math.sin(i * 1.2) * 1.0, 1.2, Math.cos(i * 1.2))), "#ff6e83");
+      f.poseOverride = ["cbx1_s", "cbx2_s", "cbx3_s"][i % 3];
+      for (const d of this.enemiesOf(f)) {
+        const diff = d.root.position.clone().sub(origin).setY(0);
+        if (diff.length() > radius + d.radius || Math.abs(d.root.position.y - f.root.position.y) > 1.9) continue;
+        this.applyHit(f, d, { ...a, dmg: 38, guard: 11, stun: 0.13, knock: 0, heavy: false }, f.atkPower, d.chest(), diff.normalize(), false);
+      }
+    });
+    this.later(1.67, () => {
+      if (round !== this.round || f.isDown() || f.state !== S.ATTACK || f.swingSerial !== serial) return;
+      f.poseOverride = "cb5_s";
+      this.fxp("slashes", origin.clone().add(new THREE.Vector3(0, 1.9, 0)), "#ffbbc2");
+      for (const d of this.enemiesOf(f)) {
+        const diff = d.root.position.clone().sub(origin).setY(0);
+        if (diff.length() > 2.0 + d.radius || Math.abs(d.root.position.y - f.root.position.y) > 2.2) continue;
+        this.applyHit(f, d, { ...a, dmg: 135, guard: 37, knock: 5.3, stun: 0.55, heavy: true }, f.atkPower, d.chest(), diff.normalize(), false);
+      }
+      this.add_trauma(0.38);
+    });
+  }
+
+  /** KAIZEN_BIND_ZAREK_COUNTER_V4: only a chosen forward/backward key resolves the bind. */
+  private resolveChainBind(f: Fighter, dir: "forward" | "backward", kind: "x" | "v") {
+    const d = f.chainBindTarget;
+    if (!d || d.isDown() || f.isDown()) return;
+    const toward = d.root.position.clone().sub(f.root.position).setY(0);
+    if (toward.lengthSq() < .001) toward.set(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
+    toward.normalize();
+    const facing = f.stage ? new THREE.Vector3(f.facing, 0, 0) :
+      new THREE.Vector3(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
+    const pos = d.chest();
+    if (kind === "x") {
+      if (dir === "forward") {
+        // Move Kaizen towards the restrained opponent, without handing out dash i-frames.
+        const p = d.root.position.clone().addScaledVector(toward, -1.2);
+        if (f.stage) f.root.position.x = THREE.MathUtils.clamp(p.x, f.stage.blast.l + 2, f.stage.blast.r - 2);
+        else { const flat = Math.hypot(p.x, p.z); if (flat > f.arenaRadius) p.multiplyScalar(f.arenaRadius / flat);
+          f.root.position.x = p.x; f.root.position.z = p.z; }
+        this.fxp("slashes", f.chest(), "#ff637a");
+      } else {
+        const p = f.root.position.clone().addScaledVector(toward, 1.2);
+        if (d.stage) d.root.position.x = THREE.MathUtils.clamp(p.x, d.stage.blast.l + 1, d.stage.blast.r - 1);
+        else { const flat = Math.hypot(p.x, p.z); if (flat > d.arenaRadius) p.multiplyScalar(d.arenaRadius / flat);
+          d.root.position.x = p.x; d.root.position.z = p.z; }
+        this.fxp("slashes", d.chest(), "#ff637a");
+      }
+      this.fxp("num", pos.add(new THREE.Vector3(0, .8, 0)), dir === "forward" ? "PREDATOR CHASE" : "CHAIN YANK", "#ffb2bb", .85);
+    } else if (dir === "forward") {
+      d.velY = Math.max(d.velY, 7.8); d.onGround = false;
+      this.fxp("num", d.chest(), "SERPENT LAUNCH", "#ff9dad", .8);
+      const round = this.round;
+      this.later(.39, () => {
+        if (round !== this.round || d.isDown()) return;
+        d.velY = -14; d.onGround = false;
+        this.fxp("slashes", d.chest(), "#ff6479");
+      });
+      this.later(.67, () => {
+        if (round !== this.round || d.isDown() || f.isDown()) return;
+        const finisher = { ...f.attacks.v, dmg: 93, guard: 26, knock: 2.8, stun: .43, heavy: true } as Attack;
+        this.applyHit(f, d, finisher, f.atkPower, d.chest(), facing, false);
+        this.fxp("ring", d.root.position.clone().add(new THREE.Vector3(0, .1, 0)), "#ff6e82", 1.12, .20, .75);
+      });
+    } else {
+      const p = f.root.position.clone().addScaledVector(facing, -1.65);
+      if (d.stage) d.root.position.x = THREE.MathUtils.clamp(p.x, d.stage.blast.l + 1, d.stage.blast.r - 1);
+      else { const flat = Math.hypot(p.x, p.z); if (flat > d.arenaRadius) p.multiplyScalar(d.arenaRadius / flat);
+        d.root.position.x = p.x; d.root.position.z = p.z; }
+      d.velY = Math.max(2.5, d.velY); d.onGround = false;
+      this.fxp("num", d.chest(), "BACK THROW", "#ffb2bb", .8);
+    }
+  }
+
+  /** Serpent Bind is a real four-second immobilization, not an immediate animation. */
+  private chainSerpentBind(f: Fighter, a: Attack) {
+    const forward = f.stage ? new THREE.Vector3(f.facing, 0, 0) :
+      new THREE.Vector3(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
+    for (const d of this.enemiesOf(f)) {
+      if (!(d instanceof Fighter) || d.isDown()) continue;
+      const diff = d.root.position.clone().sub(f.root.position).setY(0);
+      if (diff.length() > a.reach + d.radius || diff.dot(forward) < -.60 ||
+          Math.abs(d.root.position.y - f.root.position.y) > 1.55) continue;
+      const outcome = this.applyHit(f, d, a, f.atkPower, d.chest(), diff.normalize(), false);
+      if (!['hit','crit'].includes(outcome)) continue; // block, parry, clash still counter it
+      f.beginChainBind(d, 'v');
+      this.fxp("num", d.chest().add(new THREE.Vector3(0, .7, 0)), "SERPENT BIND", "#ff9eac", .8);
+      return;
+    }
+  }
+
   private chainbladeCarousel(f: Fighter, a: Attack) {
     const round = this.round, serial = f.swingSerial;
     for (let i = 0; i < 3; i++) this.later(i * 0.22, () => {
@@ -1171,10 +1287,9 @@ export class Game implements MobHost {
       }
       if (f.kit === "chainblade" && a.style === "chain_predator_hook" &&
           ["hit", "crit"].includes(result) && d instanceof Fighter) {
-        f.chainHookTarget = d;
-        f.chainHookT = 2.0;
+        f.beginChainBind(d, 'x');
         this.fxp("ring", d.chest(), "#ff607d", 0.75, 0.25, 0.7);
-        this.fxp("num", d.chest().add(new THREE.Vector3(0, 0.7, 0)), "HOOKED", "#ff8999", 0.8);
+        this.fxp("num", d.chest().add(new THREE.Vector3(0, 0.7, 0)), "CHAIN-BOUND", "#ff8999", 0.8);
       }
       if (f.kit === "chainblade" && a.style === "chain_hook" &&
           (result === "hit" || result === "crit") && d instanceof Fighter) {
@@ -1920,9 +2035,9 @@ export class Game implements MobHost {
   private clash(a: Fighter, b: Fighter, pos: THREE.Vector3) {
     // Actual attack-vs-attack contact ONLY. Save skill before clashRecoil clears it.
     for (const f of [a, b]) if (f.kit === "glaive") {
-      const gain = 1; // ZAREK_CYCLONE_V3: one genuine clash, one Momentum stack.
-      f.clashMomentum = Math.min(3, f.clashMomentum + gain);
-      this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.9, 0)), `MOMENTUM ${f.clashMomentum}/3`, "#a6efff", 0.8);
+      f.clashMomentum += 1; // one genuine weapon clash, one round-only count
+      this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.9, 0)),
+        `CLASH ${f.clashMomentum} • ${Math.min(2, 1 + Math.min(5, f.clashMomentum) * .2).toFixed(1)}x BASIC SPD`, "#a6efff", 0.8);
       this.fxp("lightning", f.chest(), "#6acfff");
     }
     a.clashRecoil();

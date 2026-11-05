@@ -139,7 +139,7 @@ function bonusSkill(kit: string, element: string): Attack {
     case "assassin":
       return a({ name: "Venom Fan", desc: "A wide spray of five poisoned blades.", cd: 7, type: "projectile", wind: 0.12, recover: 0.3, dmg: 42, guard: 12, knock: 1.2, stun: 0.3, speed: 24, count: 5, spread: 0.5, style: "shuriken", pose_w: "as1_w", pose_s: "as1_s" });
     case "chainblade":
-      return a({ name: "Serpent Bind", desc: "Chain grab. Forward: launch and slam. Backward: flip behind. Left/right: throw sideways. Direction follows facing, not fixed keys.", cd: 13,
+      return a({ name: "Serpent Bind", desc: "Wrap the enemy in chains. Both fighters stand still; release movement then choose FORWARD to launch and slam or BACKWARD to throw behind. Unbinds after 4 seconds.", cd: 13,
         wind: 0.29, active: 0.12, recover: 0.62, dmg: 85, guard: 29, reach: 2.9, knock: 1.0, stun: 0.55,
         style: "chain_serpent_bind", pose_w: "cbv_w", pose_s: "cbv_s" });
     case "greatsword":
@@ -235,7 +235,7 @@ function chainblade(): Record<string, Attack> {
     l5: a({ name: "Dancing Fang Return", wind: 0.24, active: 0.24, recover: 0.55, dmg: 112, guard: 36, reach: 3.0, lunge: 1.2, knock: 3.8, stun: 0.40, heavy: true, style: "chain_return", pose_w: "cb5_w", pose_s: "cb5_s" }),
     heavy: a({ name: "Chainbreaker", wind: 0.35, active: 0.17, recover: 0.67, dmg: 185, guard: 51, reach: 3.0, lunge: 1.2, knock: 5.6, stun: 0.56, heavy: true, style: "chain_heavy", pose_w: "cbh_w", pose_s: "cbh_s" }),
     z: a({ name: "Razor Cyclone", desc: "Spin the chained blade around Kaizen. Hold the skill to extend the spin and its range (max 1.6 seconds).", cd: 8, wind: 0.20, active: 1.65, recover: 0.38, dmg: 28, guard: 11, reach: 2.2, stun: 0.15, style: "chain_razor_cyclone", pose_w: "cbz_w", pose_s: "cbz_s" }),
-    x: a({ name: "Predator's Hook", desc: "Hook a target, then recast with FORWARD to rush toward them or BACKWARD to pull them to you. Defaults to pull.", cd: 10, wind: 0.22, active: 0.13, recover: 0.45, dmg: 75, guard: 24, reach: 3.4, stun: 0.28, style: "chain_predator_hook", pose_w: "cbh_w", pose_s: "cbh_s" }),
+    x: a({ name: "Predator's Hook", desc: "Chain-lock an enemy and freeze both fighters. Release movement, then press FORWARD to rush to them or BACKWARD to pull them closer. Releases after 4 seconds.", cd: 10, wind: 0.22, active: 0.13, recover: 0.45, dmg: 75, guard: 24, reach: 3.4, stun: 0.28, style: "chain_predator_hook", pose_w: "cbh_w", pose_s: "cbh_s" }),
     c: a({ name: "Thousand Cuts: Death Spiral", desc: "A contracting circle of chain slashes ending in an overhead strike. Escape before the circle closes.", cd: 22, wind: 0.38, active: 1.85, recover: 0.68, dmg: 42, guard: 12, radius: 4.2, style: "chain_death_spiral", pose_w: "cbc_w", pose_s: "cbc_s" }),
   };
 }

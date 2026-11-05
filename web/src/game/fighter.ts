@@ -182,13 +182,19 @@ export class Fighter implements Entity {
   /** Blood Hunter: steering recast and 0.30s feint window. */
   sickleOut = false;
   bloodFeintT = 0;
-  clashMomentum = 0; // ZAREK_STORM_V1: 0..3, earned only by real melee weapon clashes.
+  clashMomentum = 0; // KAIZEN_BIND_ZAREK_COUNTER_V4: unlimited round clash count (legacy network field name).
   chainFuryT = 0; // legacy field retained for existing snapshots/weapon code.
   // KAIZEN_DIRECTIONAL_V3: direction is relative to facing at skill-press, never hard-coded WASD.
   chainSkillDir: "forward" | "backward" | "left" | "right" | "neutral" = "neutral";
   chainHookTarget: Entity | null = null;
   chainHookT = 0;
-  onChainHookRecast: (f: Fighter, approach: boolean) => void = () => {};
+  /** Immobilizes both fighters until a new forward/back input or the 4 second timeout. */
+  chainBindTarget: Fighter | null = null;
+  chainBoundBy: Fighter | null = null;
+  chainBindT = 0;
+  chainBindKind: "x" | "v" | "" = "";
+  chainChoiceArmed = false;
+  onChainBindResolve: (f: Fighter, dir: "forward" | "backward", kind: "x" | "v") => void = () => {};
   bloodlust = 0;
   bloodFrenzyT = 0;
   /** Blood Festival: stun-immune, but damageable and all skills disabled until expiration. */
@@ -290,6 +296,33 @@ export class Fighter implements Entity {
     this.airChaseMoveT = Math.max(this.airChaseMoveT - dt, 0);
     this.airStartT = Math.min(99, this.airStartT + dt);
     this.tickStatus(dt);
+    if (this.chainBindTarget && (this.chainBindTarget.isDown() || this.state === S.KO))
+      this.releaseChainBind();
+    if (this.chainBindTarget && this.chainBindT > 0) {
+      this.chainBindT = Math.max(0, this.chainBindT - dt);
+      const dir = this.chainRelativeDirection();
+      if (dir === "neutral") this.chainChoiceArmed = true;
+      else if (this.chainChoiceArmed && (dir === "forward" || dir === "backward")) {
+        const kind = this.chainBindKind;
+        this.onChainBindResolve(this, dir, kind as "x" | "v");
+        this.releaseChainBind();
+      }
+      if (this.chainBindT === 0) this.releaseChainBind();
+    }
+    // Both combatants are fixed in place. They can still take HP damage and DOT ticks.
+    if (this.chainBindT > 0 || (this.chainBoundBy && this.chainBoundBy.chainBindT > 0)) {
+      this.vx = 0; this.velY = 0; this.knock = 0; this.dashT = 0;
+      this.airChaseMoveT = 0; this.model.walk = 0; this.trail.emitting = false;
+      this.model.chainPose = this.kit === "chainblade" ? "cbv_s" : "idle";
+      this.model.chainBindTargetWorld = this.chainBindTarget?.chest() ?? null;
+      // No movement / attack / jump update; pose renders in the normal animation pipeline.
+      this.poseName = this.kit === "chainblade" ? "cbv_s" : "hit";
+      this.poseSpeed = 13;
+      this.model.blend(this.poses[this.poseName] ?? this.poses.idle, dt, this.poseSpeed);
+      this.trail.update(dt);
+      return;
+    }
+    this.model.chainBindTargetWorld = null;
     this.readAttack(dt);
     this.readJump();
     this.readSkill();
@@ -368,6 +401,7 @@ export class Fighter implements Entity {
   // --- input -> actions ---------------------------------------------------------
   /** Double-tapped direction: a quick burst that dodges hits (6 s cooldown). */
   private readDash() {
+    if (this.chainBindT > 0 || (this.chainBoundBy && this.chainBoundBy.chainBindT > 0)) return;
     const d = this.intent.dash;
     if (d.lengthSq() < 0.01 || this.dashCd > 0) return;
     if (![S.IDLE, S.BLOCK, S.CHARGE, S.ATTACK].includes(this.state)) return; // dash cancels attacks, not hitstun
@@ -491,18 +525,39 @@ export class Fighter implements Entity {
     return right >= 0 ? "right" : "left";
   }
 
+  beginChainBind(victim: Fighter, kind: "x" | "v") {
+    if (this.chainBindTarget || victim.chainBoundBy || victim.isDown() || this.isDown()) return;
+    this.chainBindTarget = victim;
+    this.chainBindKind = kind;
+    this.chainBindT = 4;
+    this.chainChoiceArmed = false; // release the initial movement key before selecting
+    victim.chainBoundBy = this;
+    this.chainHookTarget = victim;
+    this.chainHookT = 0;
+    this.velY = 0; this.vx = 0; this.knock = 0;
+    victim.velY = 0; victim.vx = 0; victim.knock = 0;
+    this.model.chainBindTargetWorld = victim.chest();
+  }
+
+  releaseChainBind() {
+    const victim = this.chainBindTarget;
+    if (victim && victim.chainBoundBy === this) victim.chainBoundBy = null;
+    this.chainBindTarget = null;
+    this.chainBindKind = "";
+    this.chainBindT = 0;
+    this.chainChoiceArmed = false;
+    this.model.chainBindTargetWorld = null;
+    if (this.state === S.ATTACK) {
+      this.finishAttack();
+      this.setState(S.IDLE);
+    }
+  }
+
   private readSkill() {
     const k = this.intent.skill;
     if (!k) return;
-    // Recast the already-connected hook. Movement direction is sampled on THIS recast.
-    if (this.kit === "chainblade" && k === "x" && this.chainHookT > 0 && this.chainHookTarget && !this.chainHookTarget.isDown() &&
-        ![S.KO, S.WIN, S.STAGGER, S.HITSTUN].includes(this.state)) {
-      const dir = this.chainRelativeDirection();
-      this.onChainHookRecast(this, dir === "forward"); // backward or neutral = pull enemy
-      this.chainHookT = 0;
-      this.chainHookTarget = null;
-      return;
-    }
+    // During a chain bind, WASD chooses the follow-up; skill keys are locked.
+    if (this.chainBindT > 0 || (this.chainBoundBy && this.chainBoundBy.chainBindT > 0)) return;
     // C: Blood Festival shuts off ALL active skills (Z/X/C/V) for its full 6 seconds.
     if (this.kit === "sickle" && this.bloodFestivalT > 0) return;
     // Blood Sickle can be steered once after launch, regardless of cooldown.
@@ -602,6 +657,12 @@ export class Fighter implements Entity {
     if (this.kit === "knuckles" && this.atk?.name === "Meteor Fist") this.knock = 0;
     if (this.kit === "chainblade" && this.chainFuryT > 0 && /^l\d+$/.test(id))
       this.atk = { ...this.atk, reach: this.atk.reach + 0.32, guard: this.atk.guard * 1.12 };
+    // Each real clash adds +20% light-combo speed, capped at 2x. Counter itself is uncapped.
+    if (this.kit === "glaive" && /^l[1-9]$/.test(id)) {
+      const speed = 1 + Math.min(this.clashMomentum, 5) * 0.20;
+      this.atk = { ...this.atk, wind: this.atk.wind / speed,
+        active: this.atk.active / speed, recover: this.atk.recover / speed };
+    }
     if (this.kit === "sickle" && this.bloodFrenzyT > 0 && id.startsWith("l"))
       this.atk = { ...this.atk, wind: this.atk.wind * 0.88, recover: this.atk.recover * 0.88 };
     this.atkPhase = 0;
@@ -881,6 +942,9 @@ export class Fighter implements Entity {
   win() { if (this.state !== S.KO) this.setState(S.WIN); }
 
   revive(frac: number) {
+    this.releaseChainBind();
+    if (this.chainBoundBy) this.chainBoundBy.releaseChainBind();
+    this.chainBoundBy = null;
     this.airChaseT = 0; this.airChaseMoveT = 0; this.airRecoverUsed = false;
     this.hp = this.maxHp * frac;
     this.guard = this.maxGuard;
@@ -894,6 +958,9 @@ export class Fighter implements Entity {
   heal(amount: number) { this.hp = Math.min(this.hp + amount, this.maxHp); }
 
   ko() {
+    this.releaseChainBind();
+    if (this.chainBoundBy) this.chainBoundBy.releaseChainBind();
+    this.chainBoundBy = null;
     this.airChaseT = 0; this.airChaseMoveT = 0;
     this.clashMomentum = 0;
     this.bloodlust = 0; this.bloodFrenzyT = 0; this.bloodFeintT = 0; this.sickleOut = false; this.bloodFestivalT = 0;
@@ -1185,7 +1252,7 @@ export class Fighter implements Entity {
       this.state, this.poseName, this.poseSpeed, Math.round(this.hp), Math.round(this.guard),
       +this.model.walk.toFixed(2), +this.model.charge.toFixed(2), this.trail.emitting ? 1 : 0,
       +this.model.recoil.toFixed(2), this.cooldowns.z, this.cooldowns.x, this.cooldowns.c, this.maxHp,
-      +this.pct.toFixed(1), this.stocks, this.out ? 1 : 0, +this.atkLock.toFixed(2), +this.dashCd.toFixed(2), this.status.mask, this.barrelOut ? 1 : 0, Math.round(this.bloodlust), +this.bloodFrenzyT.toFixed(2), this.sickleOut ? 1 : 0, +this.bloodFestivalT.toFixed(2), +this.tempestSpin.toFixed(3), +this.cycloneSpin.toFixed(3), +this.bladeSwingYaw.toFixed(3), +this.chainFuryT.toFixed(2), this.clashMomentum];
+      +this.pct.toFixed(1), this.stocks, this.out ? 1 : 0, +this.atkLock.toFixed(2), +this.dashCd.toFixed(2), this.status.mask, this.barrelOut ? 1 : 0, Math.round(this.bloodlust), +this.bloodFrenzyT.toFixed(2), this.sickleOut ? 1 : 0, +this.bloodFestivalT.toFixed(2), +this.tempestSpin.toFixed(3), +this.cycloneSpin.toFixed(3), +this.bladeSwingYaw.toFixed(3), +this.chainFuryT.toFixed(2), this.clashMomentum, this.chainBindTarget ? +this.chainBindTarget.chest().x.toFixed(2) : null, this.chainBindTarget ? +this.chainBindTarget.chest().y.toFixed(2) : null, this.chainBindTarget ? +this.chainBindTarget.chest().z.toFixed(2) : null];
   }
 
   applySnapshot(s: any[]) {
@@ -1204,7 +1271,9 @@ export class Fighter implements Entity {
     this.cooldowns.z = s[14]; this.cooldowns.x = s[15]; this.cooldowns.c = s[16];
     this.maxHp = s[17];
     if (s.length > 18) {
-      this.pct = s[18]; this.stocks = s[19]; this.atkLock = s[21] ?? 0; this.dashCd = s[22] ?? 0; this.status.mask = s[23] ?? 0; this.barrelOut = s[24] === 1; this.bloodlust = s[25] ?? 0; this.bloodFrenzyT = s[26] ?? 0; this.sickleOut = s[27] === 1; this.bloodFestivalT = s[28] ?? 0; this.clashMomentum = s[s.length - 1] ?? 0; this.chainFuryT = s.length >= 34 ? (s[s.length - 2] ?? 0) : 0;
+      this.pct = s[18]; this.stocks = s[19]; this.atkLock = s[21] ?? 0; this.dashCd = s[22] ?? 0; this.status.mask = s[23] ?? 0; this.barrelOut = s[24] === 1; this.bloodlust = s[25] ?? 0; this.bloodFrenzyT = s[26] ?? 0; this.sickleOut = s[27] === 1; this.bloodFestivalT = s[28] ?? 0; this.clashMomentum = s[33] ?? 0; this.chainFuryT = s[32] ?? 0;
+      this.model.chainBindTargetWorld = s.length >= 37 && s[34] !== null
+        ? new THREE.Vector3(s[34], s[35], s[36]) : null;
       const out = s[20] === 1;
       if (out !== this.out) { this.out = out; this.root.visible = !out; if (!out) this.root.position.copy(this.netPos); }
     }
