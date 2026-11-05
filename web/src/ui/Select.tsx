@@ -17,6 +17,7 @@ const CONTROLS: Record<string, string> = {
   bow: "Tap: 3 arrows (third is a spread)  -  Hold: piercing power shot  -  Block: arm guard",
   kicks: "Tap: 4-kick combo (snap, roundhouse, high spin, axe)  -  Hold: flying kick  -  Block: arm guard (wide parry)",
   knuckles: "Tap: 5-hit punch combo  -  Hold: rising uppercut  -  Block: forearm guard (wide parry)",
+  wind: "Tap: 3-hit wind punches  -  Hold: gale palm blast  -  Jump twice to double jump  -  Skills in the air dive and smash the ground",
 };
 const LEVEL_COLORS = ["#6fcf7f", "#5fa8e3", "#f2994a", "#e8534a"];
 export const RANDOM = -1;
@@ -176,8 +177,10 @@ export function InfoPanel({ index, editable }: { index: number; editable?: boole
         return ["Z", "X", "C"].map((key, i) => {
           const a = atks[slots[i]];
           const tags = Kits.skillTags(a);
+          const air = atks[slots[i] + "_air"];
           return <div key={key} className="skill"><b>[{key}] {a.name}</b> - {a.desc} <em>({a.cd}s)</em>
-            {tags.length > 0 && <small className="tags">{tags.join(" - ")}</small>}</div>;
+            {tags.length > 0 && <small className="tags">{tags.join(" - ")}</small>}
+            {air && <small className="tags air">In the air: {air.name} - {air.desc.replace(/^In the air: /, "")}</small>}</div>;
         });
       })()}
       {editable && acc.owns(ch.id) && <LoadoutEditor index={index} />}

@@ -156,6 +156,7 @@ export class FighterModel extends THREE.Group {
       case "katana": this.buildKatana(); break;
       case "bow": this.buildBow(); break;
       case "knuckles": this.buildKnuckles(); break;
+      case "wind": this.buildWind(); break;
       case "kicks": this.buildKicks(); break;
       default: this.buildSword(); this.buildShield();
     }
@@ -791,6 +792,18 @@ export class FighterModel extends THREE.Group {
     dagger(this.hand_l);
     this.bladeBase = pivot(r, [0, 0.12, 0]);
     this.bladeTip = pivot(r, [0, 0.46, 0]);
+    this.castPoint = this.bladeTip;
+    this.shieldNode = this.hand_l;
+  }
+
+  /** Wind dancer: glowing wind wraps around both wrists; the trail follows the right fist. */
+  private buildWind() {
+    for (const h of [this.hand_r, this.hand_l]) {
+      mesh(h, torus(0.05, 0.064), this.glowMat, [0, 0.03, 0], [PI / 2, 0, 0], [1, 1, 0.7]);
+      mesh(h, torus(0.046, 0.056), this.tn(this.look.trim), [0, 0.08, 0], [PI / 2, 0, 0], [1, 1, 0.5]);
+    }
+    this.bladeBase = pivot(this.hand_r, [0, 0.04, 0]);
+    this.bladeTip = pivot(this.hand_r, [0, -0.09, 0]);
     this.castPoint = this.bladeTip;
     this.shieldNode = this.hand_l;
   }

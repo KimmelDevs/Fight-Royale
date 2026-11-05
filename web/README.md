@@ -106,6 +106,7 @@ _Generated from the game code by `npm run balance` — edit the code, then re-ru
 | Marina | Tide Sorceress | Mage - Water | mage | water | female | `#8cc3f0` | `#adbdf2` | `#1f6fd0` / `#73dcf5` | `#59bfff` | - |
 | Nyx | Shadow Blade | Assassin - Twin Daggers | assassin | shadow | female | `#3a3550` | `#b3a8e6` | `#7b2cbf` / `#e0aaff` | `#bf66ff` | - |
 | Rook | Iron Fist | Brawler - Knuckles | knuckles | force | male | `#ff8a3d` | `#e0a6a6` | `#b34a12` / `#ffd27a` | `#ffbf4d` | - |
+| Gale | Wind Dancer | Brawler - Wind | wind | wind | male | `#2f7fd8` | `#9fc8f0` | `#1f6fb0` / `#8fe8ff` | `#7dffd6` | - |
 | Kira | Tempest Kicker | Martial Artist - Kicks | kicks | chi | female | `#2a2420` | `#b8a8c8` | `#16736b` / `#7af0d6` | `#4dffd2` | - |
 | Raven | Hex Weaver | Mage - Electric | mage | electric | female | `#2a2a3a` | `#a8a8c8` | `#1aa874` / `#5dffc0` | `#5dffc0` | - |
 | Ash | Crimson Hunter | Archer - Longbow | bow | blood | male | `#b8bcc8` | `#a8a8c0` | `#b01a2a` / `#ff7a7a` | `#ff4d4d` | - |
@@ -120,6 +121,7 @@ _Generated from the game code by `npm run balance` — edit the code, then re-ru
 | mage | 2100 | 80 | 3.4 | 2.6 | 0.16 | 7 | Ember, Marina, Raven | 241 | 1.67 | 144 | 210 -> 315 |
 | assassin | 2000 | 60 | 4.2 | 3.4 | 0.22 | 8.2 | Nyx | 219 | 1.54 | 142 | 170 -> 255 |
 | knuckles | 2300 | 90 | 4 | 3.2 | 0.2 | 8 | Rook | 290 | 1.67 | 174 | 220 -> 330 |
+| wind | 2200 | 80 | 4.1 | 3.3 | 0.2 | 8.4 | Gale | 176 | 1.13 | 156 | 200 -> 300 |
 | kicks | 2300 | 85 | 4.1 | 3.2 | 0.2 | 8.6 | Kira | 279 | 1.69 | 165 | 230 -> 345 |
 | bow | 2000 | 60 | 3.6 | 2.6 | 0.16 | 7.5 | Ash | 260 | 1.51 | 172 | 260 -> 390 |
 
@@ -183,6 +185,15 @@ _Generated from the game code by `npm run balance` — edit the code, then re-ru
 | l4 | - | melee | 60 | 16 | 0.1 / 0.06 / 0.18 | 1.6 | 0.3 | - | reach 1.4, lunge 2.5 |
 | l5 | - | melee | 95 | 26 | 0.14 / 0.08 / 0.34 | 4 | 0.45 | - | reach 1.5, lunge 4 |
 | heavy | - | melee | 220 | 55 | 0.14 / 0.12 / 0.5 | 6 | 0.8 | - | reach 1.6, lunge 3, self-launch 5, heavy |
+
+#### wind
+
+| Key | Name | Type | Dmg | Guard dmg | Wind / active / recover (s) | Knock | Stun (s) | CD | Notes |
+|---|---|---|---|---|---|---|---|---|---|
+| l1 | - | melee | 46 | 12 | 0.07 / 0.06 / 0.14 | 1.2 | 0.26 | - | reach 1.55, lunge 3 |
+| l2 | - | melee | 50 | 12 | 0.08 / 0.06 / 0.16 | 1.4 | 0.28 | - | reach 1.55, lunge 3 |
+| l3 | - | melee | 80 | 22 | 0.14 / 0.08 / 0.34 | 4.5 | 0.45 | - | reach 1.7, lunge 4 |
+| heavy | - | projectile | 200 | 55 | 0.12 / 0.05 / 0.5 | 6 | 0.7 | - | 1 x proj, speed 18, pierces, heavy |
 
 #### kicks
 
@@ -278,6 +289,15 @@ Z / X / C are the default loadout; V is the locked bonus skill (unlock: 2000 gol
 | X | Shockwave Punch | projectile | 110 | 30 | 0.14 / 0.08 / 0.35 | 5 | 0.5 | 6s | 1 x proj, speed 18 |
 | C | Meteor Fist | strike | 300 | 80 | 0.22 / 0.08 / 0.6 | 8 | 0.9 | 11s | around self, radius 2.5, lands after 0.02s, self-launch 9, heavy |
 | V | Iron Body | buff | - | - | 0.1 / 0.08 / 0.25 | - | - | 13s | ward 2.5s |
+
+#### Gale (wind, wind)
+
+| Key | Name | Type | Dmg | Guard dmg | Wind / active / recover (s) | Knock | Stun (s) | CD | Notes |
+|---|---|---|---|---|---|---|---|---|---|
+| Z | Gale Fist | melee | 110 | 30 | 0.08 / 0.08 / 0.3 | 5 | 0.5 | 4s | reach 1.9, lunge 4 |
+| X | Wind Step | melee | 90 | 25 | 0.05 / 0.16 / 0.3 | 3 | 0.4 | 5s | reach 1.6, lunge 15 |
+| C | Tornado Rise | strike | 70 | 20 | 0.08 / 0.08 / 0.4 | 3 | 0.6 | 9s | around self, radius 2, lands after 0.03s, x3 every 0.14s, self-launch 9 |
+| V | Gust Barrage | projectile | 60 | 16 | 0.14 / 0.08 / 0.35 | 2 | 0.35 | 7s | 3 x proj, speed 22, spread 0.25 rad, pierces |
 
 #### Kira (kicks, chi)
 

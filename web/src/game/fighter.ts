@@ -152,6 +152,11 @@ export class Fighter implements Entity {
   lane = 0;
   onBlast: (f: Fighter) => void = () => {};
   private airJumps = 1;
+  /** Arena double jump (wind kit): jumps used in the current air time. */
+  private airJump = 0;
+  /** Time left in the double-jump wind-ride pose. */
+  private airJumpT = 0;
+  onAirJump: (f: Fighter) => void = () => {};
   private ground: Plat | null = null;
   private dropT = 0;
   private respawnT = 0;
@@ -177,7 +182,13 @@ export class Fighter implements Entity {
     this.attacks = Kits.attacks(this.kit, look.element);
     const pool = { z: this.attacks.z, x: this.attacks.x, c: this.attacks.c, v: this.attacks.v } as Record<string, Attack>;
     const slots = loadout.length === 3 && new Set(loadout).size === 3 && loadout.every((k) => pool[k]) ? loadout : DEFAULT_LOADOUT;
-    ["z", "x", "c"].forEach((key, i) => { this.attacks[key] = pool[slots[i]]; });
+    const airPool = { z: this.attacks.z_air, x: this.attacks.x_air, c: this.attacks.c_air, v: this.attacks.v_air } as Record<string, Attack | undefined>;
+    ["z", "x", "c"].forEach((key, i) => {
+      this.attacks[key] = pool[slots[i]];
+      // The air version follows the skill wherever the loadout puts it.
+      const air = airPool[slots[i]];
+      if (air) this.attacks[key + "_air"] = air; else delete this.attacks[key + "_air"];
+    });
     if (emblem) {
       const b = emblemBonus(emblem.id, emblem.level);
       this.maxHp *= 1 + b.hp;
@@ -219,6 +230,7 @@ export class Fighter implements Entity {
     this.rageT = Math.max(this.rageT - dt, 0);
     this.counterT = Math.max(this.counterT - dt, 0);
     this.invulnT = Math.max(this.invulnT - dt, 0);
+    this.airJumpT = Math.max(this.airJumpT - dt, 0);
     this.tickStatus(dt);
     this.readAttack(dt);
     this.readJump();
@@ -311,6 +323,13 @@ export class Fighter implements Entity {
       this.velY = this.jumpV;
       this.onGround = false;
       if (this.state === S.BLOCK) this.setState(S.IDLE);
+    } else if (pressed && !this.onGround && this.kit === "wind" && this.airJump < 1 && this.state === S.IDLE) {
+      // Double jump: a second push of wind in mid-air.
+      this.airJump++;
+      this.airJumpT = 0.45;
+      this.velY = this.jumpV * 0.75;
+      this.model.recoil = 0.3;
+      this.onAirJump(this);
     }
   }
 
@@ -321,7 +340,8 @@ export class Fighter implements Entity {
     if (!free) return;
     this.holding = false;
     this.cooldowns[k] = this.attacks[k].cd * this.cdMult;
-    this.startAttack(k);
+    // Cast in the air, a skill with an air version uses it instead.
+    this.startAttack(!this.onGround && this.attacks[k + "_air"] ? k + "_air" : k);
   }
 
   private requestLight() {
@@ -350,23 +370,34 @@ export class Fighter implements Entity {
   private attackStep() {
     const a = this.atk!;
     const w = a.wind, ac = a.active, r = a.recover;
-    if (a.mode === "leap") {
+    if (a.mode === "leap" || a.mode === "dive") {
       // Leap attack: wind-up crouch -> jump toward the target -> the hit lands on touchdown.
+      // Dive: from the air, plunge down (toward the target) -> the hit lands on touchdown.
       if (this.atkPhase === 0 && this.stateT >= w) {
         this.atkPhase = 1;
-        this.velY = a.self_jump * (this.stage ? 1.35 : 1);
-        this.onGround = false;
-        this.ground = null;
         const o = this.opponent;
-        const air = (2 * this.velY) / GRAVITY;
-        if (o && !o.isDown()) {
-          const to = o.root.position.clone().sub(this.root.position).setY(0);
-          const d = Math.max(to.length() - 0.9, 0);
-          this.leapVel.copy(to.normalize().multiplyScalar(Math.min(d / air, 9)));
-        } else this.leapVel.set(Math.sin(this.root.rotation.y), 0, Math.cos(this.root.rotation.y)).multiplyScalar(3);
+        if (a.mode === "dive") {
+          this.velY = -a.speed;
+          const air = Math.max(this.root.position.y / a.speed, 0.08);
+          if (o && !o.isDown()) {
+            const to = o.root.position.clone().sub(this.root.position).setY(0);
+            const d = Math.max(to.length() - 0.9, 0);
+            this.leapVel.copy(to.normalize().multiplyScalar(Math.min(d / air, a.lunge)));
+          } else this.leapVel.set(0, 0, 0);
+        } else {
+          this.velY = a.self_jump * (this.stage ? 1.35 : 1);
+          this.onGround = false;
+          this.ground = null;
+          const air = (2 * this.velY) / GRAVITY;
+          if (o && !o.isDown()) {
+            const to = o.root.position.clone().sub(this.root.position).setY(0);
+            const d = Math.max(to.length() - 0.9, 0);
+            this.leapVel.copy(to.normalize().multiplyScalar(Math.min(d / air, 9)));
+          } else this.leapVel.set(Math.sin(this.root.rotation.y), 0, Math.cos(this.root.rotation.y)).multiplyScalar(3);
+        }
         if (this.stage) this.vx = this.leapVel.x;
       } else if (this.atkPhase === 1) {
-        if (this.onGround && this.stateT > w + 0.1) {
+        if (this.onGround && (a.mode === "dive" || this.stateT > w + 0.1)) {
           this.atkPhase = 2;
           this.stateT = w + ac;
           this.leapVel.set(0, 0, 0);
@@ -418,7 +449,7 @@ export class Fighter implements Entity {
       d = Math.atan2(Math.sin(d), Math.cos(d));
       this.root.rotation.y += d * (1 - Math.exp(-12 * dt));
     }
-    if (this.state === S.ATTACK && this.atk?.mode === "leap" && this.atkPhase === 1) {
+    if (this.state === S.ATTACK && (this.atk?.mode === "leap" || this.atk?.mode === "dive") && this.atkPhase === 1) {
       pos.addScaledVector(this.leapVel, dt);
       const fl = Math.hypot(pos.x, pos.z);
       if (fl > this.arenaRadius) { pos.x *= this.arenaRadius / fl; pos.z *= this.arenaRadius / fl; }
@@ -463,6 +494,7 @@ export class Fighter implements Entity {
       this.root.position.y = 0;
       this.velY = 0;
       this.onGround = true;
+      this.airJump = 0;
       this.model.recoil = 0.35;
       this.onLanded(this);
     }
@@ -753,12 +785,17 @@ export class Fighter implements Entity {
     let p = "idle", sp = 14;
     const a = this.atk;
     switch (this.state) {
-      case S.IDLE: if (!this.onGround) { p = "jump"; sp = 12; } break;
+      case S.IDLE:
+        if (!this.onGround) {
+          if (this.airJumpT > 0 && this.poses.wind_jump) { p = "wind_jump"; sp = 18; }
+          else { p = "jump"; sp = 12; }
+        }
+        break;
       case S.BLOCK: p = "block"; sp = 30; break;
       case S.CHARGE: p = this.attacks.heavy.pose_w; sp = 10; break;
       case S.ATTACK:
         if (this.poseOverride) { p = this.poseOverride; sp = 40; break; }
-        if (a?.mode === "leap") {
+        if (a?.mode === "leap" || a?.mode === "dive") {
           if (this.atkPhase === 0) { p = a.pose_w; sp = 16; }
           else if (this.atkPhase === 1) { p = "slam_air"; sp = 14; }
           else { p = a.pose_s; sp = 40; }

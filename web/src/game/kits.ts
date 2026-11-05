@@ -6,6 +6,9 @@
 //   buff       - self effect (ward absorbs hits, counter auto-parries and strikes back)
 //   blink      - instant reposition (back / behind)
 //   phantom    - teleport behind the target and strike, `repeat` times `interval` apart
+// A skill key with an "_air" twin (e.g. z_air) uses the twin when cast in the air.
+// mode "dive": dive from the air to the ground (`speed` down, up to `lunge` toward the target)
+// and the strike lands where the fighter hits the ground.
 
 import { STATUS, type StatusKind } from "./status";
 
@@ -29,6 +32,8 @@ export interface Attack {
   effect: string; effect_t: number; effect_p: number;
   /** Can be blocked but never parried (or countered). */
   no_parry: boolean;
+  /** If this attack is parried, the attacker is stunned this many seconds (a weakness). */
+  parry_stun: number;
 }
 
 export const STATS: Record<string, { hp: number; guard: number; move: number; walk: number; parry: number; jump: number }> = {
@@ -40,6 +45,7 @@ export const STATS: Record<string, { hp: number; guard: number; move: number; wa
   bow: { hp: 2000, guard: 60, move: 3.6, walk: 2.6, parry: 0.16, jump: 7.5 },
   knuckles: { hp: 2300, guard: 90, move: 4.0, walk: 3.2, parry: 0.2, jump: 8.0 },
   kicks: { hp: 2300, guard: 85, move: 4.1, walk: 3.2, parry: 0.2, jump: 8.6 },
+  wind: { hp: 2200, guard: 80, move: 4.1, walk: 3.3, parry: 0.2, jump: 8.4 },
 };
 
 const DEFAULT: Omit<Attack, "id" | "element"> = {
@@ -50,7 +56,7 @@ const DEFAULT: Omit<Attack, "id" | "element"> = {
   at: "target", delay: 0.4, radius: 1.5, repeat: 1, interval: 0.3,
   stagger: false, self_jump: 0, mode: "", duration: 0,
   cd: 0, name: "", desc: "",
-  effect: "", effect_t: 0, effect_p: 0, no_parry: false,
+  effect: "", effect_t: 0, effect_p: 0, no_parry: false, parry_stun: 0,
 };
 
 const a = (d: Partial<Attack>): Attack => ({ ...DEFAULT, id: "", element: "", ...d }) as Attack;
@@ -64,6 +70,7 @@ export function attacks(kit: string, element: string): Record<string, Attack> {
     katana: katana,
     bow: bow,
     knuckles: knuckles,
+    wind: wind,
     kicks: kicks,
   } as Record<string, () => Record<string, Attack>>)[kit]?.() ?? knight();
   t.v = bonusSkill(kit, element);
@@ -97,6 +104,7 @@ export function skillTags(a: Attack): string[] {
   const out: string[] = [];
   if (a.type !== "buff" && a.type !== "blink" && a.dmg > 0 && a.stun >= 0.5) out.push(`Stun ${a.stun}s`);
   if (a.no_parry) out.push("Blockable, can't be parried");
+  if (a.parry_stun) out.push(`Weakness: if parried, you're stunned ${a.parry_stun}s`);
   const info = STATUS[a.effect as StatusKind];
   if (info) out.push(info.text(a.effect_t, a.effect_p));
   return out;
@@ -117,6 +125,8 @@ function bonusSkill(kit: string, element: string): Attack {
       return a({ name: "Iaido Flash", desc: "An instant cross-arena draw cut.", cd: 8, wind: 0.08, active: 0.16, recover: 0.45, dmg: 200, guard: 50, reach: 2.2, lunge: 18, knock: 5, stun: 0.7, heavy: true, pose_w: "charge", pose_s: "heavy_s" });
     case "bow":
       return a({ name: "Piercing Volley", desc: "Five arrows that fly through every enemy in line.", cd: 9, type: "projectile", wind: 0.2, recover: 0.4, dmg: 55, guard: 14, knock: 2, stun: 0.3, speed: 32, count: 5, spread: 0.25, style: "arrow", pierce: true, pose_w: "bow_w", pose_s: "bow_s" });
+    case "wind":
+      return a({ name: "Gust Barrage", desc: "Three wind blades fly out in a fan.", cd: 7, parry_stun: 1.5, type: "projectile", wind: 0.14, recover: 0.35, dmg: 60, guard: 16, knock: 2, stun: 0.35, speed: 22, count: 3, spread: 0.25, size: 1.2, style: "wave", pierce: true, pose_w: "k2_w", pose_s: "k2_s" });
     case "knuckles":
       return a({ name: "Iron Body", desc: "Shrug off every hit for 2.5 seconds.", cd: 13, type: "buff", mode: "ward", duration: 2.5, wind: 0.1, recover: 0.25, pose_w: "block", pose_s: "block" });
     case "kicks":
@@ -216,6 +226,26 @@ function bow(): Record<string, Attack> {
     z: a({ name: "Leap Back", desc: "Spring away to open distance.", cd: 4, type: "blink", mode: "back", wind: 0.04, recover: 0.12, pose_w: "jump", pose_s: "jump" }),
     x: a({ name: "Arrow Rain", desc: "A volley falls on the target area three times.", cd: 8, type: "strike", wind: 0.22, recover: 0.4, dmg: 80, guard: 20, knock: 2, stun: 0.35, delay: 0.7, radius: 1.8, repeat: 3, interval: 0.25, style: "arrows", pose_w: "rain_w", pose_s: "rain_s" }),
     c: a({ name: "Hunter's Snare", desc: "A barbed arrow that pins the target in place.", cd: 10, type: "projectile", wind: 0.2, recover: 0.4, dmg: 100, guard: 30, knock: 0.5, stun: 1.6, stagger: true, speed: 32, size: 1.3, style: "arrow", pose_w: "bow_w", pose_s: "bow_s" }),
+  };
+}
+
+/**
+ * Wind dancer. Grounded skills are plain and quick (a wind punch, a short dash, a rising
+ * whirlwind); cast in the air, each one becomes a dive that smashes into the ground.
+ * Can double jump.
+ */
+function wind(): Record<string, Attack> {
+  return {
+    l1: a({ wind: 0.07, active: 0.06, recover: 0.14, dmg: 46, guard: 12, reach: 1.55, lunge: 3, knock: 1.2, stun: 0.26, pose_w: "k1_w", pose_s: "k1_s", next: "l2" }),
+    l2: a({ wind: 0.08, active: 0.06, recover: 0.16, dmg: 50, guard: 12, reach: 1.55, lunge: 3, knock: 1.4, stun: 0.28, pose_w: "k2_w", pose_s: "k2_s", next: "l3" }),
+    l3: a({ wind: 0.14, active: 0.08, recover: 0.34, dmg: 80, guard: 22, reach: 1.7, lunge: 4, knock: 4.5, stun: 0.45, pose_w: "k5_w", pose_s: "k5_s" }),
+    heavy: a({ type: "projectile", wind: 0.12, active: 0.05, recover: 0.5, dmg: 200, guard: 55, knock: 6, stun: 0.7, heavy: true, speed: 18, size: 1.7, style: "shock", pierce: true, pose_w: "kh_w", pose_s: "k1_s" }),
+    z: a({ parry_stun: 1.5, name: "Gale Fist", desc: "A straight punch wrapped in wind.", cd: 4, wind: 0.08, active: 0.08, recover: 0.3, dmg: 110, guard: 30, reach: 1.9, lunge: 4, knock: 5, stun: 0.5, pose_w: "k1_w", pose_s: "k1_s" }),
+    z_air: a({ parry_stun: 1.5, name: "Downburst", desc: "In the air: plunge straight down and smash the ground.", cd: 4, type: "strike", at: "self", mode: "dive", speed: 26, lunge: 2, wind: 0.08, recover: 0.4, dmg: 130, guard: 35, knock: 6, stun: 0.6, delay: 0.02, radius: 2.2, style: "slam", pose_w: "slam_air", pose_s: "slam_s" }),
+    x: a({ parry_stun: 1.5, name: "Wind Step", desc: "A quick short dash that strikes anyone in the way.", cd: 5, wind: 0.05, active: 0.16, recover: 0.3, dmg: 90, guard: 25, reach: 1.6, lunge: 15, knock: 3, stun: 0.4, pose_w: "k5_w", pose_s: "k5_s" }),
+    x_air: a({ parry_stun: 1.5, name: "Falling Star", desc: "In the air: dive at the enemy and crash down fist-first.", cd: 5, type: "strike", at: "self", mode: "dive", speed: 22, lunge: 11, wind: 0.06, recover: 0.45, dmg: 160, guard: 40, knock: 6, stun: 0.8, heavy: true, delay: 0.02, radius: 1.8, style: "slam", pose_w: "slam_air", pose_s: "slam_s" }),
+    c: a({ parry_stun: 1.5, name: "Tornado Rise", desc: "A rising uppercut inside a whirlwind that hits all around you three times and lifts you into the air.", cd: 9, type: "strike", at: "self", self_jump: 9, wind: 0.08, recover: 0.4, dmg: 70, guard: 20, knock: 3, stun: 0.6, delay: 0.03, radius: 2.0, repeat: 3, interval: 0.14, style: "spin", pose_w: "kh_w", pose_s: "rise" }),
+    c_air: a({ parry_stun: 1.5, name: "Hurricane Crash", desc: "In the air: crash down inside a hurricane that slams everyone around three times.", cd: 9, type: "strike", at: "self", mode: "dive", speed: 28, lunge: 4, wind: 0.1, recover: 0.6, dmg: 90, guard: 30, knock: 7, stun: 1.0, heavy: true, delay: 0.02, radius: 3.0, repeat: 3, interval: 0.18, style: "slam", pose_w: "slam_air", pose_s: "slam_s" }),
   };
 }
 
@@ -398,6 +428,14 @@ const TABLES: Record<string, Record<string, Pose>> = {
   katana: twoHanded(KNIGHT),
   bow: BOW,
   knuckles: KNUCKLES,
+  wind: {
+    ...KNUCKLES,
+    // Light, open stance (not a boxing guard): hands loose in front, weight on the balls of the feet.
+    idle: P([0.04, -0.35, 0], [0, 0.3, 0], [-0.6, 0.3, -0.35], [0.4, 0, 0], [-0.75, -0.25, 0.3], [0.4, 0, 0], [-0.3, 0, 0.08], [0.3, 0, -0.08], -0.06),
+    rise: P([-0.2, 0.3, 0], [-0.25, -0.2, 0], [-2.8, 0.3, -0.2], [0.5, 0, 0], [-0.6, -0.3, 0.6], [0.4, 0, 0], [-0.9, 0, 0.06], [0.2, 0, -0.06], 0),
+    // Double jump: riding a burst of wind (knees tucked, arms spread low to push off the air).
+    wind_jump: K(P([0.3, 0, 0], [0.2, 0, 0], [0.35, 0, -1.15], [0, 0, 0], [0.35, 0, 1.15], [0, 0, 0], [-1.0, 0, 0.12], [-0.45, 0, -0.12], 0), 1.5, 1.15),
+  },
   kicks: KICKS,
 };
 

@@ -49,6 +49,7 @@ export class AiBrain implements Brain {
     this.react(f, o);
     if (!f.stage) { this.dodge(f); this.position(f, o, dt); }
     this.offense(f, o, dt);
+    if (f.kit === "wind" && !f.stage) this.airDive(f, o, dt);
     if (this.jumpWait >= 0) { this.jumpWait -= dt; if (this.jumpWait < 0) { this.jumpPulse = !this.jumpPulse; f.intent.jump = true; } }
     if (this.blockWait >= 0) { this.blockWait -= dt; if (this.blockWait < 0) this.blockHold = this.blockDur; }
     if (this.blockHold > 0) {
@@ -68,6 +69,30 @@ export class AiBrain implements Brain {
   }
 
   private jumpPulse = false;
+  private airPlan = -1;
+  private airDouble = false;
+
+  /** Wind kit: now and then jump (sometimes double jump) and come down with an air skill. */
+  private airDive(f: Fighter, o: Fighter, dt: number) {
+    const ready = ["z", "x", "c"].filter((k) => f.attacks[k + "_air"] && f.cooldowns[k] <= 0);
+    if (f.onGround) {
+      this.airPlan = -1;
+      const dist = f.root.position.distanceTo(o.root.position);
+      if (f.state === S.IDLE && ready.length && dist < 6 && Math.random() < dt * 0.5) {
+        f.intent.jump = true;
+        this.airPlan = 0.3 + Math.random() * 0.25;
+        this.airDouble = Math.random() < 0.5;
+      }
+      return;
+    }
+    if (this.airPlan < 0) return;
+    this.airPlan -= dt;
+    if (this.airDouble && this.airPlan < 0.15 && f.velY < 2) { f.intent.jump = true; this.airDouble = false; this.airPlan += 0.3; }
+    if (this.airPlan <= 0 && ready.length) {
+      f.intent.skill = ready[Math.floor(Math.random() * ready.length)];
+      this.airPlan = -1;
+    }
+  }
   private hopCd = 0;
 
   /** Platform-fight movement. Returns true when busy recovering (skip everything else). */

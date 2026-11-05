@@ -552,6 +552,17 @@ export class Game implements MobHost {
     f.onSwing = (x) => this.onSwing(x);
     f.onKo = (x) => this.onFighterKo(x);
     f.onLanded = (x) => { this.fx.ring(x.root.position, "#ffffff", 0.8, 0.25, 0.5); this.snd("land", 0.35); };
+    f.onAirJump = (x) => {
+      // A burst of wind under the feet: two expanding rings like a gust platform, a flash,
+      // air blasting downward and motes swirling up around him.
+      const feet = x.root.position.clone();
+      this.snd("dash", 0.55);
+      this.fxp("flash", feet, x.look.glow, 0.25, 0.15, 0.55);
+      this.fxp("ring", feet, x.look.glow, 1.1, 0.22, 0.9);
+      this.fxp("ring", feet.clone().add(new THREE.Vector3(0, -0.2, 0)), "#ffffff", 1.8, 0.38, 0.6);
+      this.fxp("sparks", feet, x.look.glow, 22, 5, [0, -1, 0]);
+      this.fxp("motes", feet.clone().add(new THREE.Vector3(0, 0.4, 0)), x.look.glow, 12);
+    };
     f.onDash = (x) => {
       this.snd("dash", 0.6);
       this.fxp("smoke", x.root.position.clone(), x.look.glow);
@@ -706,6 +717,7 @@ export class Game implements MobHost {
       case "wave": Sound.play("splash", 0.7); break;
     }
     switch (name) {
+      case "motes": fx.motes(v3(a[0]), a[1], a[2]); break;
       case "sparks": fx.sparks(v3(a[0]), a[1], a[2], a[3], a[4] ? v3(a[4]) : null); break;
       case "splash": fx.splash(v3(a[0]), a[1], a[2], a[3]); break;
       case "flash": fx.flash(v3(a[0]), a[1], a[2], a[3], a[4]); break;
@@ -1081,7 +1093,11 @@ export class Game implements MobHost {
         this.hitStop(0.04);
         break;
       case "parry":
-        if (!ranged && attacker instanceof Fighter) attacker.stagger(0.95);
+        if (a.parry_stun && attacker instanceof Fighter) {
+          // Weakness (Gale): a parried skill leaves him stunned.
+          attacker.stagger(a.parry_stun);
+          this.fxp("num", attacker.chest().add(new THREE.Vector3(0, 0.9, 0)), "STUNNED", "#ffe066", 1.1);
+        } else if (!ranged && attacker instanceof Fighter) attacker.stagger(0.95);
         else if (!ranged && attacker instanceof Mob) attacker.receiveHit(d, { ...a, dmg: 0, knock: 4 }, 0);
         this.snd("parry", 0.9);
         this.fxp("sparks", shieldPos, "#aee9ff", 40, 9);
@@ -1525,7 +1541,11 @@ export class Game implements MobHost {
       foes: this.cfg.mode === "team" ? this.fighters.filter((f) => f.team !== me?.team).map(info) : [],
       atkLock: me && me.attacks.l1.type !== "melee" ? { t: me.atkLock, max: RANGED_COMBO_REST[me.kit] ?? 1.2 } : null,
       dash: me ? { t: me.dashCd, max: DASH_CD } : null,
-      skills: me ? ["z", "x", "c"].map((k) => ({ key: k, id: me.attacks[k].id, name: me.attacks[k].name, cd: me.cooldowns[k], max: me.attacks[k].cd * me.cdMult })) : [],
+      skills: me ? ["z", "x", "c"].map((k) => {
+        // In the air, show the air version of a skill when it has one.
+        const a = !me.onGround && me.attacks[k + "_air"] ? me.attacks[k + "_air"] : me.attacks[k];
+        return { key: k, id: a.id, name: a.name, cd: me.cooldowns[k], max: me.attacks[k].cd * me.cdMult };
+      }) : [],
       kit: me?.kit ?? "", element: me?.look.element ?? "",
       wave: this.wave, kills: this.kills, phase: this.phase,
       mobs: this.mobs.filter((m) => !m.dead).length,
