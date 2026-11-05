@@ -111,7 +111,7 @@ export function skillTags(a: Attack): string[] {
   const out: string[] = [];
   if (a.type !== "buff" && a.type !== "blink" && a.dmg > 0 && a.stun >= 0.5) out.push(`Stun ${a.stun}s`);
   if (a.no_parry) out.push("Blockable, can't be parried");
-  if (a.type === "lob" || a.type === "mine" || a.type === "barrel") out.push(`Blast radius ${a.radius} m`);
+  if (a.type === "lob" || a.type === "mine" || a.type === "barrel") out.push(`Blast radius ${a.radius} m (hurts you and allies too: half damage)`);
   if (a.parry_stun) out.push(`Weakness: if parried, you're stunned ${a.parry_stun}s`);
   const info = STATUS[a.effect as StatusKind];
   if (info) out.push(info.text(a.effect_t, a.effect_p));
@@ -242,10 +242,10 @@ function bow(): Record<string, Attack> {
 /** Bomber: lobs firecrackers, plants mines, throws a paralyzing bomb and parks a powder keg. */
 function bomb(): Record<string, Attack> {
   return {
-    l1: a({ type: "lob", wind: 0.14, active: 0.05, recover: 0.24, dmg: 48, guard: 12, knock: 1.6, stun: 0.3, delay: 0.5, radius: 1.1, style: "bomb", size: 0.7, pose_w: "throw_w", pose_s: "throw_s", next: "l2" }),
-    l2: a({ type: "lob", wind: 0.14, active: 0.05, recover: 0.26, dmg: 52, guard: 12, knock: 1.8, stun: 0.3, delay: 0.5, radius: 1.1, style: "bomb", size: 0.7, pose_w: "throw_w", pose_s: "throw_s", next: "l3" }),
-    l3: a({ type: "lob", wind: 0.2, active: 0.05, recover: 0.4, dmg: 34, guard: 10, knock: 2.5, stun: 0.35, delay: 0.55, radius: 1.0, count: 3, spread: 0.35, style: "bomb", size: 0.6, pose_w: "throw_w", pose_s: "throw_s" }),
-    heavy: a({ type: "lob", wind: 0.12, active: 0.05, recover: 0.5, dmg: 210, guard: 55, knock: 7, stun: 0.7, heavy: true, delay: 0.7, radius: 2.4, style: "bomb", size: 1.8, pose_w: "throw_w", pose_s: "throw_s" }),
+    l1: a({ type: "lob", wind: 0.22, active: 0.05, recover: 0.36, dmg: 48, guard: 12, knock: 1.6, stun: 0.3, delay: 0.65, radius: 1.1, style: "bomb", size: 0.7, pose_w: "throw_w", pose_s: "throw_s", next: "l2" }),
+    l2: a({ type: "lob", wind: 0.22, active: 0.05, recover: 0.38, dmg: 52, guard: 12, knock: 1.8, stun: 0.3, delay: 0.65, radius: 1.1, style: "bomb", size: 0.7, pose_w: "throw_w", pose_s: "throw_s", next: "l3" }),
+    l3: a({ type: "lob", wind: 0.3, active: 0.05, recover: 0.5, dmg: 34, guard: 10, knock: 2.5, stun: 0.35, delay: 0.7, radius: 1.0, count: 3, spread: 0.35, style: "bomb", size: 0.6, pose_w: "throw_w", pose_s: "throw_s" }),
+    heavy: a({ type: "lob", wind: 0.22, active: 0.05, recover: 0.6, dmg: 210, guard: 55, knock: 7, stun: 0.7, heavy: true, delay: 1.0, radius: 2.4, style: "bomb", size: 1.8, pose_w: "throw_w", pose_s: "throw_s" }),
     z: a({ name: "Land Mine", desc: "Plant a mine at your feet. It arms after half a second and blows up when an enemy steps on it (3 at most).", cd: 6, type: "mine", wind: 0.18, recover: 0.3, dmg: 150, guard: 40, knock: 6, stun: 0.8, radius: 1.6, pose_w: "plant_w", pose_s: "plant_s" }),
     x: a({ name: "Paralyze Bomb", desc: "Lob a crackling bomb that paralyzes everyone in the blast.", cd: 8, type: "lob", wind: 0.18, recover: 0.4, dmg: 90, guard: 25, knock: 2, stun: 0.4, delay: 0.65, radius: 2.4, style: "bomb", size: 1.3, effect: "paralyze", effect_t: 2.5, pose_w: "throw_w", pose_s: "throw_s" }),
     c: a({ name: "Powder Keg", desc: "Set down a huge powder keg, then press again to detonate it whenever you like. An enemy hitting the keg sets it off too.", cd: 14, type: "barrel", wind: 0.25, recover: 0.4, dmg: 300, guard: 80, knock: 9, stun: 1.0, heavy: true, radius: 3.4, pose_w: "barrel_w", pose_s: "barrel_s" }),

@@ -133,6 +133,8 @@ class Projectile {
 }
 
 const BOMB_GRAVITY = 16;
+/** Share of a bomb's damage dealt to the bomber himself and his teammates. */
+const FRIENDLY_FIRE = 0.5;
 
 /** A mine or powder keg on the field. */
 interface Trap {
@@ -983,6 +985,17 @@ export class Game implements MobHost {
         if (to.length() <= a.radius + d.radius * 0.5 && dy < 1.5) {
           const dir = to.length() > 0.05 ? to.normalize() : new THREE.Vector3(1, 0, 0);
           this.applyHit(owner, d, a, power, d.chest(), dir, true);
+        }
+      }
+      // Friendly fire: the bomber and his teammates caught in the blast take half damage.
+      for (const d of [...this.entities.values()]) {
+        if (d.team !== team || d.isDown()) continue;
+        const to = d.root.position.clone().sub(g);
+        const dy = Math.abs(to.y);
+        to.setY(0);
+        if (to.length() <= a.radius + d.radius * 0.5 && dy < 1.5) {
+          const dir = to.length() > 0.05 ? to.normalize() : new THREE.Vector3(1, 0, 0);
+          this.applyHit(owner, d, a, power * FRIENDLY_FIRE, d.chest(), dir, true);
         }
       }
       for (const t of [...this.traps]) if (t.kind === "barrel" && t.team !== team && t.pos.distanceTo(g) <= a.radius + 0.4) this.detonate(t);
