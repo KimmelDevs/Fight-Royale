@@ -77,6 +77,10 @@ export const STYLES = {
   light: { stance: 0, toeOut: D(4), knee: D(5), drop: 0, lean: 0, chin: 0, shoulderUp: 0, elbowOut: 0,
     hipSway: 0.03, hipRoll: D(4), contra: D(3), relaxKnee: D(14), headTilt: D(3), headYaw: D(7),
     breath: 1, armSwing: D(16), walkRoll: D(3), walkYaw: D(5) },
+  // Feral dual-sickle hunter: hunched, asymmetrical, with deliberately planted feet.
+  feral: { stance: D(11), toeOut: D(13), knee: D(18), drop: 0.055, lean: D(12), chin: D(4), shoulderUp: D(2), elbowOut: D(8),
+    hipSway: 0.007, hipRoll: D(0.8), contra: D(1.5), relaxKnee: D(7), headTilt: D(1.0), headYaw: D(5),
+    breath: 0.75, armSwing: D(20), walkRoll: D(1.8), walkYaw: D(4.5) },
   heavy: { stance: D(14), toeOut: D(12), knee: D(18), drop: 0.07, lean: D(6), chin: D(5), shoulderUp: D(4), elbowOut: D(12),
     hipSway: 0.008, hipRoll: D(0.8), contra: D(0.6), relaxKnee: D(3), headTilt: D(0.5), headYaw: D(4),
     breath: 0.5, armSwing: D(9), walkRoll: D(1.2), walkYaw: D(2.5) },
@@ -204,6 +208,8 @@ export class VrmRig {
     const look = Math.sin(t * TAU / 6.1 + 1.9) * 0.7 + Math.sin(t * TAU / 2.3) * 0.3;
     const crouch = Math.max(0, -m.crouch);
     const S = STYLES[this.style];
+    const feral = this.style === "feral";
+    const leanWalk = feral ? D(9) * walk : 0;
 
     // Hips: bob / crouch from the rig, idle weight shift, walk yaw + roll.
     if (this.hipsBone) {
@@ -246,9 +252,9 @@ export class VrmRig {
     // ...and for big swings the body turns with the sword: when the hands go more than ~35 deg
     // to the side of the chest (windups, follow-throughs), hips and torso rotate toward them.
     const blade = (k: number) => new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -this.bladed * D(28) * k + this.followYaw * k);
-    set(B("spine"), blade(0.45).multiply(I.clone().slerp(T, 0.5)).multiply(contra).multiply(rx(S.lean)));
-    set(B("chest"), blade(0.8).multiply(I.clone().slerp(T, 0.8)).multiply(counter).multiply(contra).multiply(rx(S.lean * 1.4 - breath * D(1.8) * S.breath)));
-    set(B("upperChest"), blade(1).multiply(T.clone()).multiply(counter).multiply(contra).multiply(rx(S.lean * 1.1 - breath * D(2.2) * S.breath)));
+    set(B("spine"), blade(0.45).multiply(I.clone().slerp(T, 0.5)).multiply(contra).multiply(rx(S.lean + leanWalk)));
+    set(B("chest"), blade(0.8).multiply(I.clone().slerp(T, 0.8)).multiply(counter).multiply(contra).multiply(rx((S.lean + leanWalk) * 1.4 - breath * D(1.8) * S.breath)));
+    set(B("upperChest"), blade(1).multiply(T.clone()).multiply(counter).multiply(contra).multiply(rx((S.lean + leanWalk) * 1.1 - breath * D(2.2) * S.breath)));
 
     // Head: neck takes 40%, head finishes, with a slow look-around and a little lag.
     const H = deltaOf(j.head, L.head.rest).multiply(new THREE.Quaternion().setFromEuler(
@@ -259,10 +265,16 @@ export class VrmRig {
     set(B("neck"), chestNow.clone().slerp(H, 0.4));
     set(B("head"), H);
 
+    // Feral: slightly uneven head direction, like an alert predator watching its target.
+    if (feral && !m.combat) {
+      const headBone = B("head");
+      if (headBone) headBone.rotateZ(D(1.4) * Math.sin(t * 1.3) * idle);
+    }
+
     // Shoulders: relaxed and rising slightly with each breath.
     // Light: relaxed, dropped shoulders. Heavy: squared, slightly raised and braced.
-    setLocal(B("leftShoulder"), 0, D(3) * (S.shoulderUp > 0 ? 1 : 0), -D(5) + S.shoulderUp * 2 - breath * D(1.8) * S.breath);
-    setLocal(B("rightShoulder"), 0, -D(3) * (S.shoulderUp > 0 ? 1 : 0), D(5) - S.shoulderUp * 2 + breath * D(1.8) * S.breath);
+    setLocal(B("leftShoulder"), 0, D(3) * (S.shoulderUp > 0 ? 1 : 0), -D(5) + S.shoulderUp * 2 - breath * D(1.8) * S.breath + (feral ? D(5) : 0));
+    setLocal(B("rightShoulder"), 0, -D(3) * (S.shoulderUp > 0 ? 1 : 0), D(5) - S.shoulderUp * 2 + breath * D(1.8) * S.breath + (feral ? D(1) : 0));
 
     // Arms: rig rotation (T-pose calibrated), walk swing opposite the legs, soft elbows that
     // bend more as the arm rises.
@@ -353,7 +365,8 @@ export class VrmRig {
       // Wide stance (legs out, toes out) and hip flexion matching the knee bend, so a bent
       // knee lowers the body instead of kicking the foot back.
       // Boxer stagger: lead (left) foot forward, rear foot back, knees pumping with the bounce.
-      const stagger = this.boxer ? (side === "left" ? -D(14) : D(10)) * (1 - walk) : 0;
+      const stagger = this.boxer ? (side === "left" ? -D(14) : D(10)) * (1 - walk)
+        : feral ? (side === "left" ? -D(9) : D(6)) * (1 - walk) : 0;
       const stance = new THREE.Quaternion().setFromEuler(_e.set(-knee * 0.5 + stagger, sg * S.toeOut, sg * S.stance * (1 - 0.4 * walk), "YXZ"));
       set(B(`${side}UpperLeg`), stance.multiply(deltaOf(lk.joint, lk.rest)));
       // A leg raised for a kick drops the crouch/idle bend so the extension can go straight;

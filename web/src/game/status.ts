@@ -46,6 +46,8 @@ export class StatusSet {
   }
 
   has(kind: StatusKind) { return (this.mask & STATUS[kind].bit) !== 0; }
+  stacks(kind: StatusKind) { return this.m.get(kind)?.stacks ?? 0; }
+  consume(kind: StatusKind) { const n = this.stacks(kind); this.m.delete(kind); this.syncMask(); return n; }
   clear() { this.m.clear(); this.mask = 0; this.src = null; }
 
   /** Movement multiplier (slow, paralyze). */

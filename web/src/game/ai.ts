@@ -153,6 +153,25 @@ export class AiBrain implements Brain {
       const tth = o.atk.wind - o.stateT;
       const r = Math.random();
       const bc = this.p.block * (o.atk.heavy ? 0.75 : 1);
+      const festival = o.kit === "sickle" && o.bloodFestivalT > 0;
+      const guardLow = f.guard <= f.maxGuard * 0.32;
+      const dist = f.root.position.distanceTo(o.root.position);
+      const canClash = f.state === S.IDLE && f.onGround && f.attacks.l1?.type === "melee" &&
+        dist < (f.attacks.l1.reach + 0.35);
+      // Guard critical / recently guard-broken: a timed attack can CLASH with a melee
+      // swing. A fully staggered fighter must recover before trying. No special AI-only clash.
+      if (guardLow && canClash) {
+        this.blockWait = -1; this.blockHold = 0;
+        this.queue = [[0, 0.06]]; this.hold = 0;
+        return;
+      }
+      if (festival) {
+        // Perfect parry cannot stop Veyr's festival melee. Block EARLY (regular guard),
+        // or evade when guard cannot sustain a block. Clashes remain valid.
+        if (!guardLow && f.onGround) this.schedule(0, Math.max(tth + 0.42, 0.48));
+        else if (!canClash) { this.sideT = 0.30; this.sideSign = Math.random() < 0.5 ? -1 : 1; }
+        return;
+      }
       if (r < this.p.parry) this.schedule(Math.max(tth - 0.07, 0), 0.3);
       else if (r < this.p.parry + bc) this.schedule(rand(this.p.react[0], this.p.react[1]) * 0.6, tth + 0.45);
       else if (r < this.p.parry + bc + 0.15) this.trySkill(f, "z", true);
@@ -209,6 +228,13 @@ export class AiBrain implements Brain {
   private offense(f: Fighter, o: Fighter, dt: number) {
     if (f.state !== S.IDLE || this.queue.length || this.hold > 0 || this.blockHold > 0) return;
     const dist = f.root.position.distanceTo(o.root.position);
+    if (f.guard <= f.maxGuard * 0.32 && f.onGround && f.attacks.l1?.type === "melee" &&
+      o.state === S.ATTACK && o.atk?.type === "melee" && o.atkPhase === 0 &&
+      dist < f.attacks.l1.reach + 0.35) {
+      // The normal light attack will clash if its active frames overlap the enemy swing.
+      this.queue.push([0, 0.06]);
+      return;
+    }
     if (f.stage && Math.abs(o.root.position.y - f.root.position.y) > 1.4 && !RANGED.has(f.kit)) return;
     const ranged = RANGED.has(f.kit);
     const reach = ranged ? 9 : f.kit === "assassin" || f.kit === "knuckles" || f.kit === "kicks" ? 1.7 : f.kit === "greatsword" ? 2.3 : 1.9;

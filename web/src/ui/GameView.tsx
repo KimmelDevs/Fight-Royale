@@ -159,6 +159,20 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
               <div className="guard"><Bar v={me.guard / me.maxGuard} color={me.guard / me.maxGuard > 0.25 ? "#f2c94c" : "#ff7043"} /></div>
               <div className="num">{Math.ceil(me.hp)} / {Math.round(me.maxHp)}</div>
               <StatusChips list={me.status} />
+              {me.id === "veyr" && (
+                <div style={{ marginTop: 7, fontSize: 11, color: "#ff9cb6" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                    <b>{me.bloodFrenzyT > 0 ? "BLOOD FRENZY" : "BLOODLUST"}</b>
+                    <span>{me.bloodFrenzyT > 0 ? `${me.bloodFrenzyT.toFixed(1)}s` : `${me.bloodlust}/100`}</span>
+                  </div>
+                  <Bar v={me.bloodFrenzyT > 0 ? 1 : me.bloodlust / 100} color="#d93965" />
+                  {me.bloodFestivalT > 0 && (
+                    <div style={{ color: "#ffcfda", marginTop: 5, fontWeight: 800 }}>
+                      BLOOD FESTIVAL {me.bloodFestivalT.toFixed(1)}s · STUN IMMUNE · SKILLS LOCKED
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
           {other && !hud.plat && (

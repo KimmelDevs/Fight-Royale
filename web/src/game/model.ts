@@ -105,6 +105,10 @@ export class FighterModel extends THREE.Group {
   combat = false;
   /** Reeling from a hit (hitstun / stagger). */
   hurt = false;
+  /** Active seconds of Veyr's Blood Festival, set by the Fighter each frame. */
+  bloodFestivalT = 0;
+  private festivalAura: THREE.Group[] = [];
+  private festivalDrops: { node: THREE.Mesh; base: THREE.Vector3; seed: number }[] = [];
 
   private joints: Record<string, THREE.Group> = {};
   /** Procedural body meshes (hidden once a VRM body is attached) and the VRM rig. */
@@ -151,6 +155,7 @@ export class FighterModel extends THREE.Group {
     this.traverse((o) => { if ((o as THREE.Mesh).isMesh) before.add(o); });
     switch (look.kit) {
       case "mage": this.buildStaff(); break;
+      case "sickle": this.buildSickles(); break;
       case "assassin": this.buildDaggers(); break;
       case "greatsword": this.buildGreatsword(); break;
       case "katana": this.buildKatana(); break;
@@ -778,6 +783,80 @@ export class FighterModel extends THREE.Group {
     this.bowArrow!.visible = this.draw > 0.25;
   }
 
+  /** Blood Hunter V2: thin, razor-pointed dual sickles. Keeps existing VRM hand mounts. */
+  private buildSickles() {
+    const steel = M.toon("#e5e7ef", { rim: 0.95, shade: new THREE.Color("#414252") });
+    const edgeSteel = M.toon("#f8faff", { rim: 0.98, shade: new THREE.Color("#a0abbc") });
+    const dark = this.tn("#1d1621");
+    const iron = this.tn("#52424e");
+    const trim = this.tn(this.look.trim);
+    const make = (hand: THREE.Object3D, side: number) => {
+      const s = pivot(hand, [0, -0.025, 0.03], [PI / 2, 0, side * 0.14]);
+      mesh(s, cyl(0.019, 0.023, 0.32, 10), dark, [0, 0.012, 0]);
+      for (const y of [-0.12, -0.045, 0.065])
+        mesh(s, cyl(0.025, 0.025, 0.009, 10), iron, [0, y, 0]);
+      mesh(s, sphere(0.025, 10), trim, [0, -0.15, 0]);
+      mesh(s, cyl(0.031, 0.031, 0.018, 12), trim, [0, 0.156, 0]);
+      const head = pivot(s);
+      head.scale.x = side;
+      // Outer edge curves to a single sharp point; inside of the hook is strongly scooped.
+      const outline = new THREE.Shape();
+      outline.moveTo(-0.013, 0.17);
+      outline.bezierCurveTo(0.10, 0.34, 0.32, 0.65, 0.61, 0.70);
+      outline.quadraticCurveTo(0.72, 0.72, 0.75, 0.69); // pointed tip
+      outline.quadraticCurveTo(0.65, 0.66, 0.55, 0.54);
+      outline.bezierCurveTo(0.41, 0.56, 0.29, 0.43, 0.18, 0.29);
+      outline.quadraticCurveTo(0.06, 0.18, -0.013, 0.17);
+      const bladeGeo = new THREE.ExtrudeGeometry(outline, {
+        depth: 0.012, bevelEnabled: true, bevelThickness: 0.0015,
+        bevelSize: 0.0015, bevelSegments: 1, curveSegments: 24, steps: 1,
+      });
+      bladeGeo.translate(0, 0, -0.006);
+      mesh(head, bladeGeo, steel);
+      // Thin bright steel bevel along the sharpened concave edge; deliberately not a fat tube.
+      const edgeLine = new THREE.CubicBezierCurve3(
+        v(0.18, 0.29, 0.008), v(0.33, 0.47, 0.008),
+        v(0.47, 0.56, 0.008), v(0.735, 0.686, 0.008));
+      const edge = mesh(head, new THREE.TubeGeometry(edgeLine, 28, 0.003, 4, false), edgeSteel);
+      edge.castShadow = false;
+      // Short crimson blood channel (not a glowing neon rope covering the cutting edge).
+      const channel = new THREE.CubicBezierCurve3(
+        v(0.11, 0.28, 0.010), v(0.22, 0.39, 0.010),
+        v(0.36, 0.56, 0.010), v(0.56, 0.61, 0.010));
+      const inlay = mesh(head, new THREE.TubeGeometry(channel, 24, 0.0025, 4, false), this.glowMat);
+      inlay.castShadow = false;
+      // V4: glowing blood mist and crawling crimson energy on EACH blade during the ultimate.
+      // All aura meshes are children of the weapon head, so they follow the VRM hands.
+      const aura = pivot(head);
+      const crimson = M.additive("#ff174b", 0.92);
+      const hot = M.additive("#ff91aa", 0.72);
+      const arc = new THREE.CatmullRomCurve3([
+        v(0.12, 0.29, 0.014), v(0.24, 0.40, 0.015),
+        v(0.40, 0.55, 0.015), v(0.58, 0.625, 0.015), v(0.744, 0.688, 0.015),
+      ]);
+      mesh(aura, new THREE.TubeGeometry(arc, 28, 0.014, 6, false), crimson).castShadow = false;
+      mesh(aura, new THREE.TubeGeometry(arc, 28, 0.0045, 5, false), hot,
+        [0, 0, 0.007]).castShadow = false;
+      for (let i = 0; i < 7; i++) {
+        const base = v(0.12 + i * 0.083, 0.29 + Math.sin((i / 6) * 1.5) * 0.32, 0.028);
+        const node = mesh(aura, sphere(i % 2 ? 0.016 : 0.012, 8), i % 2 ? crimson : hot, base.toArray() as V3);
+        node.castShadow = false;
+        this.festivalDrops.push({ node, base, seed: i * 1.4 + (side < 0 ? 3 : 0) });
+      }
+      aura.visible = false;
+      this.festivalAura.push(aura);
+      mesh(head, sphere(0.027, 12), this.gem(), [0.05, 0.185, 0.012]);
+      return { base: pivot(head, [0.12, 0.26, 0]), tip: pivot(head, [0.75, 0.69, 0]) };
+    };
+    const right = make(this.hand_r, 1);
+    make(this.hand_l, -1);
+    this.bladeBase = right.base;
+    this.bladeTip = right.tip;
+    this.castPoint = this.bladeTip;
+    this.shieldNode = this.hand_l;
+  }
+
+
   private buildDaggers() {
     const dagger = (hand: THREE.Object3D) => {
       const d = pivot(hand, [0, 0, 0], [PI / 2, 0, 0]);
@@ -894,11 +973,34 @@ export class FighterModel extends THREE.Group {
     this.torso.rotation.x += -this.recoil * 0.3 + Math.sin(this.t * 2.4) * 0.012;
     this.leg_l.rotation.x += s * 0.55 * this.walk;
     this.leg_r.rotation.x -= s * 0.55 * this.walk;
+    // Veyr's low stalking posture also animates the procedural fallback (no VRM yet).
+    if (this.kit === "sickle") {
+      const stalking = this.walk;
+      this.torso.rotation.x += 0.10 + 0.14 * stalking;
+      this.head.rotation.x -= 0.065;
+      this.head.rotation.y += Math.sin(this.t * 1.7) * 0.026 * (1 - stalking) * (this.combat ? 0.25 : 1);
+      this.leg_l.rotation.z += 0.07;
+      this.leg_r.rotation.z -= 0.07;
+      this.hips.position.y -= 0.035 + 0.025 * stalking;
+    }
+
     this.cape.rotation.set(0.08 + 0.3 * this.walk + 0.3 * this.recoil + Math.sin(this.t * 2.1) * 0.03, 0, Math.sin(this.t * 1.7) * 0.03);
     this.hairSway.forEach((h, i) => { h.rotation.x = 0.1 * this.walk + 0.25 * this.recoil + Math.sin(this.t * 2 + i) * 0.05; });
     if (this.gripL) this.reachGrip();
     this.vrmRig?.update(dt, { t: this.t, walk: this.walk, phase: this.walkPhase, crouch: this.hipsY, combat: this.combat, hurt: this.hurt, draw: this.draw, knee: this.knee });
     if (this.bowPivot) this.updateBow();
+    // Visible only for the 3-second festival; client puppet uses replicated timer too.
+    const festivalOn = this.kit === "sickle" && this.bloodFestivalT > 0;
+    for (const [i, aura] of this.festivalAura.entries()) {
+      aura.visible = festivalOn;
+      if (festivalOn) aura.scale.setScalar(1 + 0.025 * Math.sin(this.t * 15 + i * 2));
+    }
+    if (festivalOn) for (const d of this.festivalDrops) {
+      const phase = this.t * 11 + d.seed;
+      d.node.position.copy(d.base).add(v(0.025 * Math.sin(phase),
+        0.026 * Math.cos(phase * 0.72), 0.015 * Math.cos(phase)));
+      d.node.scale.setScalar(0.65 + 0.35 * (1 + Math.sin(phase * 1.3)));
+    }
     this.glowMat.color.copy(this.glowBase).lerp(new THREE.Color(1, 1, 1), this.charge * (0.5 + 0.3 * Math.sin(this.t * 30)));
     this.updateBlink(dt);
     this.updateFlash(dt);
@@ -944,9 +1046,9 @@ export class FighterModel extends THREE.Group {
     // kickers keep it free and relaxed.
     this.vrmRig.grip = { left: !["mage", "kicks"].includes(this.kit), right: this.kit !== "kicks" };
     // Staffs and bows follow the arm a lot (natural tilt); blades less, to keep swing arcs.
-    this.vrmRig.followArm = this.kit === "mage" ? 0.4 : this.kit === "bow" ? 0.5 : 0.3;
+    this.vrmRig.followArm = this.kit === "sickle" ? 0.18 : this.kit === "mage" ? 0.4 : this.kit === "bow" ? 0.5 : 0.3;
     this.vrmRig.staff = this.kit === "mage";
-    this.vrmRig.style = this.look.body === "m" ? "heavy" : "light";
+    this.vrmRig.style = this.kit === "sickle" ? "feral" : this.look.body === "m" ? "heavy" : "light";
     if (this.kit === "knight") { this.buildHeaterShield(); this.vrmRig.shield = true; }
     if (this.gripL) { this.vrmRig.gripL = this.gripL; this.vrmRig.bladed = 1; }
     if (["knight", "greatsword", "katana"].includes(this.kit) && this.bladeBase.parent) {

@@ -111,6 +111,15 @@ export const CHARACTERS: Character[] = [
       hair: "#b8bcc8", hair_shade: "#a8a8c0", iris_top: "#b01a2a", iris_bottom: "#ff7a7a", eye_dark: "#2a0508",
       tunic: "#2a2a30", band: "#8a1a24", pants: "#1e1e24", boots: "#1e1e24", metal: "#a8a8b8", trim: "#c8343e",
       cape: "#3a3a44", cape_bottom: "#8a2a2a", glow: "#ff4d4d", shield: "#2a2a30", emblem: "#c8343e" } },
+  // Temporary body: Gale. Later change vrm: "gale" to vrm: "veyr" once veyr.vrm exists.
+  { id: "veyr", title: "Venom Reaper", role: "Assassin - Dual Sickles",
+    desc: "A feral hunter with twin curved sickles. Leap into close range and stack venom while weaving through enemy attacks.",
+    stats: { power: 4, speed: 5, range: 2, defense: 1 },
+    look: { name: "Veyr", body: "m", vrm: "gale", kit: "sickle", element: "venom", outfit: "assassin", style: "short", hat: "none",
+      hair: "#2b2429", hair_shade: "#6c454d", iris_top: "#ab283d", iris_bottom: "#f27366", eye_dark: "#28121e",
+      tunic: "#372b38", band: "#7b2a40", pants: "#211d27", boots: "#28202a", metal: "#b9b2bc", trim: "#c34b56",
+      cape: "#38252f", cape_bottom: "#8d2e47", glow: "#ff465d", shield: "#572735", emblem: "#ff465d" } },
+
 ];
 
 export function resolveEnemy(player: number, pick: number): number {

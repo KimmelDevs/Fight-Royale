@@ -51,6 +51,7 @@ export const STATS: Record<string, { hp: number; guard: number; move: number; wa
   knuckles: { hp: 2300, guard: 90, move: 4.0, walk: 3.2, parry: 0.2, jump: 8.0 },
   kicks: { hp: 2300, guard: 85, move: 4.1, walk: 3.2, parry: 0.2, jump: 8.6 },
   wind: { hp: 2200, guard: 80, move: 4.1, walk: 3.3, parry: 0.2, jump: 8.4 },
+  sickle: { hp: 1950, guard: 62, move: 4.5, walk: 3.55, parry: 0.20, jump: 8.2 },
   bomb: { hp: 2100, guard: 70, move: 3.5, walk: 2.8, parry: 0.16, jump: 7.0 },
 };
 
@@ -77,6 +78,7 @@ export function attacks(kit: string, element: string): Record<string, Attack> {
     bow: bow,
     knuckles: knuckles,
     wind: wind,
+    sickle: sickle,
     bomb: bomb,
     kicks: kicks,
   } as Record<string, () => Record<string, Attack>>)[kit]?.() ?? knight();
@@ -103,6 +105,7 @@ const ELEMENT_EFFECT: Record<string, [StatusKind, number, number, string[]]> = {
   shadow: ["poison", 6, 10, ["x", "c", "v"]],         // Nyx: Shuriken Fan, Phantom Rush, Venom Fan
   moon: ["bleed", 4, 20, ["x", "c", "v"]],            // Kaede
   blood: ["bleed", 4, 22, ["x", "c"]],                // Ash: Arrow Rain, Hunter's Snare
+  venom: ["poison", 4, 8, ["l1", "l2", "l3", "l4", "heavy", "z", "v"]], // Blood Hunter: slashes + thrown sickle poison; final blade consumes it
   earth: ["slow", 2.5, 0.65, ["z", "c"]],             // Garrick: Ground Slam, Titan Cleave
 };
 
@@ -133,6 +136,8 @@ function bonusSkill(kit: string, element: string): Attack {
       return a({ name: "Iaido Flash", desc: "An instant cross-arena draw cut.", cd: 8, wind: 0.08, active: 0.16, recover: 0.45, dmg: 200, guard: 50, reach: 2.2, lunge: 18, knock: 5, stun: 0.7, heavy: true, pose_w: "charge", pose_s: "heavy_s" });
     case "bow":
       return a({ name: "Piercing Volley", desc: "Five arrows that fly through every enemy in line.", cd: 9, type: "projectile", wind: 0.2, recover: 0.4, dmg: 55, guard: 14, knock: 2, stun: 0.3, speed: 32, count: 5, spread: 0.25, style: "arrow", pierce: true, pose_w: "bow_w", pose_s: "bow_s" });
+    case "sickle":
+      return a({ name: "Carrion Sweep", desc: "Swipe a tight circle with both sickles, poisoning anyone caught nearby.", cd: 12, type: "strike", at: "self", wind: 0.18, recover: 0.5, dmg: 70, guard: 18, knock: 2.5, stun: 0.2, delay: 0.04, radius: 1.45, style: "spin", pose_w: "vrv_w", pose_s: "vrv_s" });
     case "bomb":
       return a({ name: "Cluster Bomb", desc: "A big bomb that bursts into four blasts around where it lands.", cd: 10, type: "lob", wind: 0.2, recover: 0.4, dmg: 80, guard: 22, knock: 4, stun: 0.45, delay: 0.75, radius: 1.5, repeat: 4, interval: 0.12, style: "bomb", size: 1.6, pose_w: "throw_w", pose_s: "throw_s" });
     case "wind":
@@ -240,6 +245,23 @@ function bow(): Record<string, Attack> {
 }
 
 /** Bomber: lobs firecrackers, plants mines, throws a paralyzing bomb and parks a powder keg. */
+
+// BLOOD_HUNTER_V2 — Veyr's pressure-and-punish kit. High single-target skill expression.
+function sickle(): Record<string, Attack> {
+  return {
+    // Basic attacks are deliberately stronger than the original 29/31/37/48.
+    l1: a({ wind: 0.085, active: 0.065, recover: 0.17, dmg: 46, guard: 11, reach: 1.65, lunge: 3.2, knock: 0.9, stun: 0.20, pose_w: "vr1_w", pose_s: "vr1_s", next: "l2" }),
+    l2: a({ wind: 0.085, active: 0.065, recover: 0.17, dmg: 50, guard: 11, reach: 1.65, lunge: 3.2, knock: 1.1, stun: 0.21, pose_w: "vr2_w", pose_s: "vr2_s", next: "l3" }),
+    l3: a({ wind: 0.12, active: 0.07, recover: 0.22, dmg: 57, guard: 14, reach: 1.7, lunge: 3.8, knock: 1.4, stun: 0.23, pose_w: "vr3_w", pose_s: "vr3_s", next: "l4" }),
+    l4: a({ wind: 0.18, active: 0.09, recover: 0.38, dmg: 72, guard: 20, reach: 1.8, lunge: 3.2, knock: 3, stun: 0.36, pose_w: "vr4_w", pose_s: "vr4_s" }),
+    heavy: a({ wind: 0.42, active: 0.10, recover: 0.54, dmg: 100, guard: 30, reach: 2.05, lunge: 4.3, knock: 3, stun: 0.4, heavy: true, pose_w: "vrh_w", pose_s: "vrh_s" }),
+    // BLOOD_FESTIVAL_V3 — Crimson Execution replaces the former Blood Sickle skill.
+    z: a({ name: "Crimson Execution", desc: "Three curved blood blades; the final blade consumes poison for +15 damage per stack.", cd: 12, type: "projectile", wind: 0.30, recover: 0.54, dmg: 45, guard: 14, knock: 1.8, stun: 0.22, speed: 14, count: 3, spread: 0.58, size: 1.2, style: "bloodcrescent", pose_w: "vrc_w", pose_s: "vrc_s" }),
+    x: a({ name: "Death Feint", desc: "A 0.30s counter window. If struck, slip past the attacker and counter-cut. A failed feint leaves you open.", cd: 10, type: "buff", mode: "blood_feint", duration: 0.30, wind: 0.08, active: 0.04, recover: 0.55, pose_w: "vrx_w", pose_s: "vrx_s" }),
+    c: a({ name: "Blood Festival", desc: "Teleport near a target and summon a medium ring of orbiting blood scythes for 3 seconds. The rim pushes trapped enemies inward. Cannot be stunned, but takes normal damage, basic attacks can be blocked, and all skills are locked while active.", cd: 22, type: "buff", mode: "blood_festival", duration: 3, radius: 3.5, wind: 0.26, active: 0.05, recover: 0.24, pose_w: "vrc_w", pose_s: "vrc_s" }),
+  };
+}
+
 
 function bomb(): Record<string, Attack> {
   return {
@@ -506,9 +528,36 @@ const KICKS: Record<string, Pose> = {
   fly_s: K(P([-0.4, 0.2, 0.1], [0.2, -0.1, 0], [-0.4, 0, -1.2], NO, [-0.4, 0, 1.2], NO, [-1.3, 0, 0.05], [-1.65, 0, -0.05], 0), 1.8, 0.0),
 };
 
+// Feral dual-sickle stances. Cross-body rotation is led by the chest and shoulders;
+// the VRM rig adds a braced, low stance and lagging hands when a VRM is fitted.
+const SICKLE: Record<string, Pose> = {
+  idle: P([0.27, -0.24, 0.08], [-0.14, 0.27, -0.06], [-0.54, 0.32, -0.28], [0.28, 0.05, 0.12], [-0.82, -0.46, 0.32], [0.4, -0.06, -0.16], [-0.42, 0, 0.10], [0.36, 0, -0.1], -0.16),
+  block: P([0.33, 0, 0], [-0.18, 0, 0], [-1.25, 0.55, -0.12], [0.35, 0, 0], [-1.35, -0.45, 0.12], [0.35, 0, 0], [-0.6, 0, 0.10], [0.48, 0, -0.1], -0.22),
+  vr1_w: P([0.24, -0.68, 0], [-0.12, 0.55, 0], [-0.95, -1.1, -0.22], [0.55, 0, 0], [-0.62, -0.3, 0.30], [0.35, 0, 0], [-0.48, 0, 0.09], [0.38, 0, -0.08], -0.17),
+  vr1_s: P([0.33, 0.5, 0], [-0.16, -0.43, 0], [-1.5, 0.92, -0.1], [0.2, 0, 0], [-0.65, -0.3, 0.30], [0.3, 0, 0], [-0.6, 0, 0.12], [0.5, 0, -0.1], -0.19),
+  vr2_w: P([0.24, 0.65, 0], [-0.12, -0.58, 0], [-0.68, 0.2, -0.25], [0.4, 0, 0], [-0.9, 1.1, 0.24], [0.55, 0, 0], [-0.45, 0, 0.10], [0.4, 0, -0.10], -0.17),
+  vr2_s: P([0.34, -0.5, 0], [-0.15, 0.42, 0], [-0.74, 0.25, -0.24], [0.35, 0, 0], [-1.5, -0.95, 0.1], [0.15, 0, 0], [-0.6, 0, 0.10], [0.5, 0, -0.10], -0.19),
+  vr3_w: P([0.17, -0.54, -0.12], [-0.13, 0.46, 0], [-1.8, -0.88, -0.15], [0.52, 0, 0], [-1.8, 0.75, 0.19], [0.52, 0, 0], [-0.48, 0, 0.1], [0.48, 0, -0.10], -0.2),
+  vr3_s: P([0.38, 0.55, 0.12], [-0.22, -0.48, 0], [-1.5, 0.7, -0.3], [0.16, 0, 0], [-1.5, -0.66, 0.28], [0.16, 0, 0], [-0.7, 0, 0.12], [0.5, 0, -0.11], -0.23),
+  vr4_w: P([0.2, 0, -0.15], [-0.22, 0, 0], [-2.6, -0.3, -0.2], [0.75, 0, 0], [-2.5, 0.3, 0.2], [0.75, 0, 0], [-0.55, 0, 0.1], [0.55, 0, -0.10], -0.19),
+  vr4_s: P([0.47, 0, 0.14], [-0.25, 0, 0], [-1.25, 0.65, -0.2], [0.15, 0, 0], [-1.2, -0.65, 0.2], [0.15, 0, 0], [-0.7, 0, 0.12], [0.60, 0, -0.1], -0.23),
+  vrh_w: P([0.49, -0.4, 0], [-0.27, 0.36, 0], [-0.3, -0.9, -0.4], [0.8, 0, 0], [-0.3, 0.9, 0.4], [0.8, 0, 0], [-0.7, 0, 0.12], [0.6, 0, -0.1], -0.27),
+  vrh_s: P([0.34, 0.4, 0.06], [-0.23, -0.35, 0], [-1.7, 0.74, 0], [0.22, 0, 0], [-1.7, -0.74, 0], [0.22, 0, 0], [-0.8, 0, 0.13], [0.7, 0, -0.13], -0.26),
+  vrd_w: P([0.51, -0.34, 0], [-0.35, 0.27, 0], [0.22, 0.32, -0.47], [0.35, 0, 0], [0.26, -0.32, 0.47], [0.35, 0, 0], [-0.78, 0, 0.12], [0.64, 0, -0.12], -0.29),
+  vrd_s: P([0.56, 0.23, 0], [-0.4, -0.14, 0], [-1.72, 0.28, 0.05], [0.11, 0, 0], [-1.7, -0.31, -0.05], [0.11, 0, 0], [-0.78, 0, 0.12], [0.7, 0, -0.12], -0.27),
+  vrx_w: P([0.32, -0.8, -0.1], [-0.2, 0.75, 0], [-0.56, -0.88, -0.4], [0.7, 0, 0], [-0.54, 0.88, 0.4], [0.7, 0, 0], [-0.56, 0, 0.1], [0.55, 0, -0.1], -0.22),
+  vrx_s: P([0.43, 0.75, 0.1], [-0.24, -0.62, 0], [-1.2, 0.85, -0.5], [0.45, 0, 0], [-1.2, -0.84, 0.5], [0.45, 0, 0], [-0.7, 0, 0.1], [0.65, 0, -0.1], -0.26),
+  vrc_w: P([0.62, -0.6, 0], [-0.31, 0.55, 0], [-2.5, -0.4, -0.24], [0.6, 0, 0], [-2.46, 0.5, 0.24], [0.6, 0, 0], [-0.8, 0, 0.12], [0.7, 0, -0.12], -0.3),
+  vrc_s: P([0.54, 0.6, 0], [-0.3, -0.55, 0], [-1.36, 0.8, -0.2], [0.2, 0, 0], [-1.32, -0.8, 0.2], [0.2, 0, 0], [-0.8, 0, 0.12], [0.7, 0, -0.12], -0.28),
+  vrv_w: P([0.32, -0.45, -0.1], [-0.18, 0.4, 0], [-1.7, -0.65, -0.1], [0.55, 0, 0], [-1.7, 0.65, 0.1], [0.55, 0, 0], [-0.55, 0, 0.1], [0.5, 0, -0.1], -0.2),
+  vrv_s: P([0.48, 0.4, 0.1], [-0.2, -0.35, 0], [-1.25, 0.8, -0.12], [0.18, 0, 0], [-1.25, -0.8, 0.12], [0.18, 0, 0], [-0.7, 0, 0.1], [0.6, 0, -0.1], -0.26),
+  charge: P([0.53, -0.4, 0], [-0.3, 0.37, 0], [-0.4, -0.9, -0.4], [0.8, 0, 0], [-0.35, 0.9, 0.4], [0.8, 0, 0], [-0.65, 0, 0.12], [0.6, 0, -0.12], -0.26),
+};
+
 const TABLES: Record<string, Record<string, Pose>> = {
   knight: KNIGHT,
   mage: MAGE,
+  sickle: SICKLE,
   assassin: ASSASSIN,
   greatsword: twoHanded(KNIGHT),
   katana: twoHanded(KNIGHT),

@@ -117,6 +117,12 @@ class Projectile {
   life = 2.2;
   hitIds = new Set<number>();
   done = false;
+  /** Blood Hunter steering metadata. The host is authoritative. */
+  age = 0;
+  steering = false;
+  steered = false;
+  returnTo: Fighter | null = null;
+  finalBlade = false;
   /** Downward pull (m/s^2) for thrown bombs; 0 = straight flight. */
   gravity = 0;
   constructor(id: number, public shooter: Entity | null, public team: number, public atk: Attack | null,
@@ -130,6 +136,51 @@ class Projectile {
     buildProjectile(this.spin, style, element, size, color);
   }
   get pos() { return this.group.position; }
+}
+
+/** A temporary three-second ring of spinning blood scythes. */
+interface BloodFestival {
+  id: number; owner: Fighter | null; team: number;
+  center: THREE.Vector3; radius: number; time: number; age: number;
+  visual: THREE.Group; blades: THREE.Group[];
+  captured: Set<number>; contact: Map<number, number>;
+}
+
+/** Purely rendered blade ring: enemy confinement is performed by the host, not meshes. */
+function makeBloodFestivalVisual(radius: number): { visual: THREE.Group; blades: THREE.Group[] } {
+  const visual = new THREE.Group();
+  const red = new THREE.MeshBasicMaterial({ color: "#fc4465", side: THREE.DoubleSide, transparent: true, opacity: 0.92, depthWrite: false });
+  const steel = new THREE.MeshBasicMaterial({ color: "#ffe1e9", side: THREE.DoubleSide, transparent: true, opacity: 0.94, depthWrite: false });
+  const ringMat = new THREE.MeshBasicMaterial({ color: "#b81943", transparent: true, opacity: 0.78, depthWrite: false });
+  const floor = new THREE.Mesh(new THREE.RingGeometry(radius - 0.09, radius + 0.09, 72), ringMat);
+  floor.rotation.x = -Math.PI / 2; floor.position.y = 0.045; visual.add(floor);
+  const inner = new THREE.Mesh(new THREE.TorusGeometry(radius - 0.38, 0.025, 5, 72), red);
+  inner.rotation.x = Math.PI / 2; inner.position.y = 0.09; visual.add(inner);
+  const bladeShape = new THREE.Shape();
+  bladeShape.moveTo(-0.22, 0.03);
+  bladeShape.bezierCurveTo(-0.12, 0.53, 0.42, 0.77, 0.60, 0.61);
+  bladeShape.quadraticCurveTo(0.34, 0.64, 0.19, 0.35);
+  bladeShape.quadraticCurveTo(0.02, 0.21, -0.22, 0.03);
+  const bladeGeo = new THREE.ShapeGeometry(bladeShape, 16);
+  const edgeShape = new THREE.Shape();
+  edgeShape.moveTo(0.19, 0.35);
+  edgeShape.quadraticCurveTo(0.39, 0.69, 0.60, 0.61);
+  edgeShape.quadraticCurveTo(0.41, 0.55, 0.19, 0.35);
+  const edgeGeo = new THREE.ShapeGeometry(edgeShape, 10);
+  const blades: THREE.Group[] = [];
+  for (let i = 0; i < 14; i++) {
+    const b = new THREE.Group();
+    const blade = new THREE.Mesh(bladeGeo, red);
+    const edge = new THREE.Mesh(edgeGeo, steel);
+    edge.position.z = 0.008;
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.020, 0.58, 6), ringMat);
+    pole.position.set(-0.18, -0.19, 0);
+    pole.rotation.z = -0.25;
+    b.add(pole, blade, edge);
+    b.scale.setScalar(1.1);
+    visual.add(b); blades.push(b);
+  }
+  return { visual, blades };
 }
 
 const BOMB_GRAVITY = 16;
@@ -205,6 +256,22 @@ function buildProjectile(g: THREE.Group, style: string, element: string, size: n
     g.add(fl);
     return;
   }
+  if (style === "bloodsickle" || style === "bloodcrescent") {
+    // Curved, cutting blade silhouette. The projectile is a separate effect mesh, not the hand weapon.
+    const shape = new THREE.Shape();
+    shape.moveTo(-0.31 * size, -0.15 * size);
+    shape.quadraticCurveTo(-0.14 * size, 0.45 * size, 0.40 * size, 0.26 * size);
+    shape.lineTo(0.49 * size, 0.12 * size);
+    shape.quadraticCurveTo(0.14 * size, 0.30 * size, -0.31 * size, -0.15 * size);
+    const geo = new THREE.ShapeGeometry(shape, 14);
+    const blade = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: "#f4bdc7", side: THREE.DoubleSide }));
+    blade.rotation.x = -0.1;
+    g.add(blade);
+    const arc = new THREE.Mesh(new THREE.TorusGeometry(0.33 * size, 0.013 * size, 4, 22, Math.PI * 1.2), glow);
+    arc.rotation.z = -0.5;
+    g.add(arc);
+    return;
+  }
   if (style === "shuriken") {
     const st = new THREE.MeshBasicMaterial({ color: "#dcd6f0" });
     for (let i = 0; i < 2; i++) {
@@ -249,6 +316,8 @@ export class Game implements MobHost {
   projectiles: Projectile[] = [];
   /** Mines and powder kegs on the field (host simulates; guests only show them). */
   traps: Trap[] = [];
+  /** Blood Festival arenas. Created on host and replicated as visual events on clients. */
+  private bloodFestivals: BloodFestival[] = [];
   local: Fighter | null = null;
 
   private sun = new THREE.DirectionalLight(0xffffff, 1.9);
@@ -446,6 +515,8 @@ export class Game implements MobHost {
     this.projectiles = [];
     for (const t of this.traps) this.scene.remove(t.mesh);
     this.traps = [];
+    for (const festival of this.bloodFestivals) this.scene.remove(festival.visual);
+    this.bloodFestivals = [];
     this.timers = [];
     this.strikeMarks = [];
     this.fx.clear();
@@ -622,6 +693,7 @@ export class Game implements MobHost {
     f.onSwing = (x) => this.onSwing(x);
     f.onKo = (x) => this.onFighterKo(x);
     f.onLanded = (x) => { this.fx.ring(x.root.position, "#ffffff", 0.8, 0.25, 0.5); this.snd("land", 0.35); };
+    f.onSickleRecast = (x) => this.recastBloodSickle(x);
     f.onTrigger = (x) => {
       const t = this.traps.find((k) => k.kind === "barrel" && k.owner === x);
       if (t) { this.snd("click", 0.8); this.detonate(t); } else x.barrelOut = false;
@@ -705,6 +777,7 @@ export class Game implements MobHost {
     this.statusFx(dt);
     this.updateProjectiles(dt);
     this.updateTraps(dt);
+    this.updateBloodFestivals(dt);
     if (this.cfg.role !== "client") {
       this.drainDots();
       for (const m of [...this.mobs]) {
@@ -890,7 +963,10 @@ export class Game implements MobHost {
       this.fxp("sparks", tip, "#fff2b0", big ? 18 : 8, 4);
     }
     switch (a.type) {
-      case "projectile": this.fireProjectiles(f, a); break;
+      case "projectile":
+        if (f.kit === "sickle" && a.style === "bloodcrescent") this.crimsonExecution(f, a);
+        else this.fireProjectiles(f, a);
+        break;
       case "strike": this.runStrike(f, a, f.atkPower); break;
       case "buff": this.applyBuff(f, a); break;
       case "blink": this.blink(f, a); break;
@@ -936,10 +1012,49 @@ export class Game implements MobHost {
     const base = aim.normalize();
     for (let i = 0; i < a.count; i++) {
       const off = a.count === 1 ? 0 : -a.spread + (2 * a.spread * i) / (a.count - 1);
-      this.spawnProjectile(f, f.team, a, f.atkPower, origin, base.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), off).multiplyScalar(a.speed),
-        a.style, a.element, a.size, f.look.glow, a.pierce, tgt);
+      const blood = f.kit === "sickle" && a.style === "bloodsickle";
+      const p = this.spawnProjectile(f, f.team, a, f.atkPower, origin,
+        base.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), off).multiplyScalar(a.speed),
+        a.style, a.element, a.size, f.look.glow, a.pierce, blood ? null : tgt);
+      if (blood) { p.life = 2.0; f.sickleOut = true; }
     }
     this.fxp("flash", origin, f.look.glow, 0.25, 0.1, 0.7);
+  }
+
+  /** Recast redirects the already-thrown sickle once toward the nearest enemy within 9m. */
+  private recastBloodSickle(f: Fighter) {
+    const p = this.projectiles.find((x) => !x.done && x.shooter === f && x.style === "bloodsickle" && !x.steered);
+    if (!p) { f.sickleOut = false; return; }
+    const target = this.enemiesOf(f).filter((e) => e.root.position.distanceTo(p.pos) <= 9)
+      .sort((a, b) => a.root.position.distanceToSquared(p.pos) - b.root.position.distanceToSquared(p.pos))[0];
+    if (!target) { this.fxp("num", f.chest(), "NO TARGET", "#ff9ba8", 0.65); return; }
+    p.steering = true; p.steered = true; p.target = target;
+    this.emit(["projHunt", p.id, target.id, p.finalBlade ? 1 : 0, p.age]);
+    p.life = Math.max(p.life, 1.3);
+    f.sickleOut = false;
+    this.fxp("flash", p.pos, "#e83d63", 0.35, 0.15, 0.8);
+    this.snd("dagger", 0.6);
+  }
+
+  /** Three separately dodgeable curved blades; last consumes poison on a successful hit. */
+  private crimsonExecution(f: Fighter, a: Attack) {
+    const origin = f.model.castPoint.getWorldPosition(new THREE.Vector3());
+    const target = f.opponent && !f.opponent.isDown() ? f.opponent :
+      this.enemiesOf(f).sort((x, y) => x.root.position.distanceToSquared(origin) - y.root.position.distanceToSquared(origin))[0] ?? null;
+    const forward = target ? target.chest().sub(origin).normalize() :
+      new THREE.Vector3(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
+    for (let i = 0; i < 3; i++) {
+      const off = (i - 1) * 0.58;
+      const vel = forward.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), off).multiplyScalar(a.speed);
+      const p = this.spawnProjectile(f, f.team, a, f.atkPower, origin.clone(), vel, "bloodcrescent", a.element, a.size, "#ff496e", false, target);
+      p.life = 1.8 + i * 0.12;
+      p.steering = true;
+      p.finalBlade = i === 2;
+      // Prevent three blades from instantly piling onto a stationary enemy.
+      p.age = -i * 0.14;
+      this.emit(["projHunt", p.id, target?.id ?? -1, p.finalBlade ? 1 : 0, p.age]);
+    }
+    this.fxp("flash", origin, "#ff496e", 0.55, 0.18, 0.85);
   }
 
   private spawnProjectile(shooter: Entity | null, team: number, a: Attack, power: number, pos: THREE.Vector3, vel: THREE.Vector3,
@@ -1075,6 +1190,15 @@ export class Game implements MobHost {
     for (const p of this.projectiles) {
       if (p.done) continue;
       if (p.gravity) { p.vel.y -= p.gravity * dt; p.spin.rotation.x += dt * 9; }
+      p.age += dt;
+      if (p.steering && p.target && !p.target.isDown() && p.age > (p.style === "bloodcrescent" ? 0.38 : 0)) {
+        const aim = p.target.chest().sub(p.pos);
+        if (aim.lengthSq() > 0.01) {
+          const speed = p.atk?.speed ?? 15;
+          const turnRate = p.style === "bloodcrescent" ? 2.0 : 4.3;
+          p.vel.lerp(aim.normalize().multiplyScalar(speed), Math.min(1, dt * turnRate)).normalize().multiplyScalar(speed);
+        }
+      }
       p.pos.addScaledVector(p.vel, dt);
       p.life -= dt;
       if (!p.visualOnly && p.atk) {
@@ -1093,7 +1217,8 @@ export class Game implements MobHost {
           continue;
         }
       }
-      if (p.style === "shuriken") p.spin.rotation.y += dt * 30;
+      if (p.style === "bloodsickle" || p.style === "bloodcrescent") p.spin.rotation.z += dt * 19;
+      else if (p.style === "shuriken") p.spin.rotation.y += dt * 30;
       else if (p.style === "bolt") p.spin.rotation.z += dt * 12;
       if (!p.visualOnly && p.atk) {
         for (const e of this.enemiesOfTeam(p.team)) {
@@ -1102,7 +1227,13 @@ export class Game implements MobHost {
             p.hitIds.add(e.id);
             const dir = p.vel.clone().setY(0).normalize();
             this.impactFx(p.atk, p.pos.clone(), p.color, 0.7);
-            this.applyHit(p.shooter, e, p.atk, p.power, p.pos.clone(), dir, true);
+            const stacks = p.finalBlade && (e instanceof Fighter || e instanceof Mob) ? e.status.stacks("poison") : 0;
+            const atk = stacks ? { ...p.atk, dmg: p.atk.dmg + stacks * 15, effect: "" } : p.atk;
+            const outcome = this.applyHit(p.shooter, e, atk, p.power, p.pos.clone(), dir, true);
+            if (stacks && ["hit", "crit", "ko"].includes(outcome) && (e instanceof Fighter || e instanceof Mob)) {
+              e.status.consume("poison");
+              this.fxp("num", e.chest().add(new THREE.Vector3(0, 0.8, 0)), `EXECUTE +${stacks * 15}`, "#ff5072", 0.9);
+            }
             if (!p.pierce) { p.done = true; break; }
           }
         }
@@ -1116,6 +1247,7 @@ export class Game implements MobHost {
     }
     for (const p of this.projectiles) if (p.done) {
       this.scene.remove(p.group);
+      if (p.shooter instanceof Fighter && p.style === "bloodsickle") p.shooter.sickleOut = false;
       if (!p.visualOnly) this.emit(["projEnd", p.id]);
     }
     this.projectiles = this.projectiles.filter((p) => !p.done);
@@ -1218,6 +1350,86 @@ export class Game implements MobHost {
     }
   }
 
+  /** Host casts Blood Festival, teleports Veyr next to the target and captures nearby enemies. */
+  private startBloodFestival(f: Fighter, a: Attack) {
+    if (f.isDown()) return;
+    const target = (f.opponent && !f.opponent.isDown() ? f.opponent : null) ??
+      this.enemiesOf(f).sort((u, v) => u.root.position.distanceToSquared(f.root.position) - v.root.position.distanceToSquared(f.root.position))[0];
+    if (!target) { this.fxp("num", f.chest(), "NO TARGET", "#ff9fb8", 0.75); return; }
+    // Reusing the same C before expiry is already forbidden in Fighter.readSkill.
+    const from = f.root.position.clone();
+    const d = f.root.position.clone().sub(target.root.position).setY(0);
+    if (d.lengthSq() < 0.001) d.set(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
+    d.normalize();
+    this.fxp("smoke", from, "#9e1f43");
+    f.teleport(target.root.position.clone().addScaledVector(d, 1.25));
+    // Teleport only grants a tiny safety window, not 3 seconds of damage immunity.
+    f.invulnT = Math.min(f.invulnT, 0.08);
+    this.fxp("smoke", f.root.position.clone(), "#ed345d");
+    this.snd("teleport", 0.65);
+    const center = target.root.position.clone().setY(this.plat ? 0 : target.root.position.y);
+    const radius = a.radius > 0 ? a.radius : 3.5;
+    const { visual, blades } = makeBloodFestivalVisual(radius);
+    visual.position.copy(center);
+    this.scene.add(visual);
+    const captured = new Set(this.enemiesOf(f).filter(e => {
+      const dx = e.root.position.x - center.x;
+      const dz = this.plat ? 0 : e.root.position.z - center.z;
+      return Math.hypot(dx, dz) < radius + 0.1;
+    }).map(e => e.id));
+    const id = this.nextId++;
+    this.bloodFestivals.push({ id, owner: f, team: f.team, center, radius, time: a.duration, age: 0, visual, blades, captured, contact: new Map() });
+    f.bloodFestivalT = a.duration;
+    this.fxp("ring", center, "#f33b65", radius, 0.45, 0.85);
+    this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.9, 0)), "BLOOD FESTIVAL", "#ff7895", 1.0);
+    this.snd("spin", 0.75);
+    this.emit(["bloodFestival", id, center.toArray(), radius, a.duration, f.id, f.team]);
+  }
+
+  /** Ring rotates on every machine. Only host/offline changes enemy positions. */
+  private updateBloodFestivals(dt: number) {
+    for (const ring of [...this.bloodFestivals]) {
+      ring.time -= dt;
+      ring.age += dt;
+      const spin = ring.age * 4.2;
+      ring.blades.forEach((b, i) => {
+        const a = spin + i * Math.PI * 2 / ring.blades.length;
+        b.position.set(Math.sin(a) * ring.radius, 0.9 + 0.19 * Math.sin(ring.age * 6 + i), Math.cos(a) * ring.radius);
+        b.rotation.y = a + Math.PI * 0.5;
+        b.rotation.z = -0.14 * Math.sin(ring.age * 5 + i);
+      });
+      if (this.cfg.role !== "client" && ring.owner && !ring.owner.isDown()) {
+        for (const enemy of this.enemiesOf(ring.owner)) {
+          const x = enemy.root.position.x - ring.center.x;
+          const z = this.plat ? 0 : enemy.root.position.z - ring.center.z;
+          const dist = Math.hypot(x, z);
+          // Enemies who enter the circle later become captives as they approach its blades.
+          if (!ring.captured.has(enemy.id)) {
+            if (dist <= ring.radius + 0.10) ring.captured.add(enemy.id);
+            else continue;
+          }
+          const next = ring.contact.get(enemy.id) ?? 0;
+          if (dist < ring.radius - 0.32 || ring.age < next) continue;
+          if (dist > 0.0001) {
+            // Push into the arena rather than stunning, damaging or teleporting the target.
+            const pull = Math.max(0, dist - (ring.radius - 1.45));
+            enemy.root.position.x -= x / dist * pull;
+            if (!this.plat) enemy.root.position.z -= z / dist * pull;
+          }
+          ring.contact.set(enemy.id, ring.age + 0.35);
+          this.fxp("slashes", enemy.root.position.clone(), "#ff3c68");
+          this.fxp("ring", enemy.root.position.clone(), "#ff6080", 0.65, 0.19, 0.55);
+        }
+      }
+      if (ring.time <= 0 || (this.cfg.role !== "client" && (!ring.owner || ring.owner.isDown()))) {
+        this.scene.remove(ring.visual);
+        this.bloodFestivals = this.bloodFestivals.filter(x => x !== ring);
+        if (ring.owner) ring.owner.bloodFestivalT = 0;
+        this.emit(["bloodFestivalEnd", ring.id]);
+      }
+    }
+  }
+
   private applyBuff(f: Fighter, a: Attack) {
     // PvP versions of defensive magic are weaker than in survival.
     const pvp = this.cfg.mode !== "survival";
@@ -1238,6 +1450,13 @@ export class Game implements MobHost {
       this.fxp("flash", f.chest(), "#ff5a3d", 0.7, 0.3, 0.8);
       this.fxp("embers", f.chest(), "#ff7a33", 30);
       this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.9, 0)), "BERSERK", "#ff8a50", 1.0);
+    } else if (a.mode === "blood_festival") {
+      this.startBloodFestival(f, a);
+    } else if (a.mode === "blood_feint") {
+      f.counterT = Math.min(a.duration, 0.30);
+      f.bloodFeintT = Math.min(a.duration, 0.30);
+      this.fxp("flash", f.chest(), "#ff456f", 0.38, 0.12, 0.8);
+      this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.8, 0)), "DEATH FEINT", "#ffb6c6", 0.7);
     } else if (a.mode === "counter") {
       f.counterT = a.duration;
       this.fxp("flash", f.chest(), f.look.glow, 0.5, 0.2, 0.6);
@@ -1278,7 +1497,7 @@ export class Game implements MobHost {
     this.fxp("smoke", f.root.position.clone(), f.look.glow);
   }
 
-  private applyHit(attacker: Entity | null, d: Entity, a: Attack, power: number, hitPos: THREE.Vector3, dir: THREE.Vector3, ranged: boolean) {
+  private applyHit(attacker: Entity | null, d: Entity, a: Attack, power: number, hitPos: THREE.Vector3, dir: THREE.Vector3, ranged: boolean): string {
     const result = d.receiveHit(attacker, a, power);
     const glow = attacker instanceof Fighter ? attacker.look.glow : attacker instanceof Mob ? attacker.def.color : "#ffffff";
     const heavy = a.heavy || a.id === "l3";
@@ -1294,6 +1513,7 @@ export class Game implements MobHost {
         this.fxp("num", hitPos.clone().add(new THREE.Vector3(0, 0.5, 0)), `${label}${crit ? "!" : ""}`,
           d.team === (this.local?.team ?? 0) && !this.isDuel() ? "#ff7b7b" : crit ? "#ffb347" : "#ffffff", crit ? 1.5 : 1);
         if (attacker instanceof Fighter && attacker.lifesteal > 0) attacker.heal(d.lastDamage * attacker.lifesteal);
+        if (attacker instanceof Fighter && attacker.kit === "sickle" && !ranged) this.gainBloodlust(attacker, 25);
         if (attacker instanceof Fighter && attacker.look.element === "earth") this.fxp("rocks", d.root.position.clone(), heavy ? 12 : 6, heavy ? 0.9 : 0.6);
         const big = this.isDuel() || attacker instanceof Mob ? 1 : 0.5;
         this.add_trauma((a.heavy ? 0.5 : heavy ? 0.3 : 0.18) * big);
@@ -1337,8 +1557,20 @@ export class Game implements MobHost {
         this.fxp("num", df.chest().add(new THREE.Vector3(0, 0.6, 0)), "COUNTER!", "#ff9aa8", 1.4);
         this.fxp("slashes", (attacker ?? df).root.position.clone(), df.look.glow);
         if (attacker) {
-          const counter = { ...df.attacks.heavy, dmg: 180, heavy: true, stun: 0.8 } as Attack;
-          this.applyHit(df, attacker, counter, df.dmgMult, attacker.chest(), dir.clone().negate(), false);
+          if (df.kit === "sickle" && df.bloodFeintT > 0) {
+            df.bloodFeintT = 0;
+            const d = attacker.root.position.clone().sub(df.root.position).setY(0).normalize();
+            const side = new THREE.Vector3(-d.z, 0, d.x);
+            const to = attacker.root.position.clone().addScaledVector(d, 0.95).addScaledVector(side, 0.45);
+            this.fxp("smoke", df.root.position.clone(), "#c62a54");
+            df.teleport(to);
+            this.fxp("slashes", attacker.root.position.clone(), "#ff496e");
+            const counter = { ...df.attacks.heavy, dmg: 95, heavy: true, stun: 0.36, no_parry: true, effect: "", knock: 2.5 } as Attack;
+            this.applyHit(df, attacker, counter, df.dmgMult, attacker.chest(), d.clone().negate(), false);
+          } else {
+            const counter = { ...df.attacks.heavy, dmg: 180, heavy: true, stun: 0.8 } as Attack;
+            this.applyHit(df, attacker, counter, df.dmgMult, attacker.chest(), dir.clone().negate(), false);
+          }
         }
         break;
       }
@@ -1358,6 +1590,20 @@ export class Game implements MobHost {
       case "miss":
         this.fxp("num", hitPos.clone().add(new THREE.Vector3(0, 0.5, 0)), "MISS", "#c9d3e6", 0.8);
         break;
+    }
+    return result;
+  }
+
+  /** Every Veyr melee hit builds Bloodlust; Frenzy activates at 100 for 5s. */
+  private gainBloodlust(f: Fighter, points: number) {
+    if (f.bloodFrenzyT > 0 || f.isDown()) return;
+    f.bloodlust = Math.min(100, f.bloodlust + points);
+    if (f.bloodlust >= 100) {
+      f.bloodlust = 0;
+      f.bloodFrenzyT = 5;
+      this.fxp("flash", f.chest(), "#ff3e67", 0.8, 0.4, 1);
+      this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.85, 0)), "BLOOD FRENZY", "#ff587b", 1.1);
+      this.snd("rage", 0.7);
     }
   }
 
@@ -1710,6 +1956,25 @@ export class Game implements MobHost {
         this.projectiles.push(p);
         break;
       }
+      case "projHunt": {
+        const p = this.projectiles.find((x) => x.id === ev[1]);
+        if (p) { p.target = this.entities.get(ev[2]) ?? null; p.steering = true; p.finalBlade = ev[3] === 1; p.age = ev[4] ?? p.age; }
+        break;
+      }
+      case "bloodFestival": {
+        const { visual, blades } = makeBloodFestivalVisual(ev[3]);
+        const center = v3(ev[2]);
+        visual.position.copy(center);
+        this.scene.add(visual);
+        this.bloodFestivals.push({ id: ev[1], owner: null, team: ev[6], center,
+          radius: ev[3], time: ev[4], age: 0, visual, blades, captured: new Set(), contact: new Map() });
+        break;
+      }
+      case "bloodFestivalEnd": {
+        const ring = this.bloodFestivals.find(x => x.id === ev[1]);
+        if (ring) { this.scene.remove(ring.visual); this.bloodFestivals = this.bloodFestivals.filter(x => x !== ring); }
+        break;
+      }
       case "projEnd": { const p = this.projectiles.find((x) => x.id === ev[1]); if (p) p.done = true; break; }
       case "trap": {
         const t: Trap = { id: ev[1], kind: ev[2], owner: null, team: -1, atk: null as any, power: 0, pos: v3(ev[3]), mesh: buildTrap(ev[2], ev[4]), arm: 0, life: 99, t: 0 };
@@ -1793,7 +2058,7 @@ export class Game implements MobHost {
     const boss = this.mobs.find((m) => m.def.boss && !m.dead);
     const other = this.isDuel() ? this.fighters.find((f) => f !== me) : null;
     const info = (f: Fighter) => ({ id: CHARACTERS[f.charIndex].id, name: f.look.name + (isCpu(f.owner) && f.owner !== "cpu" ? " (CPU)" : ""), hp: f.hp, maxHp: f.maxHp, guard: f.guard, maxGuard: f.maxGuard, down: f.isDown(), glow: f.look.glow,
-      pct: f.pct, stocks: f.stocks, out: f.out, team: f.team, status: f.status.kinds() });
+      pct: f.pct, stocks: f.stocks, out: f.out, team: f.team, status: f.status.kinds(), bloodlust: f.bloodlust, bloodFrenzyT: f.bloodFrenzyT, bloodFestivalT: f.bloodFestivalT });
     return {
       mode: this.cfg.mode,
       plat: this.plat,
@@ -1811,7 +2076,10 @@ export class Game implements MobHost {
       skills: me ? ["z", "x", "c"].map((k) => {
         // In the air, show the air version of a skill when it has one.
         const a = !me.onGround && me.attacks[k + "_air"] ? me.attacks[k + "_air"] : me.attacks[k];
+        // During Blood Festival all special skills are locked, regardless of remaining cooldown.
+        if (me.bloodFestivalT > 0) return { key: k, id: a.id, name: a.name + " (Locked)", cd: me.bloodFestivalT, max: 3 };
         // Powder keg out: the slot becomes its trigger.
+        if (a.style === "bloodsickle" && me.sickleOut) return { key: k, id: a.id + "_redirect", name: "Redirect Sickle", cd: 0, max: 1 };
         if (a.type === "barrel" && me.barrelOut) return { key: k, id: a.id + "_trigger", name: "Detonate", cd: 0, max: 1 };
         return { key: k, id: a.id, name: a.name, cd: me.cooldowns[k], max: me.attacks[k].cd * me.cdMult };
       }) : [],

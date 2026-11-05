@@ -162,6 +162,14 @@ export class Fighter implements Entity {
   barrelPos = new THREE.Vector3();
   /** Pressing the keg's skill while it is out asks the arena to detonate it. */
   onTrigger: (f: Fighter) => void = () => {};
+  /** Blood Hunter: steering recast and 0.30s feint window. */
+  sickleOut = false;
+  bloodFeintT = 0;
+  bloodlust = 0;
+  bloodFrenzyT = 0;
+  /** Blood Festival: stun-immune, but damageable and all skills disabled until expiration. */
+  bloodFestivalT = 0;
+  onSickleRecast: (f: Fighter) => void = () => {};
   private ground: Plat | null = null;
   private dropT = 0;
   private respawnT = 0;
@@ -234,6 +242,9 @@ export class Fighter implements Entity {
     this.wardT = Math.max(this.wardT - dt, 0);
     this.rageT = Math.max(this.rageT - dt, 0);
     this.counterT = Math.max(this.counterT - dt, 0);
+    this.bloodFeintT = Math.max(this.bloodFeintT - dt, 0);
+    this.bloodFrenzyT = Math.max(this.bloodFrenzyT - dt, 0);
+    this.bloodFestivalT = Math.max(this.bloodFestivalT - dt, 0);
     this.invulnT = Math.max(this.invulnT - dt, 0);
     this.airJumpT = Math.max(this.airJumpT - dt, 0);
     this.tickStatus(dt);
@@ -271,6 +282,7 @@ export class Fighter implements Entity {
     this.model.hurt = this.state === S.HITSTUN || this.state === S.STAGGER;
     this.model.charge = this.state === S.CHARGE ? Math.min(this.stateT / CHARGE_MAX, 1) : Math.max(this.model.charge - dt * 4, 0);
     this.computePose();
+    this.model.bloodFestivalT = this.kit === "sickle" ? this.bloodFestivalT : 0;
     this.model.blend(this.poses[this.poseName] ?? this.poses.idle, dt, this.poseSpeed);
     this.bowDraw(dt);
     this.trail.update(dt);
@@ -341,6 +353,13 @@ export class Fighter implements Entity {
   private readSkill() {
     const k = this.intent.skill;
     if (!k) return;
+    // C: Blood Festival shuts off ALL active skills (Z/X/C/V) for its full 3 seconds.
+    if (this.kit === "sickle" && this.bloodFestivalT > 0) return;
+    // Blood Sickle can be steered once after launch, regardless of cooldown.
+    if (this.kit === "sickle" && this.sickleOut && this.attacks[k]?.style === "bloodsickle") {
+      if (![S.HITSTUN, S.STAGGER, S.KO, S.WIN].includes(this.state)) this.onSickleRecast(this);
+      return;
+    }
     // Powder keg out: the same key is the detonator (works any time you're not stunned).
     if (this.barrelOut && this.attacks[k]?.type === "barrel") {
       if (![S.HITSTUN, S.STAGGER, S.KO, S.WIN].includes(this.state)) this.onTrigger(this);
@@ -372,6 +391,8 @@ export class Fighter implements Entity {
     this.atkPower *= this.dmgMult * (this.rageT > 0 ? RAGE_MULT : 1) * this.status.dmgMult();
     this.atkId = id;
     this.atk = this.attacks[id];
+    if (this.kit === "sickle" && this.bloodFrenzyT > 0 && id.startsWith("l"))
+      this.atk = { ...this.atk, wind: this.atk.wind * 0.88, recover: this.atk.recover * 0.88 };
     this.atkPhase = 0;
     this.buffered = false;
     this.swingSerial++;
@@ -486,7 +507,7 @@ export class Fighter implements Entity {
     pos.addScaledVector(dir, v * dt);
     const steer = this.state === S.IDLE ? 1 : this.state === S.BLOCK ? 0.5 : this.state === S.CHARGE ? 0.4 : 0;
     if (steer > 0 && this.intent.move.lengthSq() > 0.0001) {
-      const step = this.intent.move.clone().normalize().multiplyScalar(this.moveSpeed * this.status.speedMult() * steer * dt);
+      const step = this.intent.move.clone().normalize().multiplyScalar(this.moveSpeed * (this.bloodFrenzyT > 0 ? 1.15 : 1) * this.status.speedMult() * steer * dt);
       if (dist < MIN_DIST && step.dot(dir) > 0) step.addScaledVector(dir, -step.dot(dir));
       pos.add(step);
       walking = this.onGround;
@@ -538,7 +559,7 @@ export class Fighter implements Entity {
       this.dots.push({ ...d, src: this.status.src });
       if (this.hp <= 0) { this.ko(); return; }
     }
-    if (st.jolt && this.state !== S.HITSTUN && this.state !== S.STAGGER) {
+    if (st.jolt && this.bloodFestivalT <= 0 && this.state !== S.HITSTUN && this.state !== S.STAGGER) {
       this.stun = 0.25; this.stunPose = "hit"; this.holding = false;
       this.setState(S.HITSTUN);
       this.model.flash("#ffe066", 0.12);
@@ -554,8 +575,12 @@ export class Fighter implements Entity {
     if (this.counterT > 0 && !a.no_parry) { this.counterT = 0; return "counter"; }
     let dmg = a.dmg * power;
     this.knockFrom = attacker ? attacker.root.position.x : this.root.position.x - this.facing;
+    // Veyr's Blood Festival forbids the perfect-parry outcome against his melee swings.
+    // A regular block still costs guard, and simultaneous attacks can still clash.
+    const festivalUnparryable = attacker instanceof Fighter && attacker.kit === "sickle" &&
+      attacker.bloodFestivalT > 0 && a.type === "melee";
     if (this.state === S.BLOCK) {
-      if (this.stateT <= this.parryWindow && !a.no_parry) {
+      if (this.stateT <= this.parryWindow && !a.no_parry && !festivalUnparryable) {
         this.guard = Math.min(this.guard + 20, this.maxGuard);
         this.model.flash("#99e6ff", 0.15);
         return "parry";
@@ -569,7 +594,7 @@ export class Fighter implements Entity {
         this.hp = Math.max(this.hp - this.lastDamage, 0);
         this.knock = 3.5;
         if (this.hp <= 0) { this.ko(); return "ko"; }
-        this.stagger(0.85);
+        if (this.bloodFestivalT <= 0) this.stagger(0.85);
         this.model.flash("#ffd966", 0.18);
         return "guard_break";
       }
@@ -586,7 +611,9 @@ export class Fighter implements Entity {
     this.knock = a.knock;
     this.model.flash();
     if (this.hp <= 0) { this.ko(); return "ko"; }
-    if (a.effect) this.status.apply(a.effect as StatusKind, a.effect_t, a.effect_p, attacker);
+    // Even during Blood Festival, damage and non-stunning conditions still land.
+    if (a.effect && !(this.bloodFestivalT > 0 && a.effect === "paralyze"))
+      this.status.apply(a.effect as StatusKind, a.effect_t, a.effect_p, attacker);
     // Stun rules: one stun per skill use (multi-hit skills don't re-stun every tick), and
     // repeated stuns within a few seconds get shorter, so nobody can be locked forever.
     const src = attacker instanceof Fighter ? `${attacker.id}:${attacker.swingSerial}` : "";
@@ -596,14 +623,25 @@ export class Fighter implements Entity {
     this.stunChain = this.clock - this.lastStunAt < STUN_DR_WINDOW ? this.stunChain + 1 : 0;
     this.lastStunAt = this.clock;
     const stun = Math.max(0.1, a.stun * Math.pow(STUN_DR, this.stunChain));
-    if (a.heavy || a.stagger) this.stagger(stun);
-    else { this.stun = stun; this.stunPose = "hit"; this.holding = false; this.setState(S.HITSTUN); }
+    if (this.bloodFestivalT <= 0) {
+      if (a.heavy || a.stagger) this.stagger(stun);
+      else { this.stun = stun; this.stunPose = "hit"; this.holding = false; this.setState(S.HITSTUN); }
+    }
     return this.lastCrit ? "crit" : "hit";
   }
 
-  stagger(d: number) { this.stun = d; this.stunPose = "stagger"; this.holding = false; this.setState(S.STAGGER); }
+  stagger(d: number) { if (this.bloodFestivalT > 0) return; this.stun = d; this.stunPose = "stagger"; this.holding = false; this.setState(S.STAGGER); }
 
   clashRecoil() {
+    if (this.bloodFestivalT > 0) {
+      // Clash still counts. Cancel the swing and give a short physical recoil,
+      // without applying stun (Blood Festival's 3-second immunity).
+      this.atk = null; this.atkId = ""; this.atkPhase = 0;
+      this.buffered = false; this.holding = false; this.knock = 2.2;
+      this.model.recoil = 1;
+      this.setState(S.IDLE);
+      return;
+    }
     this.stun = 0.38; this.stunPose = "clash"; this.holding = false; this.knock = 4; this.model.recoil = 1;
     this.setState(S.HITSTUN);
   }
@@ -614,6 +652,7 @@ export class Fighter implements Entity {
   revive(frac: number) {
     this.hp = this.maxHp * frac;
     this.guard = this.maxGuard;
+    this.bloodlust = 0; this.bloodFrenzyT = 0; this.bloodFeintT = 0; this.sickleOut = false; this.bloodFestivalT = 0;
     this.model.standUp();
     this.setState(S.IDLE);
   }
@@ -621,6 +660,7 @@ export class Fighter implements Entity {
   heal(amount: number) { this.hp = Math.min(this.hp + amount, this.maxHp); }
 
   ko() {
+    this.bloodlust = 0; this.bloodFrenzyT = 0; this.bloodFeintT = 0; this.sickleOut = false; this.bloodFestivalT = 0;
     this.status.clear();
     this.setState(S.KO);
     this.model.fall();
@@ -644,7 +684,7 @@ export class Fighter implements Entity {
     this.holding = false;
     this.stun = 0.18 + speed * 0.032;
     this.stunPose = speed > 9 || a.heavy ? "stagger" : "hit";
-    this.setState(S.HITSTUN);
+    if (this.bloodFestivalT <= 0) this.setState(S.HITSTUN);
     return this.lastCrit ? "crit" : "hit";
   }
 
@@ -835,7 +875,7 @@ export class Fighter implements Entity {
       this.state, this.poseName, this.poseSpeed, Math.round(this.hp), Math.round(this.guard),
       +this.model.walk.toFixed(2), +this.model.charge.toFixed(2), this.trail.emitting ? 1 : 0,
       +this.model.recoil.toFixed(2), this.cooldowns.z, this.cooldowns.x, this.cooldowns.c, this.maxHp,
-      +this.pct.toFixed(1), this.stocks, this.out ? 1 : 0, +this.atkLock.toFixed(2), +this.dashCd.toFixed(2), this.status.mask, this.barrelOut ? 1 : 0];
+      +this.pct.toFixed(1), this.stocks, this.out ? 1 : 0, +this.atkLock.toFixed(2), +this.dashCd.toFixed(2), this.status.mask, this.barrelOut ? 1 : 0, Math.round(this.bloodlust), +this.bloodFrenzyT.toFixed(2), this.sickleOut ? 1 : 0, +this.bloodFestivalT.toFixed(2)];
   }
 
   applySnapshot(s: any[]) {
@@ -854,7 +894,7 @@ export class Fighter implements Entity {
     this.cooldowns.z = s[14]; this.cooldowns.x = s[15]; this.cooldowns.c = s[16];
     this.maxHp = s[17];
     if (s.length > 18) {
-      this.pct = s[18]; this.stocks = s[19]; this.atkLock = s[21] ?? 0; this.dashCd = s[22] ?? 0; this.status.mask = s[23] ?? 0; this.barrelOut = s[24] === 1;
+      this.pct = s[18]; this.stocks = s[19]; this.atkLock = s[21] ?? 0; this.dashCd = s[22] ?? 0; this.status.mask = s[23] ?? 0; this.barrelOut = s[24] === 1; this.bloodlust = s[25] ?? 0; this.bloodFrenzyT = s[26] ?? 0; this.sickleOut = s[27] === 1; this.bloodFestivalT = s[28] ?? 0;
       const out = s[20] === 1;
       if (out !== this.out) { this.out = out; this.root.visible = !out; if (!out) this.root.position.copy(this.netPos); }
     }
@@ -876,6 +916,7 @@ export class Fighter implements Entity {
     this.model.setBarrier(this.state === S.BLOCK && this.kit === "mage");
     this.model.combat = [S.ATTACK, S.CHARGE, S.BLOCK, S.HITSTUN, S.STAGGER].includes(this.state);
     this.model.hurt = this.state === S.HITSTUN || this.state === S.STAGGER;
+    this.model.bloodFestivalT = this.kit === "sickle" ? this.bloodFestivalT : 0;
     this.model.blend(this.poses[this.poseName] ?? this.poses.idle, dt, this.poseSpeed);
     this.bowDraw(dt);
     this.trail.update(dt);
