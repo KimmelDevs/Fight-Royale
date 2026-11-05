@@ -1363,7 +1363,7 @@ export class Game implements MobHost {
     d.normalize();
     this.fxp("smoke", from, "#9e1f43");
     f.teleport(target.root.position.clone().addScaledVector(d, 1.25));
-    // Teleport only grants a tiny safety window, not 3 seconds of damage immunity.
+    // Teleport only grants a tiny safety window, not 6 seconds of damage immunity.
     f.invulnT = Math.min(f.invulnT, 0.08);
     this.fxp("smoke", f.root.position.clone(), "#ed345d");
     this.snd("teleport", 0.65);
@@ -1380,6 +1380,8 @@ export class Game implements MobHost {
     const id = this.nextId++;
     this.bloodFestivals.push({ id, owner: f, team: f.team, center, radius, time: a.duration, age: 0, visual, blades, captured, contact: new Map() });
     f.bloodFestivalT = a.duration;
+    // The ultimate instantly fills Bloodlust and triggers/refreshes Blood Frenzy.
+    this.activateBloodFrenzy(f);
     this.fxp("ring", center, "#f33b65", radius, 0.45, 0.85);
     this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.9, 0)), "BLOOD FESTIVAL", "#ff7895", 1.0);
     this.snd("spin", 0.75);
@@ -1512,8 +1514,15 @@ export class Game implements MobHost {
         const label = this.plat && d instanceof Fighter ? `${Math.round(d.lastDamage)}%` : `${Math.round(d.lastDamage)}`;
         this.fxp("num", hitPos.clone().add(new THREE.Vector3(0, 0.5, 0)), `${label}${crit ? "!" : ""}`,
           d.team === (this.local?.team ?? 0) && !this.isDuel() ? "#ff7b7b" : crit ? "#ffb347" : "#ffffff", crit ? 1.5 : 1);
-        if (attacker instanceof Fighter && attacker.lifesteal > 0) attacker.heal(d.lastDamage * attacker.lifesteal);
-        if (attacker instanceof Fighter && attacker.kit === "sickle" && !ranged) this.gainBloodlust(attacker, 25);
+        if (attacker instanceof Fighter) {
+          // Existing equipment lifesteal still applies. Veyr additionally drains 50%
+          // of ACTUAL damaging hits while his 5-second Blood Frenzy is active.
+          // This case only includes successful hits: blocked/parried/clashed hits never heal.
+          const frenzyLeech = attacker.kit === "sickle" && attacker.bloodFrenzyT > 0 ? 0.50 : 0;
+          const totalLeech = attacker.lifesteal + frenzyLeech;
+          if (totalLeech > 0) attacker.heal(d.lastDamage * totalLeech);
+          if (attacker.kit === "sickle" && !ranged) this.gainBloodlust(attacker, 25);
+        }
         if (attacker instanceof Fighter && attacker.look.element === "earth") this.fxp("rocks", d.root.position.clone(), heavy ? 12 : 6, heavy ? 0.9 : 0.6);
         const big = this.isDuel() || attacker instanceof Mob ? 1 : 0.5;
         this.add_trauma((a.heavy ? 0.5 : heavy ? 0.3 : 0.18) * big);
@@ -1594,17 +1603,21 @@ export class Game implements MobHost {
     return result;
   }
 
-  /** Every Veyr melee hit builds Bloodlust; Frenzy activates at 100 for 5s. */
+  /** Blood Frenzy lasts five seconds: meter stays full and grants 50% hit lifesteal. */
+  private activateBloodFrenzy(f: Fighter) {
+    if (f.isDown()) return;
+    f.bloodlust = 100;
+    f.bloodFrenzyT = 5;
+    this.fxp("flash", f.chest(), "#ff3e67", 0.8, 0.4, 1);
+    this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.85, 0)), "BLOOD FRENZY", "#ff587b", 1.1);
+    this.snd("rage", 0.7);
+  }
+
+  /** Veyr melee hits build Bloodlust, activating Frenzy upon reaching 100. */
   private gainBloodlust(f: Fighter, points: number) {
     if (f.bloodFrenzyT > 0 || f.isDown()) return;
     f.bloodlust = Math.min(100, f.bloodlust + points);
-    if (f.bloodlust >= 100) {
-      f.bloodlust = 0;
-      f.bloodFrenzyT = 5;
-      this.fxp("flash", f.chest(), "#ff3e67", 0.8, 0.4, 1);
-      this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.85, 0)), "BLOOD FRENZY", "#ff587b", 1.1);
-      this.snd("rage", 0.7);
-    }
+    if (f.bloodlust >= 100) this.activateBloodFrenzy(f);
   }
 
   private clash(a: Fighter, b: Fighter, pos: THREE.Vector3) {
@@ -2077,7 +2090,7 @@ export class Game implements MobHost {
         // In the air, show the air version of a skill when it has one.
         const a = !me.onGround && me.attacks[k + "_air"] ? me.attacks[k + "_air"] : me.attacks[k];
         // During Blood Festival all special skills are locked, regardless of remaining cooldown.
-        if (me.bloodFestivalT > 0) return { key: k, id: a.id, name: a.name + " (Locked)", cd: me.bloodFestivalT, max: 3 };
+        if (me.bloodFestivalT > 0) return { key: k, id: a.id, name: a.name + " (Locked)", cd: me.bloodFestivalT, max: 6 };
         // Powder keg out: the slot becomes its trigger.
         if (a.style === "bloodsickle" && me.sickleOut) return { key: k, id: a.id + "_redirect", name: "Redirect Sickle", cd: 0, max: 1 };
         if (a.type === "barrel" && me.barrelOut) return { key: k, id: a.id + "_trigger", name: "Detonate", cd: 0, max: 1 };

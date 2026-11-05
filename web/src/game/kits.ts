@@ -258,7 +258,7 @@ function sickle(): Record<string, Attack> {
     // BLOOD_FESTIVAL_V3 — Crimson Execution replaces the former Blood Sickle skill.
     z: a({ name: "Crimson Execution", desc: "Three curved blood blades; the final blade consumes poison for +15 damage per stack.", cd: 12, type: "projectile", wind: 0.30, recover: 0.54, dmg: 45, guard: 14, knock: 1.8, stun: 0.22, speed: 14, count: 3, spread: 0.58, size: 1.2, style: "bloodcrescent", pose_w: "vrc_w", pose_s: "vrc_s" }),
     x: a({ name: "Death Feint", desc: "A 0.30s counter window. If struck, slip past the attacker and counter-cut. A failed feint leaves you open.", cd: 10, type: "buff", mode: "blood_feint", duration: 0.30, wind: 0.08, active: 0.04, recover: 0.55, pose_w: "vrx_w", pose_s: "vrx_s" }),
-    c: a({ name: "Blood Festival", desc: "Teleport near a target and summon a medium ring of orbiting blood scythes for 3 seconds. The rim pushes trapped enemies inward. Cannot be stunned, but takes normal damage, basic attacks can be blocked, and all skills are locked while active.", cd: 22, type: "buff", mode: "blood_festival", duration: 3, radius: 3.5, wind: 0.26, active: 0.05, recover: 0.24, pose_w: "vrc_w", pose_s: "vrc_s" }),
+    c: a({ name: "Blood Festival", desc: "Teleport beside a target and surround enemies with orbiting blood scythes for 6 seconds. The rim pushes enemies inward. Veyr ignores stuns but can still take damage or be blocked/clashed; his special skills are locked. Light attacks deal +35% damage and 3x normal guard damage. Casting fills Bloodlust and grants Blood Frenzy lifesteal.", cd: 22, type: "buff", mode: "blood_festival", duration: 6, radius: 3.5, wind: 0.26, active: 0.05, recover: 0.24, pose_w: "vrc_w", pose_s: "vrc_s" }),
   };
 }
 
@@ -367,7 +367,7 @@ function knuckles(): Record<string, Attack> {
     heavy: a({ wind: 0.14, active: 0.12, recover: 0.5, dmg: 220, guard: 55, reach: 1.6, lunge: 3, knock: 6, stun: 0.8, heavy: true, self_jump: 5, pose_w: "kh_w", pose_s: "kh_s" }),
     z: a({ name: "Rush", desc: "Barrel forward with a flurry that staggers.", cd: 5, wind: 0.08, active: 0.2, recover: 0.4, dmg: 120, guard: 35, reach: 1.6, lunge: 14, knock: 3, stun: 0.7, stagger: true, pose_w: "k5_w", pose_s: "k5_s" }),
     x: a({ name: "Shockwave Punch", desc: "Punch the air so hard it flies.", cd: 6, type: "projectile", wind: 0.14, recover: 0.35, dmg: 110, guard: 30, knock: 5, stun: 0.5, speed: 18, size: 1.3, style: "shock", pose_w: "k1_w", pose_s: "k1_s" }),
-    c: a({ name: "Meteor Fist", desc: "Leap at the enemy and smash the ground on landing, cratering everything nearby.", cd: 11, type: "strike", at: "self", mode: "leap", self_jump: 9, wind: 0.22, recover: 0.6, dmg: 300, guard: 80, knock: 8, stun: 0.9, heavy: true, delay: 0.02, radius: 2.5, style: "slam", pose_w: "slam_w", pose_s: "slam_s" }),
+    c: a({ name: "Meteor Fist", desc: "Leap at the enemy and smash the ground on landing. Super armor during the entire move: immune to stun, stagger, paralysis, slow and knockback, but still takes damage.", cd: 11, type: "strike", at: "self", mode: "leap", self_jump: 9, wind: 0.22, recover: 0.6, dmg: 300, guard: 80, knock: 8, stun: 0.9, heavy: true, delay: 0.02, radius: 2.5, style: "slam", pose_w: "slam_w", pose_s: "slam_s" }),
   };
 }
 

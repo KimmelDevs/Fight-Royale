@@ -170,6 +170,11 @@ export class Fighter implements Entity {
   /** Blood Festival: stun-immune, but damageable and all skills disabled until expiration. */
   bloodFestivalT = 0;
   onSickleRecast: (f: Fighter) => void = () => {};
+  /** Super armor only while Rook is performing Meteor Fist (wind-up, leap, landing recovery). */
+  private get meteorFistArmor(): boolean {
+    return this.kit === "knuckles" && this.state === S.ATTACK && this.atk?.name === "Meteor Fist";
+  }
+
   private ground: Plat | null = null;
   private dropT = 0;
   private respawnT = 0;
@@ -243,7 +248,10 @@ export class Fighter implements Entity {
     this.rageT = Math.max(this.rageT - dt, 0);
     this.counterT = Math.max(this.counterT - dt, 0);
     this.bloodFeintT = Math.max(this.bloodFeintT - dt, 0);
+    const frenzyWasActive = this.bloodFrenzyT > 0;
     this.bloodFrenzyT = Math.max(this.bloodFrenzyT - dt, 0);
+    // Show a FULL Bloodlust meter throughout Blood Frenzy, then clear it on expiry.
+    if (this.kit === "sickle" && frenzyWasActive && this.bloodFrenzyT === 0) this.bloodlust = 0;
     this.bloodFestivalT = Math.max(this.bloodFestivalT - dt, 0);
     this.invulnT = Math.max(this.invulnT - dt, 0);
     this.airJumpT = Math.max(this.airJumpT - dt, 0);
@@ -353,7 +361,7 @@ export class Fighter implements Entity {
   private readSkill() {
     const k = this.intent.skill;
     if (!k) return;
-    // C: Blood Festival shuts off ALL active skills (Z/X/C/V) for its full 3 seconds.
+    // C: Blood Festival shuts off ALL active skills (Z/X/C/V) for its full 6 seconds.
     if (this.kit === "sickle" && this.bloodFestivalT > 0) return;
     // Blood Sickle can be steered once after launch, regardless of cooldown.
     if (this.kit === "sickle" && this.sickleOut && this.attacks[k]?.style === "bloodsickle") {
@@ -389,8 +397,12 @@ export class Fighter implements Entity {
     this.atkPower = 1;
     if (id === "heavy" && this.state === S.CHARGE) this.atkPower = 1 + 0.5 * Math.min(this.stateT / CHARGE_MAX, 1);
     this.atkPower *= this.dmgMult * (this.rageT > 0 ? RAGE_MULT : 1) * this.status.dmgMult();
+    // Veyr: during the 6-second Blood Festival, his LIGHT combo hits 35% harder.
+    // Heavy attacks and special skills do not receive this bonus.
+    if (this.kit === "sickle" && this.bloodFestivalT > 0 && /^l\d+$/.test(id)) this.atkPower *= 1.35;
     this.atkId = id;
     this.atk = this.attacks[id];
+    if (this.kit === "knuckles" && this.atk?.name === "Meteor Fist") this.knock = 0;
     if (this.kit === "sickle" && this.bloodFrenzyT > 0 && id.startsWith("l"))
       this.atk = { ...this.atk, wind: this.atk.wind * 0.88, recover: this.atk.recover * 0.88 };
     this.atkPhase = 0;
@@ -499,7 +511,7 @@ export class Fighter implements Entity {
     let v = 0;
     let walking = false;
     // No brain yet = still in the READY countdown: stand still.
-    if (this.state === S.IDLE && this.autoApproach && this.brain && o && !o.isDown() && dist > ENGAGE) { v = this.walkSpeed * this.status.speedMult(); walking = true; }
+    if (this.state === S.IDLE && this.autoApproach && this.brain && o && !o.isDown() && dist > ENGAGE) { v = this.walkSpeed * (this.meteorFistArmor ? 1 : this.status.speedMult()); walking = true; }
     if (this.state === S.ATTACK && this.atk && this.atkPhase <= 1 && dist > MIN_DIST + 0.15) v += this.atk.lunge;
     this.knock = Math.max(this.knock - 14 * dt, 0);
     v -= this.knock;
@@ -507,7 +519,7 @@ export class Fighter implements Entity {
     pos.addScaledVector(dir, v * dt);
     const steer = this.state === S.IDLE ? 1 : this.state === S.BLOCK ? 0.5 : this.state === S.CHARGE ? 0.4 : 0;
     if (steer > 0 && this.intent.move.lengthSq() > 0.0001) {
-      const step = this.intent.move.clone().normalize().multiplyScalar(this.moveSpeed * (this.bloodFrenzyT > 0 ? 1.15 : 1) * this.status.speedMult() * steer * dt);
+      const step = this.intent.move.clone().normalize().multiplyScalar(this.moveSpeed * (this.bloodFrenzyT > 0 ? 1.15 : 1) * (this.meteorFistArmor ? 1 : this.status.speedMult()) * steer * dt);
       if (dist < MIN_DIST && step.dot(dir) > 0) step.addScaledVector(dir, -step.dot(dir));
       pos.add(step);
       walking = this.onGround;
@@ -559,7 +571,7 @@ export class Fighter implements Entity {
       this.dots.push({ ...d, src: this.status.src });
       if (this.hp <= 0) { this.ko(); return; }
     }
-    if (st.jolt && this.bloodFestivalT <= 0 && this.state !== S.HITSTUN && this.state !== S.STAGGER) {
+    if (st.jolt && this.bloodFestivalT <= 0 && !this.meteorFistArmor && this.state !== S.HITSTUN && this.state !== S.STAGGER) {
       this.stun = 0.25; this.stunPose = "hit"; this.holding = false;
       this.setState(S.HITSTUN);
       this.model.flash("#ffe066", 0.12);
@@ -585,7 +597,13 @@ export class Fighter implements Entity {
         this.model.flash("#99e6ff", 0.15);
         return "parry";
       }
-      this.guard -= a.guard * power;
+      // Blood Festival: Veyr's blocked LIGHT sickle hits drain 3x normal guard.
+      // power already includes the 1.35x Festival damage buff; cancel that ONLY
+      // for guard calculation, then apply the requested 3x guard multiplier.
+      // HP damage, clashes, and normal blocks otherwise behave as before.
+      const festivalGuardTriple = attacker instanceof Fighter && attacker.kit === "sickle" &&
+        attacker.bloodFestivalT > 0 && a.type === "melee" && /^l\d+$/.test(attacker.atkId);
+      this.guard -= a.guard * power * (festivalGuardTriple ? 3 / 1.35 : 1);
       this.guardDelay = 1;
       if (this.guard <= 0) {
         this.guard = 0;
@@ -608,11 +626,12 @@ export class Fighter implements Entity {
     if (this.stage) return this.launch(attacker, a, dmg);
     this.lastDamage = dmg;
     this.hp = Math.max(this.hp - dmg, 0);
-    this.knock = a.knock;
+    this.knock = this.meteorFistArmor ? 0 : a.knock;
     this.model.flash();
     if (this.hp <= 0) { this.ko(); return "ko"; }
     // Even during Blood Festival, damage and non-stunning conditions still land.
-    if (a.effect && !(this.bloodFestivalT > 0 && a.effect === "paralyze"))
+    if (a.effect && !(this.bloodFestivalT > 0 && a.effect === "paralyze") &&
+        !(this.meteorFistArmor && (a.effect === "paralyze" || a.effect === "slow")))
       this.status.apply(a.effect as StatusKind, a.effect_t, a.effect_p, attacker);
     // Stun rules: one stun per skill use (multi-hit skills don't re-stun every tick), and
     // repeated stuns within a few seconds get shorter, so nobody can be locked forever.
@@ -623,16 +642,20 @@ export class Fighter implements Entity {
     this.stunChain = this.clock - this.lastStunAt < STUN_DR_WINDOW ? this.stunChain + 1 : 0;
     this.lastStunAt = this.clock;
     const stun = Math.max(0.1, a.stun * Math.pow(STUN_DR, this.stunChain));
-    if (this.bloodFestivalT <= 0) {
+    if (this.bloodFestivalT <= 0 && !this.meteorFistArmor) {
       if (a.heavy || a.stagger) this.stagger(stun);
       else { this.stun = stun; this.stunPose = "hit"; this.holding = false; this.setState(S.HITSTUN); }
     }
     return this.lastCrit ? "crit" : "hit";
   }
 
-  stagger(d: number) { if (this.bloodFestivalT > 0) return; this.stun = d; this.stunPose = "stagger"; this.holding = false; this.setState(S.STAGGER); }
+  stagger(d: number) { if (this.bloodFestivalT > 0 || this.meteorFistArmor) return; this.stun = d; this.stunPose = "stagger"; this.holding = false; this.setState(S.STAGGER); }
 
   clashRecoil() {
+    if (this.meteorFistArmor) {
+      this.model.recoil = Math.max(this.model.recoil, 0.25);
+      return; // Clash counted; Meteor Fist keeps going without being crowd-controlled.
+    }
     if (this.bloodFestivalT > 0) {
       // Clash still counts. Cancel the swing and give a short physical recoil,
       // without applying stun (Blood Festival's 3-second immunity).
@@ -646,7 +669,7 @@ export class Fighter implements Entity {
     this.setState(S.HITSTUN);
   }
 
-  pushBack(speed: number) { this.knock = Math.max(this.knock, speed); }
+  pushBack(speed: number) { if (!this.meteorFistArmor) this.knock = Math.max(this.knock, speed); }
   win() { if (this.state !== S.KO) this.setState(S.WIN); }
 
   revive(frac: number) {
@@ -673,6 +696,10 @@ export class Fighter implements Entity {
     const p = dmg * PCT_PER_DMG;
     this.pct = Math.min(this.pct + p, 999);
     this.lastDamage = p;
+    if (this.meteorFistArmor) {
+      this.model.flash();
+      return this.lastCrit ? "crit" : "hit";
+    }
     const speed = 2.5 + a.knock * 0.5 + this.pct * (0.06 + p * 0.006);
     let side = Math.sign(this.root.position.x - (attacker ? attacker.root.position.x : this.knockFrom));
     if (!side) side = attacker instanceof Fighter ? attacker.facing : -this.facing;
