@@ -159,6 +159,20 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
               <div className="guard"><Bar v={me.guard / me.maxGuard} color={me.guard / me.maxGuard > 0.25 ? "#f2c94c" : "#ff7043"} /></div>
               <div className="num">{Math.ceil(me.hp)} / {Math.round(me.maxHp)}</div>
               <StatusChips list={me.status} />
+              {me.id === "zarek" && (
+                <div style={{ marginTop: 8, color: "#9ce8ff", fontSize: 11 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, marginBottom: 4 }}>
+                    <span>CLASH MOMENTUM</span><span>{me.clashMomentum}/3</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 5 }}>
+                    {[0, 1, 2].map((n) => (
+                      <span key={n} style={{ display: "block", flex: 1, height: 7, borderRadius: 4,
+                        background: n < me.clashMomentum ? "#6edcff" : "rgba(160,216,255,0.18)",
+                        boxShadow: n < me.clashMomentum ? "0 0 7px #58caff" : "none" }} />
+                    ))}
+                  </div>
+                </div>
+              )}
               {me.id === "veyr" && (
                 <div style={{ marginTop: 7, fontSize: 11, color: "#ff9cb6" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>

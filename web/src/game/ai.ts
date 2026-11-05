@@ -199,7 +199,7 @@ export class AiBrain implements Brain {
         this.queue = [[0, 0.06]]; this.hold = 0;
         return;
       }
-      if (festival) {
+      if (festival || o.atk?.no_parry) {
         // Perfect parry cannot stop Veyr's festival melee. Block EARLY (regular guard),
         // or evade when guard cannot sustain a block. Clashes remain valid.
         if (!guardLow && f.onGround) this.schedule(0, Math.max(tth + 0.42, 0.48));

@@ -120,6 +120,22 @@ export const CHARACTERS: Character[] = [
       tunic: "#372b38", band: "#7b2a40", pants: "#211d27", boots: "#28202a", metal: "#b9b2bc", trim: "#c34b56",
       cape: "#38252f", cape_bottom: "#8d2e47", glow: "#ff465d", shield: "#572735", emblem: "#ff465d" } },
 
+  // ZAREK_STORM_V1 — temporary Nyx VRM, unique female glaive kit and storm animations.
+  { id: "zarek", title: "Storm Glaive", role: "Duelist - Double-Ended Glaive",
+    desc: "A lightning duelist who builds Clash Momentum by meeting enemy blades head-on. Charged momentum empowers her spinning glaive attacks.",
+    stats: { power: 4, speed: 4, range: 4, defense: 3 },
+    look: { name: "Zarek", body: "f", vrm: "nyx", kit: "glaive", element: "storm", outfit: "assassin", style: "ponytail", hat: "none",
+      hair: "#c8d7eb", hair_shade: "#6f93c5", iris_top: "#2d74d8", iris_bottom: "#a5f0ff", eye_dark: "#11284c",
+      tunic: "#17273f", band: "#326ba4", pants: "#10192c", boots: "#17253a", metal: "#cbdcec", trim: "#8bdfff",
+      cape: "#192c4d", cape_bottom: "#356dc1", glow: "#62cfff", shield: "#183a5a", emblem: "#c7faff" } },
+  // KAIZEN_CHAINBLADE_V1 — uses Garrick's male VRM until kaizen.vrm is ready.
+  { id: "kaizen", title: "Chainblade Berserker", role: "Berserker - Segmented Sword",
+    desc: "Switches from precise close sword cuts to unpredictable long chainblade arcs. Hook enemies, lash around their guard, and unleash a short frenzy.",
+    stats: { power: 5, speed: 3, range: 4, defense: 3 },
+    look: { name: "Kaizen", body: "m", vrm: "garrick", kit: "chainblade", element: "chain", outfit: "knight", style: "short", hat: "none",
+      hair: "#231f29", hair_shade: "#716570", iris_top: "#9d282a", iris_bottom: "#ff895c", eye_dark: "#2c0910",
+      tunic: "#332831", band: "#6e3034", pants: "#221e25", boots: "#352b30", metal: "#adb2bd", trim: "#b88f7b",
+      cape: "#4e242a", cape_bottom: "#8e3039", glow: "#ff5b63", shield: "#3b242b", emblem: "#ffa5a0" } },
 ];
 
 export function resolveEnemy(player: number, pick: number): number {

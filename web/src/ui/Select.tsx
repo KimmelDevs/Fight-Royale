@@ -11,8 +11,10 @@ import { Icon, skillIcon, charIcon, emblemIcon } from "./icons";
 const CONTROLS: Record<string, string> = {
   knight: "Tap: 3-hit sword combo  -  Hold: charged slash  -  Block: shield",
   mage: "Tap: 3-cast spell combo  -  Hold: charged spell  -  Block: magic barrier",
+  glaive: "Tap: Cyclone Fang 5-hit combo  -  Hold the 5th hit: extra spins  -  Z: Serpent Wheel (no parry, dash/launcher cancel)  -  X: Phantom Spiral dash  -  C: Infinite Crescent  -  Real clashes build Momentum",
   sickle: "Tap: 4-hit dual-sickle combo  -  Hold: Crossbite heavy slash  -  Z: Predator Dash  -  X: Blood Vortex  -  C: Reaper's Frenzy",
   assassin: "Tap: 4-hit dagger flurry  -  Hold: dash strike  -  Block: dagger guard (wide parry)",
+  chainblade: "Tap: 4 close sword cuts  -  Hold: Chainbreaker extended lash  -  Z: Chain Snare pull  -  X: Rending Orbit  -  C: Unbound Drive (5s)  -  V: Razor Recall",
   greatsword: "Tap: 3 heavy cleaves  -  Hold: spinning mega-slash  -  Block: blade guard",
   katana: "Tap: 3 swift cuts  -  Hold: iaido dash slash  -  Block: blade guard (wide parry)",
   bow: "Tap: 3 arrows (third is a spread)  -  Hold: piercing power shot  -  Block: arm guard",

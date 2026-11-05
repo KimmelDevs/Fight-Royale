@@ -5,7 +5,7 @@ import * as THREE from "three";
 import { actionFor, type Action } from "./keys";
 
 /** dx/dz: dash direction in world space this frame (0, 0 = no dash). */
-export interface RawInput { attack: boolean; block: boolean; jump: boolean; skill: string; mx: number; mz: number; dx?: number; dz?: number }
+export interface RawInput { attack: boolean; block: boolean; jump: boolean; skill: string; mx: number; mz: number; skillHeld?: string; dx?: number; dz?: number }
 
 /** Two taps of the same movement key within this many ms = dash. */
 const DOUBLE_TAP_MS = 260;
@@ -89,6 +89,6 @@ export class Input {
     if (x || y) { const m = world(x, y); mx = m.x; mz = m.z; }
     let dx = 0, dz = 0;
     if (this.dash) { const d = world(this.dash[0], this.dash[1]); dx = d.x; dz = d.z; this.dash = null; }
-    return { attack: this.held("attack"), block: this.held("block"), jump: this.held("jump"), skill: this.skills.shift() ?? "", mx, mz, dx, dz };
+    return { attack: this.held("attack"), block: this.held("block"), jump: this.held("jump"), skill: this.skills.shift() ?? "", mx, mz, skillHeld: this.held("skill1") ? "z" : "", dx, dz };
   }
 }

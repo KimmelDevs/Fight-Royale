@@ -41,7 +41,7 @@ const STUN_DR_WINDOW = 3;
 const STUN_DR = 0.6;
 const PCT_PER_DMG = 0.07;
 
-export interface Intent { attack: boolean; block: boolean; jump: boolean; skill: string; move: THREE.Vector3; dash: THREE.Vector3 }
+export interface Intent { attack: boolean; block: boolean; jump: boolean; skill: string; skillHeld?: string; skillMove?: THREE.Vector3; move: THREE.Vector3; dash: THREE.Vector3 }
 export const DASH_CD = 3;
 const DASH_T = 0.3;
 const DASH_SPEED = 14;
@@ -182,6 +182,13 @@ export class Fighter implements Entity {
   /** Blood Hunter: steering recast and 0.30s feint window. */
   sickleOut = false;
   bloodFeintT = 0;
+  clashMomentum = 0; // ZAREK_STORM_V1: 0..3, earned only by real melee weapon clashes.
+  chainFuryT = 0; // legacy field retained for existing snapshots/weapon code.
+  // KAIZEN_DIRECTIONAL_V3: direction is relative to facing at skill-press, never hard-coded WASD.
+  chainSkillDir: "forward" | "backward" | "left" | "right" | "neutral" = "neutral";
+  chainHookTarget: Entity | null = null;
+  chainHookT = 0;
+  onChainHookRecast: (f: Fighter, approach: boolean) => void = () => {};
   bloodlust = 0;
   bloodFrenzyT = 0;
   /** Blood Festival: stun-immune, but damageable and all skills disabled until expiration. */
@@ -250,7 +257,8 @@ export class Fighter implements Entity {
   update(dt: number) {
     if (this.puppet) { this.updatePuppet(dt); return; }
     const it = this.intent;
-    it.attack = false; it.block = false; it.jump = false; it.skill = ""; it.move.set(0, 0, 0); it.dash.set(0, 0, 0);
+    it.attack = false; it.block = false; it.jump = false; it.skill = ""; it.skillHeld = "";
+    it.skillMove?.set(0, 0, 0); it.move.set(0, 0, 0); it.dash.set(0, 0, 0);
     if (this.out) { this.waitRespawn(dt); return; }
     if (this.brain && this.state !== S.KO && this.state !== S.WIN) this.brain.think(this, dt);
     // AIR_COMBAT_V1: Right Click while hit-stunned in air = one escape per airtime.
@@ -266,6 +274,9 @@ export class Fighter implements Entity {
     this.readDash();
     this.wardT = Math.max(this.wardT - dt, 0);
     this.rageT = Math.max(this.rageT - dt, 0);
+    this.chainFuryT = Math.max(this.chainFuryT - dt, 0);
+    this.chainHookT = Math.max(0, this.chainHookT - dt);
+    if (this.chainHookT === 0) this.chainHookTarget = null;
     this.counterT = Math.max(this.counterT - dt, 0);
     this.bloodFeintT = Math.max(this.bloodFeintT - dt, 0);
     const frenzyWasActive = this.bloodFrenzyT > 0;
@@ -324,7 +335,7 @@ export class Fighter implements Entity {
     // One-handed Aster and two-handed Garrick lead sword strikes with their torsos.
     // No world-facing change: hit detection and shielding remain authoritative.
     const bladeActive = this.state === S.ATTACK && this.atk?.type === "melee" &&
-      ((this.kit === "greatsword") || (this.kit === "knight" && this.look.element === "light"));
+      ((this.kit === "greatsword") || (this.kit === "glaive") || (this.kit === "knight" && this.look.element === "light"));
     if (bladeActive) {
       const a = this.atk!;
       const progress = Math.max(0, Math.min(1, this.stateT / Math.max(a.wind + a.active, 0.01)));
@@ -332,11 +343,16 @@ export class Fighter implements Entity {
       const direction = this.atkId === "l2" ? -1 : 1;
       const recoveryT = Math.max(0, Math.min(1, (this.stateT - a.wind - a.active) / Math.max(0.01, a.recover)));
       const settle = 1 - recoveryT * recoveryT * (3 - 2 * recoveryT);
-      this.bladeSwingYaw = direction * (this.kit === "greatsword" ? 0.48 : 0.27) * (1 - 2 * turn) * settle;
+      this.bladeSwingYaw = direction * (this.kit === "greatsword" ? 0.48 : this.kit === "glaive" ? (this.atkId === "l4" ? 0.44 : 0.29) : 0.27) * (1 - 2 * turn) * settle;
     } else this.bladeSwingYaw = 0;
     this.model.rotation.y = this.viewBias + this.tempestSpin + + this.cycloneSpin + this.bladeSwingYaw;
     this.computePose();
     this.model.bloodFestivalT = this.kit === "sickle" ? this.bloodFestivalT : 0;
+    this.model.chainFuryT = this.kit === "chainblade" ? this.chainFuryT : 0;
+    this.model.chainPose = this.kit === "chainblade" ? this.poseName : "idle";
+    this.model.chainExtended = this.kit === "chainblade" && (this.chainFuryT > 0 ||
+      ["cbz_w", "cbz_s", "cbx_w", "cbx1_s", "cbx2_s", "cbx3_s", "cbh_w", "cbh_s", "cbv_w", "cbv_s"].includes(this.poseName));
+    this.model.glaivePose = this.kit === "glaive" ? this.poseName : "idle";
     this.model.blend(this.poses[this.poseName] ?? this.poses.idle, dt, this.poseSpeed);
     this.bowDraw(dt);
     this.trail.update(dt);
@@ -388,7 +404,9 @@ export class Fighter implements Entity {
     }
     if (pressed && this.intent.jump && this.atkLock <= 0) {
       if ((this.onGround || this.airStartT < 0.22) &&
-          (this.state === S.IDLE || this.state === S.BLOCK)) {
+          (this.state === S.IDLE || this.state === S.BLOCK ||
+           (this.kit === "glaive" && this.state === S.ATTACK &&
+            this.atk?.style === "glaive_serpent" && this.atkPhase === 1))) {
         this.holding = false;
         this.airStartT = 99;
         this.startAttack("anti_air");
@@ -403,6 +421,8 @@ export class Fighter implements Entity {
         return;
       }
     }
+    if (pressed && this.kit === "glaive" && this.state === S.ATTACK &&
+        this.atkId === "l4" && this.atk?.next === "l5") this.buffered = true;
     if (pressed) { this.holding = true; this.holdT = 0; }
     if (this.holding) {
       this.holdT += dt;
@@ -456,9 +476,33 @@ export class Fighter implements Entity {
     }
   }
 
+  private chainRelativeDirection(): "forward" | "backward" | "left" | "right" | "neutral" {
+    const m = this.intent.skillMove ?? this.intent.move;
+    if (m.lengthSq() < 0.04) return "neutral";
+    if (this.stage) {
+      // Side-view: horizontal direction is forward/back relative to current facing.
+      if (Math.abs(m.x) > 0.25) return m.x * this.facing > 0 ? "forward" : "backward";
+      // Camera up/down is used for jumping/dropping in platform mode; not a side throw.
+      return "neutral";
+    }
+    const forward = new THREE.Vector3(Math.sin(this.root.rotation.y), 0, Math.cos(this.root.rotation.y));
+    const front = m.dot(forward), right = m.x * forward.z - m.z * forward.x;
+    if (Math.abs(front) >= Math.abs(right)) return front >= 0 ? "forward" : "backward";
+    return right >= 0 ? "right" : "left";
+  }
+
   private readSkill() {
     const k = this.intent.skill;
     if (!k) return;
+    // Recast the already-connected hook. Movement direction is sampled on THIS recast.
+    if (this.kit === "chainblade" && k === "x" && this.chainHookT > 0 && this.chainHookTarget && !this.chainHookTarget.isDown() &&
+        ![S.KO, S.WIN, S.STAGGER, S.HITSTUN].includes(this.state)) {
+      const dir = this.chainRelativeDirection();
+      this.onChainHookRecast(this, dir === "forward"); // backward or neutral = pull enemy
+      this.chainHookT = 0;
+      this.chainHookTarget = null;
+      return;
+    }
     // C: Blood Festival shuts off ALL active skills (Z/X/C/V) for its full 6 seconds.
     if (this.kit === "sickle" && this.bloodFestivalT > 0) return;
     // Blood Sickle can be steered once after launch, regardless of cooldown.
@@ -475,6 +519,7 @@ export class Fighter implements Entity {
     const free = [S.IDLE, S.BLOCK, S.CHARGE].includes(this.state) || (this.state === S.ATTACK && this.atkPhase === 2);
     if (!free) return;
     this.holding = false;
+    if (this.kit === "chainblade") this.chainSkillDir = this.chainRelativeDirection();
     // The keg's cooldown starts when it explodes (the arena sets it).
     this.cooldowns[k] = this.attacks[k].type === "barrel" ? 0.6 : this.attacks[k].cd * this.cdMult;
     // Cast in the air, a skill with an air version uses it instead.
@@ -549,11 +594,14 @@ export class Fighter implements Entity {
     // Veyr: during the 6-second Blood Festival, his LIGHT combo hits 35% harder.
     // Heavy attacks and special skills do not receive this bonus.
     if (this.kit === "sickle" && this.bloodFestivalT > 0 && /^l\d+$/.test(id)) this.atkPower *= 1.35;
+    // Unbound Drive expands BASIC reach but does not bypass blocks, parries, or clashes.
     this.atkId = id;
     this.atk = this.attacks[id];
     // AIR_COMBAT_V1: avoid missing pose names on custom character rigs.
     if (!this.atk) { this.atkId = ""; return; }
     if (this.kit === "knuckles" && this.atk?.name === "Meteor Fist") this.knock = 0;
+    if (this.kit === "chainblade" && this.chainFuryT > 0 && /^l\d+$/.test(id))
+      this.atk = { ...this.atk, reach: this.atk.reach + 0.32, guard: this.atk.guard * 1.12 };
     if (this.kit === "sickle" && this.bloodFrenzyT > 0 && id.startsWith("l"))
       this.atk = { ...this.atk, wind: this.atk.wind * 0.88, recover: this.atk.recover * 0.88 };
     this.atkPhase = 0;
@@ -836,6 +884,8 @@ export class Fighter implements Entity {
     this.airChaseT = 0; this.airChaseMoveT = 0; this.airRecoverUsed = false;
     this.hp = this.maxHp * frac;
     this.guard = this.maxGuard;
+    this.chainFuryT = 0;
+    this.clashMomentum = 0;
     this.bloodlust = 0; this.bloodFrenzyT = 0; this.bloodFeintT = 0; this.sickleOut = false; this.bloodFestivalT = 0;
     this.model.standUp();
     this.setState(S.IDLE);
@@ -845,6 +895,7 @@ export class Fighter implements Entity {
 
   ko() {
     this.airChaseT = 0; this.airChaseMoveT = 0;
+    this.clashMomentum = 0;
     this.bloodlust = 0; this.bloodFrenzyT = 0; this.bloodFeintT = 0; this.sickleOut = false; this.bloodFestivalT = 0;
     this.status.clear();
     this.setState(S.KO);
@@ -1050,12 +1101,45 @@ export class Fighter implements Entity {
           else { p = a.pose_s; sp = 40; }
           break;
         }
+        // ZAREK_CYCLONE_V3: true successive poses for serpent, slide reversal and ultimate.
+        if (this.kit === "glaive" && a?.style === "glaive_serpent") {
+          const elapsed = this.stateT - a.wind;
+          if (elapsed < 0) { p = "glz_w"; sp = 27; }
+          else { p = ["glz_s", "gl3_s", "gl2_s", "gl4_s", "glz_s"][Math.min(4, Math.floor(elapsed / 0.21))]; sp = 43; }
+          break;
+        }
+        if (this.kit === "glaive" && a?.style === "glaive_phantom") {
+          p = this.stateT < a.wind ? "glx_w" : this.stateT < a.wind + 0.19 ? "gl2_s" : "glx_turn"; sp = 46;
+          break;
+        }
+        if (this.kit === "glaive" && a?.style === "glaive_infinite") {
+          const elapsed = this.stateT - a.wind;
+          p = elapsed < 0 ? "glc_w" : elapsed < 1.43 ? ["gl1_s", "gl2_s", "gl3_s", "gl4_s", "gl2_s", "gl3_s", "glc_launch"][Math.min(6, Math.floor(elapsed / 0.215))] : "glc_finish";
+          sp = elapsed < 0 ? 22 : 55;
+          break;
+        }
+        // ZAREK_GLAIVE_CHOREO_V2: readable windup, fast weapon contact, controlled follow-through.
+        if (this.kit === "glaive" && a?.type === "melee") {
+          if (this.atkPhase === 0) { p = a.pose_w; sp = 23; }
+          else if (this.atkPhase === 1) { p = a.pose_s; sp = 66; }
+          else if (this.stateT < a.wind + a.active + a.recover * 0.8) { p = a.pose_s; sp = 18; }
+          else { p = "idle"; sp = 13; }
+          break;
+        }
         if (a?.style === "cyclone_kick_v2") {
           const elapsed = this.stateT - a.wind;
           if (elapsed < 0) { p = "cy1_w"; sp = 24; }
           else if (elapsed < 0.19) { p = "cy1_s"; sp = 50; }
           else if (elapsed < 0.38) { p = "cy2_s"; sp = 55; }
           else { p = "cy3_s"; sp = 55; }
+          break;
+        }
+        if (a?.style === "chain_carousel") {
+          const elapsed = this.stateT - a.wind;
+          if (elapsed < 0) { p = "cbx_w"; sp = 17; }
+          else if (elapsed < 0.19) { p = "cbx1_s"; sp = 38; }
+          else if (elapsed < 0.40) { p = "cbx2_s"; sp = 42; }
+          else { p = "cbx3_s"; sp = 40; }
           break;
         }
         if (a?.style === "iron_tempest") {
@@ -1101,7 +1185,7 @@ export class Fighter implements Entity {
       this.state, this.poseName, this.poseSpeed, Math.round(this.hp), Math.round(this.guard),
       +this.model.walk.toFixed(2), +this.model.charge.toFixed(2), this.trail.emitting ? 1 : 0,
       +this.model.recoil.toFixed(2), this.cooldowns.z, this.cooldowns.x, this.cooldowns.c, this.maxHp,
-      +this.pct.toFixed(1), this.stocks, this.out ? 1 : 0, +this.atkLock.toFixed(2), +this.dashCd.toFixed(2), this.status.mask, this.barrelOut ? 1 : 0, Math.round(this.bloodlust), +this.bloodFrenzyT.toFixed(2), this.sickleOut ? 1 : 0, +this.bloodFestivalT.toFixed(2), +this.tempestSpin.toFixed(3), +this.cycloneSpin.toFixed(3), +this.bladeSwingYaw.toFixed(3)];
+      +this.pct.toFixed(1), this.stocks, this.out ? 1 : 0, +this.atkLock.toFixed(2), +this.dashCd.toFixed(2), this.status.mask, this.barrelOut ? 1 : 0, Math.round(this.bloodlust), +this.bloodFrenzyT.toFixed(2), this.sickleOut ? 1 : 0, +this.bloodFestivalT.toFixed(2), +this.tempestSpin.toFixed(3), +this.cycloneSpin.toFixed(3), +this.bladeSwingYaw.toFixed(3), +this.chainFuryT.toFixed(2), this.clashMomentum];
   }
 
   applySnapshot(s: any[]) {
@@ -1120,7 +1204,7 @@ export class Fighter implements Entity {
     this.cooldowns.z = s[14]; this.cooldowns.x = s[15]; this.cooldowns.c = s[16];
     this.maxHp = s[17];
     if (s.length > 18) {
-      this.pct = s[18]; this.stocks = s[19]; this.atkLock = s[21] ?? 0; this.dashCd = s[22] ?? 0; this.status.mask = s[23] ?? 0; this.barrelOut = s[24] === 1; this.bloodlust = s[25] ?? 0; this.bloodFrenzyT = s[26] ?? 0; this.sickleOut = s[27] === 1; this.bloodFestivalT = s[28] ?? 0;
+      this.pct = s[18]; this.stocks = s[19]; this.atkLock = s[21] ?? 0; this.dashCd = s[22] ?? 0; this.status.mask = s[23] ?? 0; this.barrelOut = s[24] === 1; this.bloodlust = s[25] ?? 0; this.bloodFrenzyT = s[26] ?? 0; this.sickleOut = s[27] === 1; this.bloodFestivalT = s[28] ?? 0; this.clashMomentum = s[s.length - 1] ?? 0; this.chainFuryT = s.length >= 34 ? (s[s.length - 2] ?? 0) : 0;
       const out = s[20] === 1;
       if (out !== this.out) { this.out = out; this.root.visible = !out; if (!out) this.root.position.copy(this.netPos); }
     }
@@ -1146,6 +1230,11 @@ export class Fighter implements Entity {
     this.model.combat = [S.ATTACK, S.CHARGE, S.BLOCK, S.HITSTUN, S.STAGGER].includes(this.state);
     this.model.hurt = this.state === S.HITSTUN || this.state === S.STAGGER;
     this.model.bloodFestivalT = this.kit === "sickle" ? this.bloodFestivalT : 0;
+    this.model.chainFuryT = this.kit === "chainblade" ? this.chainFuryT : 0;
+    this.model.chainPose = this.kit === "chainblade" ? this.poseName : "idle";
+    this.model.chainExtended = this.kit === "chainblade" && (this.chainFuryT > 0 ||
+      ["cbz_w", "cbz_s", "cbx_w", "cbx1_s", "cbx2_s", "cbx3_s", "cbh_w", "cbh_s", "cbv_w", "cbv_s"].includes(this.poseName));
+    this.model.glaivePose = this.kit === "glaive" ? this.poseName : "idle";
     this.model.blend(this.poses[this.poseName] ?? this.poses.idle, dt, this.poseSpeed);
     this.bowDraw(dt);
     this.trail.update(dt);

@@ -87,6 +87,19 @@ export class FighterModel extends THREE.Group {
   hairSway: THREE.Group[] = [];
   /** Two-handed weapons: the left hand is pulled onto this point of the grip every frame. */
   private gripL: THREE.Object3D | null = null;
+  private glaivePivot: THREE.Group | null = null;
+  glaivePose = "idle"; // ZAREK_GLAIVE_CHOREO_V2: current attack key from the fighter
+  /** KAIZEN_CHAIN_SPIN_V2 — separate flying blade, with links on a curved chain. */
+  private chainLinks: THREE.Group[] = [];
+  private chainAnchor: THREE.Group | null = null;
+  private chainBlade: THREE.Group | null = null;
+  private chainGhosts: THREE.Mesh[] = [];
+  private chainPoseClock = 0;
+  private chainPrevPose = "";
+  private chainOrbit = 0;
+  chainPose = "idle";
+  chainFuryT = 0;
+  chainExtended = false;
   /** Right foot tip, for kick trails. */
   footR: THREE.Group | null = null;
   walk = 0;
@@ -156,6 +169,8 @@ export class FighterModel extends THREE.Group {
     switch (look.kit) {
       case "mage": this.buildStaff(); break;
       case "sickle": this.buildSickles(); break;
+      case "glaive": this.buildGlaive(); break;
+      case "chainblade": this.buildChainblade(); break;
       case "assassin": this.buildDaggers(); break;
       case "greatsword": this.buildGreatsword(); break;
       case "katana": this.buildKatana(); break;
@@ -631,6 +646,189 @@ export class FighterModel extends THREE.Group {
   // --- weapons -----------------------------------------------------------------------
   private steel() { return M.toon("#eef3ff", { rim: 0.8, shade: METAL_SHADE }); }
 
+  /** ZAREK_STORM_V1: double-ended conductive glaive; meshes follow the VRM's hands. */
+  private buildGlaive() {
+    const staff = pivot(this.hand_r, [0, 0, 0], [PI / 2, 0, 0]);
+    this.glaivePivot = staff;
+    mesh(staff, cyl(0.019, 0.022, 1.53, 12), this.tn("#233449"));
+    mesh(staff, cyl(0.028, 0.028, 0.42, 12), this.tn("#101a2a"), [0, 0, 0]);
+    for (const s of [-1, 1]) {
+      mesh(staff, cyl(0.047, 0.035, 0.12, 12), this.tn(this.look.trim), [0, s * 0.73, 0]);
+      // Broad at the base, narrow at the end: thin diamond-edged blade, not a round club.
+      const outline = new THREE.Shape();
+      outline.moveTo(-0.026, s * 0.72);
+      outline.lineTo(-0.062, s * 0.91);
+      outline.lineTo(-0.042, s * 1.13);
+      outline.lineTo(0, s * 1.38);
+      outline.lineTo(0.042, s * 1.13);
+      outline.lineTo(0.062, s * 0.91);
+      outline.lineTo(0.026, s * 0.72);
+      outline.closePath();
+      const blade = new THREE.ExtrudeGeometry(outline, { depth: 0.014, bevelEnabled: true, bevelThickness: 0.006, bevelSize: 0.006, bevelSegments: 1 });
+      blade.translate(0, 0, -0.007);
+      mesh(staff, blade, this.steel());
+      mesh(staff, box(0.014, 0.30, 0.02), this.glowMat, [0, s * 1.04, 0.013]);
+      mesh(staff, sphere(0.035, 12), this.gem(), [0, s * 0.82, 0]);
+    }
+    for (const y of [-0.32, -0.18, 0.18, 0.32]) mesh(staff, torus(0.029, 0.039), this.tn(this.look.trim), [0, y, 0], [PI / 2, 0, 0], [1, 0.35, 1]);
+    this.gripL = pivot(staff, [0, -0.29, 0]);
+    this.bladeBase = pivot(staff, [0, 0.78, 0]);
+    this.bladeTip = pivot(staff, [0, 1.38, 0]);
+    this.shieldNode = staff;
+    this.castPoint = this.bladeTip;
+  }
+
+  /** KAIZEN_CHAIN_SPIN_V2: a dagger-like tip on a real articulated chain, NOT a segmented rigid sword. */
+  private buildChainblade() {
+    // Right hand keeps only a short grip; the sharp blade travels freely around Kaizen.
+    const handle = pivot(this.hand_r, [0, 0, 0], [PI / 2, 0, 0]);
+    mesh(handle, cyl(0.037, 0.043, 0.42, 10), this.tn("#24232a"), [0, 0.045, 0]);
+    mesh(handle, sphere(0.043, 12), this.tn(this.look.trim), [0, -0.17, 0]);
+    mesh(handle, box(0.16, 0.041, 0.065), this.metal(), [0, 0.24, 0]);
+    this.chainAnchor = pivot(handle, [0, 0.30, 0]);
+
+    // Twenty-four interlocked steel rings. Each follows a live Bezier curve from hand to blade.
+    const chainSteel = this.tn("#8d939f");
+    for (let i = 0; i < 24; i++) {
+      const link = pivot(this);
+      mesh(link, torus(0.025, 0.074), chainSteel, [0, 0, 0],
+        [i % 2 === 0 ? 0 : PI / 2, 0, 0], [0.8, 1, 1.2]);
+      if (i % 4 === 0) mesh(link, sphere(0.014, 8), this.gem(), [0.038, 0, 0]);
+      this.chainLinks.push(link);
+    }
+
+    // One heavy, hooked, tapered blade at the end of the chain (Toji-like motion reference).
+    this.chainBlade = pivot(this, [-0.65, 0.95, 0.35]);
+    mesh(this.chainBlade, cyl(0.027, 0.031, 0.19, 10), this.tn("#29252e"), [0, 0.015, 0]);
+    mesh(this.chainBlade, box(0.16, 0.041, 0.07), this.tn(this.look.trim), [0, 0.13, 0]);
+    const outline = new THREE.Shape();
+    outline.moveTo(-0.064, 0.13);
+    outline.lineTo(0.065, 0.13);
+    outline.lineTo(0.14, 0.31);
+    outline.lineTo(0.092, 0.49);
+    outline.lineTo(-0.007, 0.70);  // sharp hook point
+    outline.lineTo(-0.022, 0.48);
+    outline.lineTo(-0.12, 0.33);
+    outline.closePath();
+    const bladeGeo = new THREE.ExtrudeGeometry(outline,
+      { depth: 0.019, bevelEnabled: true, bevelThickness: 0.004, bevelSize: 0.003, bevelSegments: 1 });
+    bladeGeo.translate(0, 0, -0.0095);
+    mesh(this.chainBlade, bladeGeo, this.steel());
+    mesh(this.chainBlade, box(0.013, 0.29, 0.022), this.glowMat, [-0.045, 0.32, 0.019], [0, 0, -0.10]);
+    mesh(this.chainBlade, sphere(0.023, 10), this.gem(), [0, 0.16, 0.03]);
+    this.bladeBase = pivot(this.chainBlade, [0, 0.13, 0]);
+    this.bladeTip = pivot(this.chainBlade, [-0.008, 0.70, 0]);
+    this.castPoint = this.bladeTip; // Existing hit sparks attach to the REAL flying blade.
+    this.shieldNode = handle;
+    // Deliberately NO gripL: this is a one-handed chain weapon, not a greatsword.
+
+    // Offset echoes show blade travel, not a stationary circular VFX ring.
+    for (let i = 0; i < 2; i++) {
+      const mat = new THREE.MeshBasicMaterial({ color: i === 0 ? 0xff637b : 0xf7afb4,
+        transparent: true, opacity: i === 0 ? 0.27 : 0.13, depthWrite: false, side: THREE.DoubleSide });
+      const ghost = new THREE.Mesh(bladeGeo, mat);
+      ghost.userData.fill = true;
+      ghost.visible = false;
+      this.add(ghost);
+      this.chainGhosts.push(ghost);
+    }
+  }
+
+  /** A smooth chain path driven by distinct swing phases; combat and collision stay authoritative. */
+  private updateChainblade(dt: number) {
+    const blade = this.chainBlade, anchor = this.chainAnchor;
+    if (!blade || !anchor || this.chainLinks.length === 0) return;
+    this.updateMatrixWorld(true);
+    const start = this.worldToLocal(anchor.getWorldPosition(new THREE.Vector3()));
+    const pose = this.chainPose;
+    if (pose !== this.chainPrevPose) { this.chainPoseClock = 0; this.chainPrevPose = pose; }
+    else this.chainPoseClock += dt;
+    const t = this.chainPoseClock;
+    const isOrbit = pose.startsWith("cbx") || pose.startsWith("cbz") || pose.startsWith("cbc");
+    const isAttack = /^(cb[1-5]_[ws]|cbh_[ws]|cbc_[ws]|cbz_[ws]|cbv_[ws]|cbx(?:[1-3])?_[ws])$/.test(pose);
+    const strike = pose.endsWith("_s");
+    const winding = pose.endsWith("_w") && isAttack;
+    const enraged = this.chainFuryT > 0;
+    let target: THREE.Vector3;
+    const flat = new THREE.Vector3(start.x - 0.35, Math.max(0.43, start.y - 0.42), start.z + 0.13);
+
+    if (isOrbit) {
+      // Toji-style continuous horizontal rotation: the BLADE moves around the fighter,
+      // while the chain remains attached to his right hand. Each swipe is an actual hit.
+      this.chainOrbit += dt * (strike ? 23 : 12);
+      const theta = this.chainOrbit;
+      const radius = strike ? 1.87 : 1.16;
+      target = new THREE.Vector3(Math.sin(theta) * radius,
+        1.15 + Math.sin(theta * 2) * 0.13,
+        0.28 + Math.cos(theta) * radius * 0.81);
+    } else if (pose.startsWith("cbz") || pose.startsWith("cbv") || pose.startsWith("cbh")) {
+      // Coiling preparation -> outward throw -> retracting catch.
+      const isHeavy = pose.startsWith("cbh");
+      const isRecall = pose.startsWith("cbv");
+      const extension = winding ? Math.min(0.54, t * 3.8)
+        : Math.min(1, Math.max(0, t / (isRecall ? 0.26 : isHeavy ? 0.30 : 0.23)));
+      const thrust = winding ? 0.2 : Math.sin(Math.PI * extension) * (isHeavy ? 2.6 : 2.35);
+      target = new THREE.Vector3(start.x + Math.sin(t * 10) * 0.25,
+        1.28 + (isHeavy ? 0.15 : 0) + Math.sin(extension * PI) * 0.15,
+        start.z + 0.5 + thrust);
+    } else if (/^cb[1-5]_[ws]$/.test(pose)) {
+      // Alternating clockwise/counter-clockwise slashes with real chain travel.
+      const n = Number(pose[2]);
+      const dir = n % 2 ? 1 : -1;
+      const sweep = Math.min(1, t / 0.23);
+      const theta = (n % 2 ? -1.2 : 1.2) + dir * (strike ? sweep * PI * 1.25 : -0.35 + sweep * 0.55);
+      const radius = strike ? 1.48 : 0.80;
+      target = new THREE.Vector3(start.x + radius * Math.sin(theta),
+        1.25 + 0.43 * Math.cos(theta + n * 0.45),
+        start.z + 0.36 + radius * 0.68 * Math.cos(theta));
+    } else if (enraged || pose === "cbc_s") {
+      // Unbound Drive keeps the chain in a controlled protective orbit, not a rigid stick.
+      this.chainOrbit += dt * 6;
+      target = new THREE.Vector3(start.x + Math.sin(this.chainOrbit) * 0.84,
+        1.05 + Math.sin(this.chainOrbit * 1.3) * 0.26,
+        start.z + 0.20 + Math.cos(this.chainOrbit) * 0.76);
+    } else if (pose === "block") {
+      target = start.clone().add(new THREE.Vector3(-0.34, 0.22, 0.31));
+    } else {
+      target = flat.clone().add(new THREE.Vector3(0.055 * Math.sin(this.t * 2), 0, 0));
+    }
+
+    // Spring follow-through smooths transitions between separate animation phases.
+    const rate = isAttack ? 24 : 10;
+    blade.position.lerp(target, 1 - Math.exp(-rate * dt));
+    const end = blade.position.clone();
+    const control = start.clone().lerp(end, 0.48).add(new THREE.Vector3(
+      Math.sin(this.chainOrbit + 0.5) * (isOrbit ? 0.38 : 0.14),
+      isAttack ? 0.08 : -0.20,
+      Math.cos(this.chainOrbit) * (isOrbit ? 0.32 : 0.10)));
+    const chain = new THREE.QuadraticBezierCurve3(start, control, end);
+    const up = new THREE.Vector3(0, 1, 0);
+    for (let i = 0; i < this.chainLinks.length; i++) {
+      const a = (i + 0.5) / this.chainLinks.length;
+      const node = this.chainLinks[i];
+      node.position.copy(chain.getPoint(a));
+      const tangent = chain.getTangent(a).normalize();
+      node.quaternion.setFromUnitVectors(up, tangent);
+      node.rotateY((i % 2) * PI / 2);
+    }
+    const outward = end.clone().sub(chain.getPoint(0.85)).normalize();
+    if (outward.lengthSq() > 0.01) {
+      const facing = new THREE.Quaternion().setFromUnitVectors(up, outward);
+      blade.quaternion.slerp(facing, 1 - Math.exp(-18 * dt));
+    }
+    // Tapered afterimages track the flying blade, only while the attack is moving.
+    let previous: THREE.Object3D = blade;
+    for (let i = 0; i < this.chainGhosts.length; i++) {
+      const ghost = this.chainGhosts[i];
+      ghost.visible = isAttack && (strike || isOrbit);
+      const f = 1 - Math.exp(-(i === 0 ? 19 : 12) * dt);
+      ghost.position.lerp(previous.position, f);
+      ghost.quaternion.slerp(previous.quaternion, f);
+      ghost.scale.setScalar(i === 0 ? 0.97 : 0.87);
+      previous = ghost;
+    }
+  }
+
   private buildSword() {
     const s = pivot(this.hand_r, [0, 0, 0], [PI / 2, 0, 0]);
     mesh(s, cyl(0.016, 0.018, 0.17, 10), this.tn(BROWN));
@@ -987,9 +1185,38 @@ export class FighterModel extends THREE.Group {
 
     this.cape.rotation.set(0.08 + 0.3 * this.walk + 0.3 * this.recoil + Math.sin(this.t * 2.1) * 0.03, 0, Math.sin(this.t * 1.7) * 0.03);
     this.hairSway.forEach((h, i) => { h.rotation.x = 0.1 * this.walk + 0.25 * this.recoil + Math.sin(this.t * 2 + i) * 0.05; });
+    // Different actual polearm arcs: direct thrust, reverse-end slash, figure-eight rise,
+    // and pivot cleave. All rotations are local to the weapon: one motion path for VRM and
+    // procedural character, and the left-hand IK follows the same physical shaft.
+    if (this.glaivePivot) {
+      const angles: Record<string, [number, number, number]> = {
+        idle: [PI / 2, 0, 0], block: [PI / 2, -0.17, -0.08],
+        gl1_w: [1.48, -0.53, -0.16], gl1_s: [0.89, 0.21, 0.14],
+        gl2_w: [1.80, 0.64, 0.35], gl2_s: [1.34, -0.83, -0.30],
+        gl3_w: [2.17, -0.58, -0.16], gl3_s: [0.92, 0.78, 0.22],
+        gl4_w: [1.44, 0.70, 0.50], gl4_s: [2.08, -0.73, -0.45],
+        gl5_w: [2.12, 0.53, 0.32], gl5_s: [1.18, -0.97, -0.42],
+        glx_turn: [1.95, -0.90, -0.33], glc_launch: [2.28, -0.32, -0.20], glc_finish: [0.85, 0.90, 0.35],
+        glh_w: [2.00, -0.50, 0.22], glh_s: [0.93, 0.68, -0.26],
+        glz_w: [1.64, -0.46, -0.28], glz_s: [1.05, 0.70, 0.26],
+        glx_w: [1.35, -0.36, 0.14], glc_w: [2.00, -0.58, -0.10],
+        glc_s: [0.93, 0.72, 0.22],
+      };
+      const a = angles[this.glaivePose] ?? angles.idle;
+      const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(...a, "YXZ"));
+      // Live figure-eight spin around the weapon shaft (kept local so both hands follow).
+      if (this.glaivePose === "glz_s" || this.glaivePose === "gl3_s" ||
+          this.glaivePose === "glc_launch") {
+        const roll = Math.sin(this.t * 19) * 0.38;
+        q.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), roll));
+      }
+      const rate = this.glaivePose.endsWith("_s") ? 38 : 19;
+      this.glaivePivot.quaternion.slerp(q, 1 - Math.exp(-rate * dt));
+    }
     if (this.gripL) this.reachGrip();
     this.vrmRig?.update(dt, { t: this.t, walk: this.walk, phase: this.walkPhase, crouch: this.hipsY, combat: this.combat, hurt: this.hurt, draw: this.draw, knee: this.knee });
     if (this.bowPivot) this.updateBow();
+    if (this.kit === "chainblade") this.updateChainblade(dt);
     // Visible only for the 3-second festival; client puppet uses replicated timer too.
     const festivalOn = this.kit === "sickle" && this.bloodFestivalT > 0;
     for (const [i, aura] of this.festivalAura.entries()) {
@@ -1045,13 +1272,14 @@ export class FighterModel extends THREE.Group {
     // Weapons were sized for the chibi bodies; scale them down to suit the VRoid proportions.
     // Left hand grips for shields, paired weapons, bows and two-handed swords; mages and
     // kickers keep it free and relaxed.
-    this.vrmRig.grip = { left: !["mage", "kicks"].includes(this.kit), right: this.kit !== "kicks" };
+    this.vrmRig.grip = { left: !["mage", "kicks", "chainblade"].includes(this.kit), right: this.kit !== "kicks" };
     // Staffs and bows follow the arm a lot (natural tilt); blades less, to keep swing arcs.
-    this.vrmRig.followArm = this.kit === "sickle" ? 0.18 : this.kit === "mage" ? 0.4 : this.kit === "bow" ? 0.5 : 0.3;
+    this.vrmRig.followArm = this.kit === "chainblade" ? 0.14 : this.kit === "glaive" ? 0.24 : this.kit === "sickle" ? 0.18 : this.kit === "mage" ? 0.4 : this.kit === "bow" ? 0.5 : 0.3;
     this.vrmRig.staff = this.kit === "mage";
-    this.vrmRig.style = this.kit === "sickle" ? "feral" : this.kit === "greatsword" ? "greatsword" : this.look.body === "m" ? "heavy" : "light";
+    this.vrmRig.glaive = this.kit === "glaive";
+    this.vrmRig.style = this.kit === "chainblade" ? "chainblade" : this.kit === "glaive" ? "storm" : this.kit === "sickle" ? "feral" : this.kit === "greatsword" ? "greatsword" : this.look.body === "m" ? "heavy" : "light";
     if (this.kit === "knight") { this.buildHeaterShield(); this.vrmRig.shield = true; }
-    if (this.gripL) { this.vrmRig.gripL = this.gripL; this.vrmRig.bladed = 1; }
+    if (this.gripL) { this.vrmRig.gripL = this.gripL; this.vrmRig.bladed = this.kit === "chainblade" ? 0.58 : this.kit === "glaive" ? 0.4 : 1; }
     if (["knight", "greatsword", "katana"].includes(this.kit) && this.bladeBase.parent) {
       // A point off the blade's cutting edge (blades are wide along their local X).
       const bb = this.bladeBase.position;

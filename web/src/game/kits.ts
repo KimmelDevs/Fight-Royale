@@ -54,7 +54,9 @@ export const STATS: Record<string, { hp: number; guard: number; move: number; wa
   kicks: { hp: 2300, guard: 85, move: 4.1, walk: 3.2, parry: 0.2, jump: 8.6 },
   wind: { hp: 2200, guard: 80, move: 4.1, walk: 3.3, parry: 0.2, jump: 8.4 },
   sickle: { hp: 1950, guard: 62, move: 4.5, walk: 3.55, parry: 0.20, jump: 8.2 },
+  glaive: { hp: 2250, guard: 88, move: 4.0, walk: 3.15, parry: 0.19, jump: 7.7 },
   bomb: { hp: 2100, guard: 70, move: 3.5, walk: 2.8, parry: 0.16, jump: 7.0 },
+  chainblade: { hp: 2450, guard: 100, move: 3.55, walk: 2.75, parry: 0.16, jump: 7.0 },
 };
 
 const DEFAULT: Omit<Attack, "id" | "element"> = {
@@ -81,6 +83,8 @@ export function attacks(kit: string, element: string): Record<string, Attack> {
     knuckles: knuckles,
     wind: wind,
     sickle: sickle,
+    chainblade: chainblade,
+    glaive: glaive,
     bomb: bomb,
     kicks: kicks,
   } as Record<string, () => Record<string, Attack>>)[kit]?.() ?? knight();
@@ -134,12 +138,20 @@ function bonusSkill(kit: string, element: string): Attack {
       return a({ name: "Healing Rain", desc: "Restore 16% of your HP (25% in survival).", cd: 14, type: "buff", mode: "heal", duration: 0.25, wind: 0.2, recover: 0.4, pose_w: "mh_w", pose_s: "m3_s" });
     case "assassin":
       return a({ name: "Venom Fan", desc: "A wide spray of five poisoned blades.", cd: 7, type: "projectile", wind: 0.12, recover: 0.3, dmg: 42, guard: 12, knock: 1.2, stun: 0.3, speed: 24, count: 5, spread: 0.5, style: "shuriken", pose_w: "as1_w", pose_s: "as1_s" });
+    case "chainblade":
+      return a({ name: "Serpent Bind", desc: "Chain grab. Forward: launch and slam. Backward: flip behind. Left/right: throw sideways. Direction follows facing, not fixed keys.", cd: 13,
+        wind: 0.29, active: 0.12, recover: 0.62, dmg: 85, guard: 29, reach: 2.9, knock: 1.0, stun: 0.55,
+        style: "chain_serpent_bind", pose_w: "cbv_w", pose_s: "cbv_s" });
     case "greatsword":
       return a({ name: "Berserk", desc: "Deal 20% more damage for 6 seconds.", cd: 14, type: "buff", mode: "rage", duration: 6, wind: 0.2, recover: 0.4, pose_w: "charge", pose_s: "win" });
     case "katana":
       return a({ name: "Iaido Flash", desc: "An instant cross-arena draw cut.", cd: 8, wind: 0.08, active: 0.16, recover: 0.45, dmg: 200, guard: 50, reach: 2.2, lunge: 18, knock: 5, stun: 0.7, heavy: true, pose_w: "charge", pose_s: "heavy_s" });
     case "bow":
       return a({ name: "Piercing Volley", desc: "Five arrows that fly through every enemy in line.", cd: 9, type: "projectile", wind: 0.2, recover: 0.4, dmg: 55, guard: 14, knock: 2, stun: 0.3, speed: 32, count: 5, spread: 0.25, style: "arrow", pierce: true, pose_w: "bow_w", pose_s: "bow_s" });
+    case "glaive":
+      return a({ name: "Arc Flash", desc: "An electrified reverse-end sweep. Gains more stagger pressure than a normal light strike.", cd: 9,
+        type: "melee", wind: 0.17, active: 0.12, recover: 0.40, dmg: 115, guard: 32, reach: 2.35,
+        knock: 3.4, stun: 0.37, style: "glaive_arc", pose_w: "gl4_w", pose_s: "gl4_s" });
     case "sickle":
       return a({ name: "Carrion Sweep", desc: "Swipe a tight circle with both sickles, poisoning anyone caught nearby.", cd: 12, type: "strike", at: "self", wind: 0.18, recover: 0.5, dmg: 70, guard: 18, knock: 2.5, stun: 0.2, delay: 0.04, radius: 1.45, style: "spin", pose_w: "vrv_w", pose_s: "vrv_s" });
     case "bomb":
@@ -212,6 +224,22 @@ function assassin(): Record<string, Attack> {
   };
 }
 
+// KAIZEN_CHAINBLADE_V1 — compact sword combo; the extended chain is powerful but slower.
+// KAIZEN_DIRECTIONAL_V3 — five chainblade hits and four entirely new specials.
+function chainblade(): Record<string, Attack> {
+  return {
+    l1: a({ name: "Dancing Fang 1", wind: 0.16, active: 0.10, recover: 0.25, dmg: 69, guard: 20, reach: 2.12, lunge: 2.0, knock: 1.2, stun: 0.24, style: "chain_basic", pose_w: "cb1_w", pose_s: "cb1_s", next: "l2" }),
+    l2: a({ name: "Dancing Fang 2", wind: 0.17, active: 0.10, recover: 0.26, dmg: 73, guard: 21, reach: 2.2, lunge: 2.0, knock: 1.2, stun: 0.25, style: "chain_basic", pose_w: "cb2_w", pose_s: "cb2_s", next: "l3" }),
+    l3: a({ name: "Dancing Fang 3", wind: 0.20, active: 0.11, recover: 0.29, dmg: 77, guard: 23, reach: 2.4, lunge: 1.8, knock: 1.5, stun: 0.27, style: "chain_basic", pose_w: "cb3_w", pose_s: "cb3_s", next: "l4" }),
+    l4: a({ name: "Dancing Fang 4", wind: 0.25, active: 0.12, recover: 0.31, dmg: 90, guard: 28, reach: 2.8, lunge: 1.6, knock: 1.8, stun: 0.32, style: "chain_basic", pose_w: "cb4_w", pose_s: "cb4_s", next: "l5" }),
+    l5: a({ name: "Dancing Fang Return", wind: 0.24, active: 0.24, recover: 0.55, dmg: 112, guard: 36, reach: 3.0, lunge: 1.2, knock: 3.8, stun: 0.40, heavy: true, style: "chain_return", pose_w: "cb5_w", pose_s: "cb5_s" }),
+    heavy: a({ name: "Chainbreaker", wind: 0.35, active: 0.17, recover: 0.67, dmg: 185, guard: 51, reach: 3.0, lunge: 1.2, knock: 5.6, stun: 0.56, heavy: true, style: "chain_heavy", pose_w: "cbh_w", pose_s: "cbh_s" }),
+    z: a({ name: "Razor Cyclone", desc: "Spin the chained blade around Kaizen. Hold the skill to extend the spin and its range (max 1.6 seconds).", cd: 8, wind: 0.20, active: 1.65, recover: 0.38, dmg: 28, guard: 11, reach: 2.2, stun: 0.15, style: "chain_razor_cyclone", pose_w: "cbz_w", pose_s: "cbz_s" }),
+    x: a({ name: "Predator's Hook", desc: "Hook a target, then recast with FORWARD to rush toward them or BACKWARD to pull them to you. Defaults to pull.", cd: 10, wind: 0.22, active: 0.13, recover: 0.45, dmg: 75, guard: 24, reach: 3.4, stun: 0.28, style: "chain_predator_hook", pose_w: "cbh_w", pose_s: "cbh_s" }),
+    c: a({ name: "Thousand Cuts: Death Spiral", desc: "A contracting circle of chain slashes ending in an overhead strike. Escape before the circle closes.", cd: 22, wind: 0.38, active: 1.85, recover: 0.68, dmg: 42, guard: 12, radius: 4.2, style: "chain_death_spiral", pose_w: "cbc_w", pose_s: "cbc_s" }),
+  };
+}
+
 function greatsword(): Record<string, Attack> {
   return {
     l1: a({ wind: 0.30, active: 0.14, recover: 0.38, dmg: 110, guard: 32, reach: 2.55, lunge: 2, knock: 3, stun: 0.42, next: "l2" }),
@@ -251,6 +279,30 @@ function bow(): Record<string, Attack> {
 /** Bomber: lobs firecrackers, plants mines, throws a paralyzing bomb and parks a powder keg. */
 
 // BLOOD_HUNTER_V2 — Veyr's pressure-and-punish kit. High single-target skill expression.
+// ZAREK_STORM_V1 — weapon clashes award Momentum; ability effects are host-controlled.
+// ZAREK_CYCLONE_V3 — clash-focused acrobatic double-blade choreography.
+function glaive(): Record<string, Attack> {
+  return {
+    l1: a({ name: "Cyclone Fang 1", wind: 0.11, active: 0.09, recover: 0.19, dmg: 58, guard: 16, reach: 2.25, lunge: 2.7, knock: 1.0, stun: 0.22, pose_w: "gl1_w", pose_s: "gl1_s", next: "l2" }),
+    l2: a({ name: "Cyclone Fang 2", wind: 0.12, active: 0.09, recover: 0.18, dmg: 64, guard: 17, reach: 2.30, lunge: 2.8, knock: 1.0, stun: 0.23, pose_w: "gl2_w", pose_s: "gl2_s", next: "l3" }),
+    l3: a({ name: "Cyclone Fang 3", wind: 0.10, active: 0.10, recover: 0.20, dmg: 69, guard: 18, reach: 2.28, lunge: 2.7, knock: 1.2, stun: 0.24, pose_w: "gl3_w", pose_s: "gl3_s", next: "l4" }),
+    l4: a({ name: "Cyclone Fang 4", wind: 0.17, active: 0.11, recover: 0.23, dmg: 74, guard: 20, reach: 2.35, lunge: 2.4, knock: 1.6, stun: 0.27, pose_w: "gl4_w", pose_s: "gl4_s", next: "l5" }),
+    l5: a({ name: "Cyclone Fang Finisher", desc: "Overhead turning slash. Hold the fifth attack to extend it into three more rotations.",
+      wind: 0.17, active: 0.56, recover: 0.33, dmg: 104, guard: 29, reach: 2.4, lunge: 1.7, knock: 3.5, stun: 0.38,
+      style: "glaive_cyclone", pose_w: "gl5_w", pose_s: "gl5_s" }),
+    heavy: a({ name: "Split Current", wind: 0.35, active: 0.14, recover: 0.55, dmg: 165, guard: 48, reach: 2.6, lunge: 2.5, knock: 5, stun: 0.52, heavy: true, pose_w: "glh_w", pose_s: "glh_s" }),
+    z: a({ name: "Serpent Wheel", desc: "Five revolving blade passes while stepping forward. Cannot be parried, but can be blocked or clashed. Dash-cancel or Space+Attack launcher-cancel.",
+      cd: 8, wind: 0.14, active: 1.08, recover: 0.40, dmg: 33, guard: 11, reach: 2.15, lunge: 3.1, knock: 0.5, stun: 0.12,
+      no_parry: true, style: "glaive_serpent", pose_w: "glz_w", pose_s: "glz_s" }),
+    x: a({ name: "Phantom Spiral", desc: "Slide through the target, cutting once on approach and once after a 180-degree reverse strike. Can be blocked, parried and clashed.",
+      cd: 9, wind: 0.13, active: 0.43, recover: 0.39, dmg: 85, guard: 24, reach: 2.4, lunge: 1.4, knock: 2.0, stun: 0.27,
+      style: "glaive_phantom", pose_w: "glx_w", pose_s: "glx_turn" }),
+    c: a({ name: "Infinite Crescent", desc: "Seven accelerating crescent cuts, an upward launcher, then an aerial cross-slash. A confirmed finisher hit triggers cinematic sparks and brief hit-stop. Cannot be parried; blocking and clashes still work.",
+      cd: 20, wind: 0.30, active: 1.78, recover: 0.70, dmg: 44, guard: 15, reach: 2.35, lunge: 1.2,
+      knock: 0.6, stun: 0.21, heavy: false, no_parry: true, style: "glaive_infinite", pose_w: "glc_w", pose_s: "glc_s" }),
+  };
+}
+
 function sickle(): Record<string, Attack> {
   return {
     // Basic attacks are deliberately stronger than the original 29/31/37/48.
@@ -401,12 +453,14 @@ function airCombatMoves(kit: string, element: string, base: Record<string, Attac
     kicks: ["Skyward Kick", 42, 2.1, "kk2_w", "fly_s"],
     wind: ["Gale Uppercut", 37, 2.1, "w1_w", "rise"],
     sickle: ["Sickle Pursuit", 40, 2.15, "vr1_w", "vr3_s"],
+    glaive: ["Storm Lift", 43, 2.35, "gl3_w", "gl3_s"],
+    chainblade: ["Chain Lift", 48, 2.30, "cb3_w", "cb3_s"],
     mage: [element === "electric" ? "Lightning Lift" : element === "water" ? "Tidal Lift" : "Flame Lift", 33, 2.6, "mh_w", "mh_s"],
     bow: ["Rising Bowstrike", 32, 2.15, "bow_w", "bow_s"],
     bomb: ["Airburst Guard", 34, 2.2, "throw_w", "throw_s"],
   };
   const [name, dmg, reach, windPose, hitPose] = profiles[kit] ?? profiles.knight;
-  const fast = ["assassin", "sickle", "katana", "kicks", "wind"].includes(kit);
+  const fast = ["chainblade", "assassin", "sickle", "glaive", "katana", "kicks", "wind"].includes(kit);
   const ranged = kit === "mage" || kit === "bow";
   const anti = a({
     name, desc: "Space + Attack: intercept airborne foes, then tap Space to chase a successful launcher.",
@@ -645,12 +699,69 @@ const SICKLE: Record<string, Pose> = {
   charge: P([0.53, -0.4, 0], [-0.3, 0.37, 0], [-0.4, -0.9, -0.4], [0.8, 0, 0], [-0.35, 0.9, 0.4], [0.8, 0, 0], [-0.65, 0, 0.12], [0.6, 0, -0.12], -0.26),
 };
 
+// Storm Glaive: coordinated two-hand weapon cuts, a bladed stance, and wide reverse sweeps.
+const GLAIVE: Record<string, Pose> = {
+  ...twoHanded(KNIGHT),
+  idle: P([0.02, -0.20, 0.02], [0, 0.20, 0], [-0.70, 0.12, -0.23], [-0.08, 0, 0.15], [-0.82, 0.46, 0.1], [0, 0, 0], [-0.22, 0, 0.05], [0.25, 0, -0.06], -0.045),
+  block: P([0.12, 0, 0], [0.03, 0, 0], [-1.12, 0.3, -0.15], [0.14, 0, 0], [-1.0, -0.3, 0.2], [0, 0, 0], [-0.35, 0, 0.06], [0.35, 0, -0.06], -0.08),
+  gl1_w: P([0.10, -0.44, -0.06], [0, 0.36, 0], [-1.14, -0.72, -0.30], [0.46, 0, 0], [-1.30, -0.31, 0.22], [0.20, 0, 0], [-0.38, 0, 0.07], [0.22, 0, -0.08], -0.09),
+  gl1_s: P([0.16, 0.22, 0.03], [0, -0.14, 0], [-1.36, 0.32, -0.12], [0.08, 0, 0], [-1.48, 0.20, 0.17], [0.02, 0, 0], [-0.40, 0, 0.06], [0.44, 0, -0.05], -0.10),
+  gl2_w: P([0.12, 0.60, 0.07], [0, -0.42, 0], [-1.54, 0.68, 0.20], [0.15, 0, 0], [-1.37, 0.84, 0.26], [0.06, 0, 0], [-0.12, 0, 0.11], [0.43, 0, -0.10], -0.10),
+  gl2_s: P([0.05, -0.66, -0.10], [0, 0.44, 0], [-1.00, -0.86, -0.37], [0.07, 0, 0], [-1.62, -0.38, -0.24], [0.18, 0, 0], [-0.39, 0, 0.10], [0.18, 0, -0.10], -0.14),
+  gl3_w: P([-0.18, -0.38, 0.12], [0, 0.30, 0], [-2.35, -0.78, 0.16], [0.44, 0, 0], [-2.05, -0.34, -0.16], [0.22, 0, 0], [-0.35, 0, 0.14], [0.29, 0, -0.07], -0.13),
+  gl3_s: P([0.04, 0.58, -0.12], [0, -0.42, 0], [-0.88, 0.62, 0.14], [0.08, 0, 0], [-1.05, 0.34, -0.22], [0.06, 0, 0], [-0.41, 0, 0.10], [0.43, 0, -0.07], -0.10),
+  gl4_w: P([0.12, 0.92, 0.12], [0, -0.63, 0], [-1.94, 1.05, 0.16], [0.58, 0, 0], [-1.86, 0.66, -0.10], [0.26, 0, 0], [-0.42, 0, 0.11], [0.39, 0, -0.11], -0.17),
+  gl4_s: P([0.24, -1.04, -0.08], [-0.14, 0.66, 0], [-1.22, -1.16, -0.12], [0.10, 0, 0], [-1.48, -0.86, 0.27], [0.12, 0, 0], [-0.58, 0, 0.08], [0.42, 0, -0.11], -0.16),
+  gl5_w: P([-0.12, 0.76, -0.06], [-0.06, -0.52, 0], [-2.40, 0.62, -0.22], [0.35, 0, 0], [-2.18, 0.34, 0.16], [0.20, 0, 0], [-0.54, 0, 0.1], [0.48, 0, -0.1], -0.19),
+  gl5_s: P([0.29, -0.84, 0.04], [-0.13, 0.57, 0], [-1.18, -1.18, -0.17], [0.18, 0, 0], [-1.46, -0.74, 0.21], [0.13, 0, 0], [-0.62, 0, 0.11], [0.40, 0, -0.1], -0.17),
+  glx_turn: P([0.32, 0.88, 0.06], [-0.18, -0.67, 0], [-1.61, 1.07, 0.12], [0.20, 0, 0], [-1.87, 0.77, -0.17], [0.12, 0, 0], [-0.62, 0, 0.08], [0.48, 0, -0.1], -0.16),
+  glc_launch: P([-0.27, -0.48, 0.06], [0.12, 0.27, 0], [-2.17, -0.42, -0.06], [0.24, 0, 0], [-1.99, -0.52, 0.11], [0.16, 0, 0], [-0.32, 0, 0.13], [0.31, 0, -0.09], -0.10),
+  glc_finish: P([-0.26, 0.77, -0.05], [0.11, -0.52, 0], [-1.54, 0.85, -0.12], [0.22, 0, 0], [-1.79, 0.61, 0.23], [0.16, 0, 0], [-0.97, 0, 0.14], [0.18, 0, -0.09], -0.19),
+  glh_w: P([-0.07, -0.8, 0], [0.05, 0.63, 0], [-2.7, -0.66, -0.06], [0.75, 0, 0], [-2.65, -0.12, 0.14], [0.48, 0, 0], [-0.55, 0, 0.12], [0.38, 0, -0.09], -0.15),
+  glh_s: P([0.36, 0.95, 0], [-0.14, -0.62, 0], [-0.8, 1.3, 0], [0.22, 0, 0], [-1.05, 0.75, 0.16], [0.18, 0, 0], [-0.6, 0, 0.1], [0.48, 0, -0.1], -0.18),
+  glz_w: P([0.25, -0.76, -0.08], [-0.1, 0.6, 0], [-0.8, -0.8, -0.3], [0.3, 0, 0], [-1.05, -0.3, 0.3], [0.2, 0, 0], [-0.6, 0, 0.1], [0.6, 0, -0.1], -0.14),
+  glz_s: P([0.15, 0.87, 0], [-0.12, -0.6, 0], [-1.65, 1.1, -0.13], [0.3, 0, 0], [-1.6, 0.7, 0.15], [0.2, 0, 0], [-0.55, 0, 0.1], [0.5, 0, -0.1], -0.15),
+  glx_w: P([-0.06, 0.05, 0], [0, 0.05, 0], [-1.0, 0.6, -0.4], [0.5, 0, 0], [-1.1, 0.1, 0.4], [0.1, 0, 0], [-0.45, 0, 0.1], [0.4, 0, -0.1], -0.09),
+  glc_w: P([-0.12, -0.55, 0], [0.04, 0.47, 0], [-2.5, -0.66, -0.04], [0.8, 0, 0], [-2.3, -0.2, 0.12], [0.4, 0, 0], [-0.55, 0, 0.11], [0.52, 0, -0.1], -0.18),
+  glc_s: P([0.31, 0.68, 0], [-0.15, -0.45, 0], [-1.05, 1.1, -0.08], [0.2, 0, 0], [-1.2, 0.48, 0.14], [0.16, 0, 0], [-0.58, 0, 0.1], [0.49, 0, -0.1], -0.18),
+  charge: P([-0.06, -0.7, 0], [0, 0.48, 0], [-2.4, -0.7, -0.15], [0.8, 0, 0], [-2.4, -0.2, 0.1], [0.4, 0, 0], [-0.5, 0, 0.1], [0.4, 0, -0.1], -0.12),
+};
+
+const CHAINBLADE: Record<string, Pose> = {
+  ...twoHanded(KNIGHT),
+  idle: P([0.06, -0.12, 0], [-0.03, 0.1, 0], [-0.86, 0.17, -0.16], [0.25, 0, -0.2], [-0.48, -0.3, 0.40], [0.17, 0, 0.08], [-0.19, 0, 0.06], [0.19, 0, -0.06], -0.055),
+  cb1_w: P([0.13, -0.68, -0.05], [-0.07, 0.4, 0], [-1.28, -0.75, -0.1], [0.65, 0, -0.35], [-0.44, 0.4, 0.52], [0.12, 0, 0], [-0.34, 0, 0.07], [0.31, 0, -0.06], -0.09),
+  cb1_s: P([0.20, 0.58, 0.04], [-0.1, -0.32, 0], [-1.52, 0.8, 0.02], [0.2, 0, 0.65], [-0.5, -0.55, 0.35], [0.12, 0, 0], [-0.42, 0, 0.08], [0.4, 0, -0.08], -0.10),
+  cb2_w: P([0.12, 0.65, 0.04], [-0.05, -0.41, 0], [-1.12, 0.98, 0.04], [0.4, 0, 0.4], [-0.4, -0.48, 0.37], [0.16, 0, 0], [-0.37, 0, 0.06], [0.36, 0, -0.06], -0.11),
+  cb2_s: P([0.20, -0.65, -0.03], [-0.1, 0.42, 0], [-1.48, -0.9, -0.08], [0.22, 0, -0.6], [-0.54, 0.54, 0.34], [0.18, 0, 0], [-0.42, 0, 0.09], [0.38, 0, -0.07], -0.13),
+  cb3_w: P([-0.09, -0.39, 0], [0.04, 0.19, 0], [-1.78, -0.55, -0.12], [0.57, 0, 0.3], [-0.5, 0.28, 0.40], [0.18, 0, 0], [-0.32, 0, 0.07], [0.3, 0, -0.08], -0.10),
+  cb3_s: P([0.32, 0.46, 0.06], [-0.12, -0.24, 0], [-0.97, 0.74, 0.01], [0.24, 0, -0.58], [-0.4, -0.42, 0.53], [0.12, 0, 0], [-0.56, 0, 0.1], [0.46, 0, -0.08], -0.15),
+  cb4_w: P([0.17, 0.76, 0.06], [-0.05, -0.47, 0], [-1.5, 0.94, 0.05], [0.48, 0, 0.61], [-0.42, -0.52, 0.44], [0.12, 0, 0], [-0.42, 0, 0.08], [0.37, 0, -0.08], -0.12),
+  cb5_w: P([0.15, -0.82, -0.02], [0, 0.48, 0], [-1.4, 0.80, 0.04], [0.25, 0.04, 0.62], [-0.34, -0.62, 0.45], [0.11, 0, 0], [-0.49, 0, 0.07], [0.42, 0, -0.07], -0.15),
+  cb5_s: P([0.35, 1.02, 0.06], [-0.11, -0.69, 0], [-1.78, -1.04, -0.07], [0.05, 0, -0.65], [-0.5, 0.42, 0.5], [0.16, 0, 0], [-0.49, 0, 0.11], [0.46, 0, -0.06], -0.16),
+  cb4_s: P([0.37, -0.86, -0.06], [-0.15, 0.54, 0], [-1.43, -1.12, -0.05], [0.14, 0, -0.68], [-0.57, 0.51, 0.33], [0.15, 0, 0], [-0.62, 0, 0.10], [0.50, 0, -0.09], -0.16),
+  cbh_w: P([0.15, -1.02, -0.08], [0, 0.62, 0], [-1.17, -1.32, -0.2], [0.72, 0, 0], [-1.08, -1.08, 0.22], [0.6, 0, 0], [-0.53, 0, 0.1], [0.46, 0, -0.08], -0.19),
+  cbh_s: P([0.45, 1.06, 0.1], [-0.22, -0.6, 0], [-1.5, 1.2, -0.12], [0.2, 0, 0], [-1.4, 1.48, 0.15], [0.15, 0, 0], [-0.73, 0, 0.1], [0.58, 0, -0.09], -0.23),
+  cbz_w: P([0.12, -0.4, 0], [0, 0.25, 0], [-1.2, -0.5, -0.24], [0.8, 0, 0], [-1.22, -0.14, 0.25], [0.35, 0, 0], [-0.4, 0, 0.08], [0.35, 0, -0.07], -0.14),
+  cbz_s: P([0.34, 0.15, 0], [-0.1, -0.1, 0], [-1.44, 0.04, -0.13], [0.1, 0, 0], [-1.4, 0.23, 0.17], [0.1, 0, 0], [-0.7, 0, 0.09], [0.52, 0, -0.08], -0.21),
+  cbx_w: P([0.17, -0.70, 0.02], [0, 0.50, 0], [-1.15, -0.82, -0.10], [0.6, 0, -0.4], [-0.60, 0.12, 0.55], [0.20, 0, 0], [-0.43, 0, 0.08], [0.43, 0, -0.08], -0.14),
+  cbx1_s: P([0.31, 1.05, 0.03], [-0.12, -0.52, 0], [-1.47, 1.1, -0.12], [0.18, 0, 0.55], [-0.62, -0.1, 0.40], [0.12, 0, 0], [-0.60, 0, 0.10], [0.45, 0, -0.08], -0.18),
+  cbx2_s: P([0.24, -1.0, -0.07], [-0.08, 0.56, 0], [-1.4, -1.15, -0.1], [0.2, 0, -0.52], [-0.52, 0.20, 0.49], [0.18, 0, 0], [-0.53, 0, 0.09], [0.46, 0, -0.08], -0.18),
+  cbx3_s: P([0.38, 0.93, 0.08], [-0.14, -0.50, 0], [-1.2, 1.16, 0], [0.12, 0, 0.72], [-0.65, -0.3, 0.42], [0.2, 0, 0], [-0.61, 0, 0.1], [0.51, 0, -0.09], -0.2),
+  cbc_w: P([0.05, -0.55, 0], [0, 0.4, 0], [-1.6, -0.55, 0.0], [0.4, 0, 0], [-1.6, -0.1, 0.2], [0.3, 0, 0], [-0.52, 0, 0.08], [0.45, 0, -0.08], -0.14),
+  cbc_s: P([-0.05, 0.2, 0], [-0.1, -0.1, 0], [-2.2, 0.12, -0.08], [0.9, 0, 0], [-2.1, 0.55, 0.16], [0.8, 0, 0], [-0.55, 0, 0.08], [0.45, 0, -0.08], -0.16),
+  cbv_w: P([0.1, -0.8, 0], [0, 0.5, 0], [-1.43, -0.95, 0], [0.6, 0, 0], [-1.45, -0.62, 0.16], [0.45, 0, 0], [-0.46, 0, 0.08], [0.42, 0, -0.08], -0.15),
+  cbv_s: P([0.35, 0.86, 0], [-0.16, -0.5, 0], [-1.38, 0.98, 0], [0.1, 0, 0], [-1.35, 1.25, 0.12], [0.08, 0, 0], [-0.62, 0, 0.1], [0.49, 0, -0.08], -0.20),
+};
+
 const TABLES: Record<string, Record<string, Pose>> = {
   knight: KNIGHT,
   mage: MAGE,
   sickle: SICKLE,
+  glaive: GLAIVE,
   assassin: ASSASSIN,
   greatsword: { ...twoHanded(KNIGHT), ...GARRICK_SWINGS },
+  chainblade: CHAINBLADE,
   katana: twoHanded(KNIGHT),
   bow: BOW,
   knuckles: KNUCKLES,

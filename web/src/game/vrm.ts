@@ -85,6 +85,12 @@ export const STYLES = {
   greatsword: { stance: D(10), toeOut: D(9), knee: D(11), drop: 0.035, lean: D(4), chin: D(3), shoulderUp: D(3), elbowOut: D(9),
     hipSway: 0.004, hipRoll: D(0.5), contra: D(0.5), relaxKnee: D(2), headTilt: D(0.4), headYaw: D(3),
     breath: 0.5, armSwing: D(7), walkRoll: D(0.8), walkYaw: D(2) },
+  storm: { stance: D(7), toeOut: D(8), knee: D(10), drop: 0.025, lean: D(3), chin: D(1), shoulderUp: D(2), elbowOut: D(5),
+    hipSway: 0.012, hipRoll: D(1.4), contra: D(1.5), relaxKnee: D(5), headTilt: D(0.8), headYaw: D(5),
+    breath: 0.8, armSwing: D(12), walkRoll: D(1.6), walkYaw: D(3) },
+  chainblade: { stance: D(8), toeOut: D(12), knee: D(14), drop: 0.035, lean: D(8), chin: D(3), shoulderUp: D(1), elbowOut: D(7),
+    hipSway: 0.008, hipRoll: D(0.8), contra: D(1.2), relaxKnee: D(6), headTilt: D(0.5), headYaw: D(5),
+    breath: 0.65, armSwing: D(14), walkRoll: D(1.3), walkYaw: D(3.0) },
   heavy: { stance: D(14), toeOut: D(12), knee: D(18), drop: 0.07, lean: D(6), chin: D(5), shoulderUp: D(4), elbowOut: D(12),
     hipSway: 0.008, hipRoll: D(0.8), contra: D(0.6), relaxKnee: D(3), headTilt: D(0.5), headYaw: D(4),
     breath: 0.5, armSwing: D(9), walkRoll: D(1.2), walkYaw: D(2.5) },
@@ -120,6 +126,7 @@ export class VrmRig {
   gripL: THREE.Object3D | null = null;
   /** Rest the blade on the shoulder when not fighting (greatsword). */
   restSword = false;
+  glaive = false; // ZAREK_GLAIVE_CHOREO_V2: quicker, agile polearm hand alignment
   /** Fist fighter: high guard with bent elbows, staggered bladed stance, bounce and head weave. */
   boxer = false;
   /** Archer: bow held upright across the aim line, string hand drawn to the jaw by IK. */
@@ -535,7 +542,7 @@ export class VrmRig {
     // Weight: the blade's orientation trails the hands and settles.
     const target = quatIn(root, j.hand_r, new THREE.Quaternion());
     if (this.swordQ.lengthSq() === 0 || this.first) this.swordQ.copy(target);
-    else this.swordQ.slerp(target, 1 - Math.exp(-(combat ? 11 : 6) * dt));
+    else this.swordQ.slerp(target, 1 - Math.exp(-(this.glaive ? (combat ? 28 : 17) : (combat ? 11 : 6)) * dt));
     j.hand_r.quaternion.copy(parentRoot().multiply(this.swordQ));
     // Mount the weapon on the VRM hand now so the grip point is where it will render.
     j.hand_r.position.copy(j.arm_r.worldToLocal(handR.getWorldPosition(new THREE.Vector3())));

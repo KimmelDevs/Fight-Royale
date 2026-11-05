@@ -86,11 +86,16 @@ class LocalBrain implements Brain {
 
 class RemoteBrain implements Brain {
   last: RawInput = { attack: false, block: false, jump: false, skill: "", mx: 0, mz: 0 };
-  skills: string[] = [];
+  skills: Array<{ key: string; mx: number; mz: number }> = [];
   dashes: [number, number][] = [];
   think(f: Fighter) {
     applyRaw(f, { ...this.last, dx: 0, dz: 0 });
-    f.intent.skill = this.skills.shift() ?? "";
+    const nextSkill = this.skills.shift();
+    f.intent.skill = nextSkill?.key ?? "";
+    if (nextSkill) {
+      if (!f.intent.skillMove) f.intent.skillMove = new THREE.Vector3();
+      f.intent.skillMove.set(nextSkill.mx, 0, nextSkill.mz);
+    }
     const d = this.dashes.shift();
     if (d) f.intent.dash.set(d[0], 0, d[1]);
   }
@@ -100,7 +105,12 @@ function applyRaw(f: Fighter, r: RawInput) {
   f.intent.attack = r.attack;
   f.intent.block = r.block;
   f.intent.jump = r.jump;
-  if (r.skill) f.intent.skill = r.skill;
+  if (r.skill) {
+    f.intent.skill = r.skill;
+    if (!f.intent.skillMove) f.intent.skillMove = new THREE.Vector3();
+    f.intent.skillMove.set(r.mx, 0, r.mz);
+  }
+  f.intent.skillHeld = r.skillHeld ?? "";
   f.intent.move.set(r.mx, 0, r.mz);
   if (r.dx || r.dz) f.intent.dash.set(r.dx ?? 0, 0, r.dz ?? 0);
 }
@@ -691,6 +701,7 @@ export class Game implements MobHost {
     f.root.position.copy(pos);
     f.root.rotation.y = rotY;
     f.onSwing = (x) => this.onSwing(x);
+    f.onChainHookRecast = (x, toward) => this.chainHookRecast(x, toward);
     f.onKo = (x) => this.onFighterKo(x);
     f.onLanded = (x) => { this.fx.ring(x.root.position, "#ffffff", 0.8, 0.25, 0.5); this.snd("land", 0.35); };
     f.onSickleRecast = (x) => this.recastBloodSickle(x);
@@ -962,6 +973,39 @@ export class Game implements MobHost {
       this.fxp("flash", tip, "#fff6c8", big ? 0.26 : 0.18, 0.14, 0.7);
       this.fxp("sparks", tip, "#fff2b0", big ? 18 : 8, 4);
     }
+    if (f.kit === "glaive" && ["glaive_cyclone", "glaive_serpent", "glaive_phantom", "glaive_infinite"].includes(a.style)) {
+      this.stormGlaiveSwing(f, a);
+      return;
+    }
+    if (f.kit === "glaive" && a.type === "melee") {
+      const p = f.model.bladeTip.getWorldPosition(new THREE.Vector3());
+      this.fxp("sparks", p, "#78dcff", big ? 25 : 12, 5);
+    }
+    // KAIZEN_DIRECTIONAL_V3: every move has its own hit logic and chain choreography.
+    if (f.kit === "chainblade") {
+      if (a.style === "chain_razor_cyclone") { this.chainRazorCyclone(f, a); return; }
+      if (a.style === "chain_death_spiral") { this.chainDeathSpiral(f, a); return; }
+      if (a.style === "chain_serpent_bind") { this.chainSerpentBind(f, a); return; }
+      if (a.style === "chain_predator_hook") {
+        this.fxp("slashes", f.model.bladeTip.getWorldPosition(new THREE.Vector3()), "#ff667c");
+        this.melee(f, a); return;
+      }
+      if (a.style === "chain_return") {
+        this.melee(f, a); // blade throw
+        const round = this.round, serial = f.swingSerial;
+        this.later(0.18, () => {
+          if (round !== this.round || f.isDown() || f.swingSerial !== serial || f.state !== S.ATTACK) return;
+          this.fxp("slashes", f.model.bladeTip.getWorldPosition(new THREE.Vector3()), "#ff8d9e");
+          this.melee(f, { ...a, dmg: 45, guard: 16, knock: 2.6, stun: 0.22, heavy: false }); // returning blade bonus
+        });
+        return;
+      }
+      if (a.type === "melee") {
+        const tip = f.model.bladeTip.getWorldPosition(new THREE.Vector3());
+        this.fxp("flash", tip, "#ff6575", a.heavy ? 0.42 : 0.22, 0.12, 0.7);
+        this.fxp("sparks", tip, "#ffb4b4", a.heavy ? 20 : 10, 4);
+      }
+    }
     switch (a.type) {
       case "projectile":
         if (f.kit === "sickle" && a.style === "bloodcrescent") this.crimsonExecution(f, a);
@@ -978,7 +1022,125 @@ export class Game implements MobHost {
     }
   }
 
-  private melee(f: Fighter, a: Attack) {
+  /** ZAREK_CYCLONE_V3: authoritative phased melee; blocks/parries/clashes use normal combat. */
+  private stormGlaiveSwing(f: Fighter, a: Attack) {
+    const round = this.round, serial = f.swingSerial;
+    const alive = () => round === this.round && !f.isDown() && f.state === S.ATTACK && f.swingSerial === serial;
+    const at = (i: number, part: Attack, pose: string) => {
+      if (!alive()) return false;
+      f.poseOverride = pose;
+      const tip = f.model.bladeTip.getWorldPosition(new THREE.Vector3());
+      this.fxp("slashes", tip, f.look.glow);
+      this.fxp("sparks", tip, i % 2 ? "#a5eeff" : "#4589ff", 18 + i * 4, 5);
+      this.fxp("flash", tip, f.look.glow, 0.25 + i * 0.025, 0.11, 0.7);
+      return this.melee(f, part); // true only when HP damage is dealt, not on block/parry.
+    };
+    if (a.style === "glaive_cyclone") {
+      // The fifth tap is one overhead slash; holding the final click while it starts
+      // adds three blade turns. A released click never triggers the extra hits.
+      const extended = f.intent.attack;
+      if (!extended) { at(0, a, "gl5_s"); return; }
+      for (let i = 0; i < 4; i++) this.later(i * 0.13, () => {
+        const part: Attack = { ...a, dmg: [38, 41, 42, 68][i], guard: [11, 11, 12, 20][i],
+          knock: i === 3 ? 3.5 : 0.4, stun: i === 3 ? 0.38 : 0.12 };
+        at(i, part, ["gl5_s", "gl2_s", "gl3_s", "gl5_s"][i]);
+      });
+      return;
+    }
+    if (a.style === "glaive_serpent") {
+      // Five real damaging passes, one weapon-contact check per turn.
+      for (let i = 0; i < 5; i++) this.later(i * 0.21, () => {
+        const part: Attack = { ...a, dmg: i === 4 ? 45 : 33, guard: i === 4 ? 17 : 11,
+          knock: i === 4 ? 2.2 : 0.35, stun: i === 4 ? 0.27 : 0.10,
+          no_parry: true }; // still blockable and clashable
+        at(i, part, ["glz_s", "gl3_s", "gl2_s", "gl4_s", "glz_s"][i]);
+      });
+      return;
+    }
+    if (a.style === "glaive_phantom") {
+      at(0, { ...a, dmg: 85, guard: 22 }, "gl2_s");
+      const opponent = f.opponent;
+      if (opponent && !opponent.isDown()) {
+        const from = f.root.position.clone();
+        const across = opponent.root.position.clone().sub(from).setY(0);
+        const length = across.length();
+        if (length > 0.2 && length < 4.6) {
+          const dest = opponent.root.position.clone().addScaledVector(across.normalize(), 0.85);
+          for (let n = 1; n <= 3; n++) this.later(n * 0.055, () => {
+            if (!alive()) return;
+            const p = from.clone().lerp(dest, n / 3); p.y = f.root.position.y;
+            if (f.stage) f.root.position.x = Math.max(f.stage.blast.l + 1.5, Math.min(f.stage.blast.r - 1.5, p.x));
+            else {
+              const flat = Math.hypot(p.x, p.z);
+              if (flat > f.arenaRadius - 0.3) p.multiplyScalar((f.arenaRadius - 0.3) / flat);
+              f.root.position.set(p.x, f.root.position.y, p.z);
+            }
+            this.fxp("sparks", f.chest(), "#8ceaff", 6, 3);
+            if (n === 3 && opponent && !opponent.isDown()) {
+              const face = opponent.root.position.clone().sub(f.root.position).setY(0);
+              if (f.stage) f.facing = Math.sign(face.x) || f.facing;
+              else if (face.lengthSq() > 0.001) f.root.rotation.y = Math.atan2(face.x, face.z);
+            }
+          });
+        }
+      }
+      this.later(0.23, () => at(1, { ...a, dmg: 115, guard: 32, knock: 3.4, stun: 0.40 }, "glx_turn"));
+      return;
+    }
+    if (a.style === "glaive_infinite") {
+      const empowered = f.clashMomentum >= 3;
+      if (empowered) f.clashMomentum -= 3;
+      let connected = false;
+      for (let i = 0; i < 8; i++) {
+        const elapsed = [0, .26, .49, .70, .89, 1.07, 1.24, 1.55][i];
+        this.later(elapsed, () => {
+          if (!alive()) return;
+          const launch = i === 6, final = i === 7;
+          const part: Attack = { ...a,
+            dmg: final ? (empowered ? 170 : 140) : launch ? 68 : [44, 42, 45, 44, 47, 48][i],
+            guard: final ? 46 : launch ? 25 : 13,
+            knock: final ? 5.0 : launch ? 0.7 : 0.35,
+            stun: final ? .55 : launch ? .4 : .17,
+            reach: final ? 2.65 : 2.4,
+            style: final ? "glaive_crescent_final" : launch ? "glaive_crescent_launch" : "glaive_infinite" };
+          if (final && !connected) return; // no cinematic finish on missed/blocked starter
+          if (launch && f.opponent && !f.opponent.isDown()) {
+            // Follow upward with the target; this is NOT Gale's ground-smash.
+            f.velY = Math.max(f.velY, 4.4); f.onGround = false;
+          }
+          if (final && !f.onGround) f.velY = Math.min(f.velY, -3.5); // aerial crosscut, not a ground slam
+          const hit = at(i, part, final ? "glc_finish" : launch ? "glc_launch" :
+            ["gl1_s", "gl2_s", "gl3_s", "gl4_s", "gl2_s", "gl3_s"][i]);
+          if (hit) connected = true;
+          if (final && hit) {
+            this.fxp("lightning", f.chest(), "#9ceaff");
+            this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.8, 0)), "INFINITE CRESCENT", "#e7f8ff", .85);
+            this.add_trauma(.55);
+            this.hitStop(.19, .35);
+          }
+        });
+      }
+    }
+  }
+
+  /** KAIZEN_CHAINBLADE_V1: three independent, interruptible chain swipes. */
+  private chainbladeCarousel(f: Fighter, a: Attack) {
+    const round = this.round, serial = f.swingSerial;
+    for (let i = 0; i < 3; i++) this.later(i * 0.22, () => {
+      if (round !== this.round || f.isDown() || f.state !== S.ATTACK || f.swingSerial !== serial) return;
+      const hit: Attack = { ...a, dmg: [65, 77, 98][i], guard: [17, 20, 28][i],
+        knock: i === 2 ? 3.8 : 0.8, stun: i === 2 ? 0.39 : 0.19,
+        reach: [2.7, 2.85, 3.05][i] };
+      f.poseOverride = ["cbx1_s", "cbx2_s", "cbx3_s"][i];
+      const p = f.model.bladeTip.getWorldPosition(new THREE.Vector3());
+      this.fxp("slashes", p, i === 1 ? "#ffb4b4" : "#f54f66");
+      this.fxp("sparks", p, "#ff8b91", 19 + i * 6, 5);
+      this.melee(f, hit);
+    });
+  }
+
+  private melee(f: Fighter, a: Attack): boolean {
+    let connected = false;
     // AIR_COMBAT_V1: launcher has a tall vertical hitbox; air combo is mid-height.
     const fwd = new THREE.Vector3(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
     const antiAir = f.atkId === "anti_air";
@@ -993,13 +1155,45 @@ export class Game implements MobHost {
         (d.atkPhase === 1 || (d.atkPhase === 0 && d.atk.wind - d.stateT <= 0.08)) && dist <= a.reach + 0.3 &&
         dy < (antiAir || airCombo || d.atkId === "anti_air" || d.atkId.startsWith("air_l") ? 1.65 : 0.8)) {
         this.clash(f, d, f.root.position.clone().addScaledVector(dir, Math.min(dist * 0.5, 0.8)).add(new THREE.Vector3(0, 1.15, 0)));
-        return;
+        return false;
       }
       if (dist - d.radius + 0.35 > a.reach ||
           dy > (antiAir ? 3.25 : airCombo ? 1.8 : 1.3) ||
           (dist > 0.6 && dir.dot(fwd) < (antiAir ? -0.08 : 0.15))) continue;
       const hitPos = d.chest().addScaledVector(dir, -0.15);
       const result = this.applyHit(f, d, a, f.atkPower, hitPos, dir, false);
+      if (result === "hit" || result === "crit" || result === "ko") {
+        connected = true;
+        if (a.style === "glaive_crescent_launch" && d instanceof Fighter) {
+          d.velY = Math.max(d.velY, d.stage ? 6.2 : 5.1);
+          d.onGround = false;
+        }
+      }
+      if (f.kit === "chainblade" && a.style === "chain_predator_hook" &&
+          ["hit", "crit"].includes(result) && d instanceof Fighter) {
+        f.chainHookTarget = d;
+        f.chainHookT = 2.0;
+        this.fxp("ring", d.chest(), "#ff607d", 0.75, 0.25, 0.7);
+        this.fxp("num", d.chest().add(new THREE.Vector3(0, 0.7, 0)), "HOOKED", "#ff8999", 0.8);
+      }
+      if (f.kit === "chainblade" && a.style === "chain_hook" &&
+          (result === "hit" || result === "crit") && d instanceof Fighter) {
+        // Pull only after a genuine HP hit; guard/parry/clash keeps its normal counterplay.
+        const toward = f.root.position.clone().sub(d.root.position).setY(0);
+        const amount = Math.max(0, Math.min(0.90, toward.length() - 1.35));
+        if (amount > 0 && toward.lengthSq() > 1e-5) {
+          const move = toward.normalize().multiplyScalar(amount);
+          const dest = d.root.position.clone().add(move);
+          if (d.stage) {
+            dest.x = Math.max(d.stage.blast.l + 1, Math.min(d.stage.blast.r - 1, dest.x));
+          } else {
+            const flat = Math.hypot(dest.x, dest.z);
+            if (flat > d.arenaRadius) { dest.x *= d.arenaRadius / flat; dest.z *= d.arenaRadius / flat; }
+          }
+          d.root.position.copy(dest);
+          this.fxp("sparks", d.chest(), "#ff7885", 22, 5);
+        }
+      }
       if (antiAir && d instanceof Fighter && (result === "hit" || result === "crit")) {
         // Launcher happens only after an HP hit, never through blocks/parries/clashes.
         const wasGrounded = d.onGround;
@@ -1017,6 +1211,7 @@ export class Game implements MobHost {
       const dist = to.length();
       if (dist - 0.45 <= a.reach && (dist < 0.6 || to.normalize().dot(fwd) > 0.15)) this.detonate(t);
     }
+    return connected;
   }
 
   private fireProjectiles(f: Fighter, a: Attack) {
@@ -1723,6 +1918,13 @@ export class Game implements MobHost {
   }
 
   private clash(a: Fighter, b: Fighter, pos: THREE.Vector3) {
+    // Actual attack-vs-attack contact ONLY. Save skill before clashRecoil clears it.
+    for (const f of [a, b]) if (f.kit === "glaive") {
+      const gain = 1; // ZAREK_CYCLONE_V3: one genuine clash, one Momentum stack.
+      f.clashMomentum = Math.min(3, f.clashMomentum + gain);
+      this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.9, 0)), `MOMENTUM ${f.clashMomentum}/3`, "#a6efff", 0.8);
+      this.fxp("lightning", f.chest(), "#6acfff");
+    }
     a.clashRecoil();
     b.clashRecoil();
     this.fxp("sparks", pos, "#fff2c0", 50, 10);
@@ -1986,7 +2188,7 @@ export class Game implements MobHost {
         let b = this.remoteBrains.get(from);
         if (!b) { b = new RemoteBrain(); this.remoteBrains.set(from, b); }
         b.last = msg.i;
-        if (msg.i.skill) b.skills.push(msg.i.skill);
+        if (msg.i.skill) b.skills.push({ key: msg.i.skill, mx: msg.i.mx, mz: msg.i.mz });
         if (msg.i.dx || msg.i.dz) b.dashes.push([msg.i.dx, msg.i.dz]);
       } else if (msg.t === "perk") {
         const opts = this.perkWait.get(from);
@@ -2173,7 +2375,7 @@ export class Game implements MobHost {
     const boss = this.mobs.find((m) => m.def.boss && !m.dead);
     const other = this.isDuel() ? this.fighters.find((f) => f !== me) : null;
     const info = (f: Fighter) => ({ id: CHARACTERS[f.charIndex].id, name: f.look.name + (isCpu(f.owner) && f.owner !== "cpu" ? " (CPU)" : ""), hp: f.hp, maxHp: f.maxHp, guard: f.guard, maxGuard: f.maxGuard, down: f.isDown(), glow: f.look.glow,
-      pct: f.pct, stocks: f.stocks, out: f.out, team: f.team, status: f.status.kinds(), bloodlust: f.bloodlust, bloodFrenzyT: f.bloodFrenzyT, bloodFestivalT: f.bloodFestivalT });
+      pct: f.pct, stocks: f.stocks, out: f.out, team: f.team, status: f.status.kinds(), bloodlust: f.bloodlust, bloodFrenzyT: f.bloodFrenzyT, bloodFestivalT: f.bloodFestivalT, clashMomentum: f.clashMomentum });
     return {
       mode: this.cfg.mode,
       plat: this.plat,
