@@ -157,7 +157,11 @@ function bonusSkill(kit: string, element: string): Attack {
         type: "melee", wind: 0.17, active: 0.12, recover: 0.40, dmg: 115, guard: 32, reach: 2.35,
         knock: 3.4, stun: 0.37, style: "glaive_arc", pose_w: "gl4_w", pose_s: "gl4_s" });
     case "sickle":
-      return a({ name: "Carrion Sweep", desc: "Swipe a tight circle with both sickles, poisoning anyone caught nearby.", cd: 12, type: "strike", at: "self", wind: 0.18, recover: 0.5, dmg: 70, guard: 18, knock: 2.5, stun: 0.2, delay: 0.04, radius: 1.45, style: "spin", pose_w: "vrv_w", pose_s: "vrv_s" });
+      // VEYR_BLOODLUST_CARRION_V7: five separate sickle strikes; REAL melee collisions may clash.
+      return a({ name: "Carrion Sweep", desc: "Five rapid alternating sickle cuts with a vicious crosscut finisher. Each cut can clash, be blocked, or be parried; no automatic clash is forced.",
+        cd: 12, type: "melee", wind: 0.16, active: 0.72, recover: 0.30,
+        dmg: 18, guard: 5, reach: 1.94, lunge: 2.2, knock: 0.25, stun: 0.10,
+        style: "sickle_carrion", pose_w: "vrv_w", pose_s: "vrv1_s" });
     case "bomb":
       return a({ name: "Cluster Bomb", desc: "A big bomb that bursts into four blasts around where it lands.", cd: 10, type: "lob", wind: 0.2, recover: 0.4, dmg: 80, guard: 22, knock: 4, stun: 0.45, delay: 0.75, radius: 1.5, repeat: 4, interval: 0.12, style: "bomb", size: 1.6, pose_w: "throw_w", pose_s: "throw_s" });
     case "wind":
@@ -324,7 +328,7 @@ function sickle(): Record<string, Attack> {
     // BLOOD_FESTIVAL_V3 — Crimson Execution replaces the former Blood Sickle skill.
     z: a({ name: "Crimson Execution", desc: "Three curved blood blades; the final blade consumes poison for +15 damage per stack.", cd: 12, type: "projectile", wind: 0.30, recover: 0.54, dmg: 45, guard: 14, knock: 1.8, stun: 0.22, speed: 14, count: 3, spread: 0.58, size: 1.2, style: "bloodcrescent", pose_w: "vrc_w", pose_s: "vrc_s" }),
     x: a({ name: "Death Feint", desc: "A 0.30s counter window. If struck, slip past the attacker and counter-cut. A failed feint leaves you open.", cd: 10, type: "buff", mode: "blood_feint", duration: 0.30, wind: 0.08, active: 0.04, recover: 0.55, pose_w: "vrx_w", pose_s: "vrx_s" }),
-    c: a({ name: "Blood Festival", desc: "Teleport beside a target and surround enemies with orbiting blood scythes for 6 seconds. The rim pushes enemies inward. Veyr ignores stuns but can still take damage or be blocked/clashed; his special skills are locked. Light attacks deal +35% damage and 3x normal guard damage. Casting fills Bloodlust and grants Blood Frenzy lifesteal.", cd: 22, type: "buff", mode: "blood_festival", duration: 6, radius: 3.5, wind: 0.26, active: 0.05, recover: 0.24, pose_w: "vrc_w", pose_s: "vrc_s" }),
+    c: a({ name: "Blood Festival", desc: "Teleport beside a target and surround enemies with orbiting blood scythes for 6 seconds. The rim pushes enemies inward. Veyr ignores stuns but can still take damage or be blocked/clashed; his special skills are locked. Light attacks deal +35% damage and 3x normal guard damage. Bloodlust fills only from landed attacks; no free Blood Frenzy on cast.", cd: 22, type: "buff", mode: "blood_festival", duration: 6, radius: 3.5, wind: 0.26, active: 0.05, recover: 0.24, pose_w: "vrc_w", pose_s: "vrc_s" }),
   };
 }
 
@@ -706,6 +710,12 @@ const SICKLE: Record<string, Pose> = {
   vrx_s: P([0.43, 0.75, 0.1], [-0.24, -0.62, 0], [-1.2, 0.85, -0.5], [0.45, 0, 0], [-1.2, -0.84, 0.5], [0.45, 0, 0], [-0.7, 0, 0.1], [0.65, 0, -0.1], -0.26),
   vrc_w: P([0.62, -0.6, 0], [-0.31, 0.55, 0], [-2.5, -0.4, -0.24], [0.6, 0, 0], [-2.46, 0.5, 0.24], [0.6, 0, 0], [-0.8, 0, 0.12], [0.7, 0, -0.12], -0.3),
   vrc_s: P([0.54, 0.6, 0], [-0.3, -0.55, 0], [-1.36, 0.8, -0.2], [0.2, 0, 0], [-1.32, -0.8, 0.2], [0.2, 0, 0], [-0.8, 0, 0.12], [0.7, 0, -0.12], -0.28),
+  // VEYR_BLOODLUST_CARRION_V7: distinct alternating hand and hip rotations for each beat.
+  vrv1_s: P([0.30, 0.66, -0.10], [-0.14, -0.48, 0], [-1.62, 0.88, -0.24], [0.19, 0, 0], [-0.92, -0.43, 0.30], [0.32, 0, 0], [-0.68, 0, 0.14], [0.43, 0, -0.12], -0.21),
+  vrv2_s: P([0.38, -0.68, 0.12], [-0.19, 0.52, 0], [-0.94, 0.43, -0.28], [0.28, 0, 0], [-1.76, -0.94, 0.22], [0.18, 0, 0], [-0.38, 0, 0.12], [0.69, 0, -0.10], -0.22),
+  vrv3_s: P([0.49, 0.52, -0.16], [-0.23, -0.38, 0], [-1.84, 0.27, -0.40], [0.42, 0, 0], [-1.98, -0.23, 0.42], [0.45, 0, 0], [-0.74, 0, 0.16], [0.57, 0, -0.15], -0.25),
+  vrv4_s: P([0.31, -0.73, 0.15], [-0.13, 0.57, 0], [-2.05, 0.91, -0.35], [0.24, 0, 0], [-1.54, -0.91, 0.35], [0.24, 0, 0], [-0.47, 0, 0.14], [0.77, 0, -0.16], -0.27),
+  vrv5_s: P([0.54, 0.40, 0.12], [-0.27, -0.30, 0], [-1.24, 0.86, -0.13], [0.14, 0, 0], [-1.34, -0.86, 0.13], [0.14, 0, 0], [-0.86, 0, 0.16], [0.65, 0, -0.12], -0.28),
   vrv_w: P([0.32, -0.45, -0.1], [-0.18, 0.4, 0], [-1.7, -0.65, -0.1], [0.55, 0, 0], [-1.7, 0.65, 0.1], [0.55, 0, 0], [-0.55, 0, 0.1], [0.5, 0, -0.1], -0.2),
   vrv_s: P([0.48, 0.4, 0.1], [-0.2, -0.35, 0], [-1.25, 0.8, -0.12], [0.18, 0, 0], [-1.25, -0.8, 0.12], [0.18, 0, 0], [-0.7, 0, 0.1], [0.6, 0, -0.1], -0.26),
   charge: P([0.53, -0.4, 0], [-0.3, 0.37, 0], [-0.4, -0.9, -0.4], [0.8, 0, 0], [-0.35, 0.9, 0.4], [0.8, 0, 0], [-0.65, 0, 0.12], [0.6, 0, -0.12], -0.26),

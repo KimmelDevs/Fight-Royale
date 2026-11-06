@@ -181,7 +181,8 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
                     <b>{me.bloodFrenzyT > 0 ? "BLOOD FRENZY" : "BLOODLUST"}</b>
                     <span>{me.bloodFrenzyT > 0 ? `${me.bloodFrenzyT.toFixed(1)}s` : `${me.bloodlust}/100`}</span>
                   </div>
-                  <Bar v={me.bloodFrenzyT > 0 ? 1 : me.bloodlust / 100} color="#d93965" />
+                  {/* VEYR_BLOODLUST_CARRION_V7: display the actual Bloodlust meter as Frenzy counts down. */}
+                  <Bar v={me.bloodlust / 100} color="#d93965" />
                   {me.bloodFestivalT > 0 && (
                     <div style={{ color: "#ffcfda", marginTop: 5, fontWeight: 800 }}>
                       BLOOD FESTIVAL {me.bloodFestivalT.toFixed(1)}s · STUN IMMUNE · SKILLS LOCKED

@@ -298,10 +298,11 @@ export class Fighter implements Entity {
     if (this.chainHookT === 0) this.chainHookTarget = null;
     this.counterT = Math.max(this.counterT - dt, 0);
     this.bloodFeintT = Math.max(this.bloodFeintT - dt, 0);
+    // VEYR_BLOODLUST_CARRION_V7: drain the Frenzy meter evenly rather than snapping from 100 to 0.
     const frenzyWasActive = this.bloodFrenzyT > 0;
     this.bloodFrenzyT = Math.max(this.bloodFrenzyT - dt, 0);
-    // Show a FULL Bloodlust meter throughout Blood Frenzy, then clear it on expiry.
-    if (this.kit === "sickle" && frenzyWasActive && this.bloodFrenzyT === 0) this.bloodlust = 0;
+    if (this.kit === "sickle" && frenzyWasActive)
+      this.bloodlust = Math.min(100, Math.max(0, 100 * this.bloodFrenzyT / 5));
     this.bloodFestivalT = Math.max(this.bloodFestivalT - dt, 0);
     this.invulnT = Math.max(this.invulnT - dt, 0);
     this.airJumpT = Math.max(this.airJumpT - dt, 0);
@@ -1355,6 +1356,13 @@ export class Fighter implements Entity {
           if (this.atkPhase === 0) { p = a.pose_w; sp = 16; }
           else if (this.atkPhase === 1) { p = "slam_air"; sp = 14; }
           else { p = a.pose_s; sp = 40; }
+          break;
+        }
+        // VEYR_BLOODLUST_CARRION_V7: animate every slash on host and online clients.
+        if (this.kit === "sickle" && a?.style === "sickle_carrion") {
+          const elapsed = this.stateT - a.wind;
+          p = elapsed < 0 ? "vrv_w" : ["vrv1_s", "vrv2_s", "vrv3_s", "vrv4_s", "vrv5_s"][Math.min(4, Math.floor(elapsed / 0.14))];
+          sp = elapsed < 0 ? 22 : 48;
           break;
         }
         // ZAREK_CYCLONE_V3: true successive poses for serpent, slide reversal and ultimate.

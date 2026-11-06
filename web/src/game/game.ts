@@ -1024,6 +1024,10 @@ export class Game implements MobHost {
       this.fxp("flash", tip, "#fff6c8", big ? 0.26 : 0.18, 0.14, 0.7);
       this.fxp("sparks", tip, "#fff2b0", big ? 18 : 8, 4);
     }
+    if (f.kit === "sickle" && a.style === "sickle_carrion") {
+      this.carrionSweep(f, a);
+      return;
+    }
     if (f.kit === "glaive" && ["glaive_cyclone", "glaive_serpent", "glaive_phantom", "glaive_infinite"].includes(a.style)) {
       this.stormGlaiveSwing(f, a);
       return;
@@ -1071,6 +1075,32 @@ export class Game implements MobHost {
       case "barrel": this.placeBarrel(f, a); break;
       default: this.melee(f, a);
     }
+  }
+
+  /** VEYR_BLOODLUST_CARRION_V7 — five REAL melee windows, not circular area damage. */
+  private carrionSweep(f: Fighter, a: Attack) {
+    const round = this.round, serial = f.swingSerial;
+    const alive = () => this.round === round && f.swingSerial === serial &&
+      !f.isDown() && f.state === S.ATTACK;
+    const poses = ["vrv1_s", "vrv2_s", "vrv3_s", "vrv4_s", "vrv5_s"];
+    const damage = [18, 20, 21, 22, 33];
+    const guards = [5, 6, 6, 7, 10];
+    const beat = (i: number) => {
+      if (!alive()) return;
+      f.poseOverride = poses[i];
+      const tip = f.model.bladeTip.getWorldPosition(new THREE.Vector3());
+      this.fxp("slashes", tip, i % 2 ? "#ff799a" : "#ed315c");
+      this.fxp("sparks", tip, i % 2 ? "#ffd9e4" : "#ff678c", 12 + i * 3, 5);
+      this.fxp("flash", tip, "#fb3767", i === 4 ? 0.40 : 0.23, 0.12, 0.7);
+      if (i > 0) this.snd(i === 4 ? "swing_heavy" : "dagger", 0.55);
+      // Hit detection is the standard melee path: existing guard, parry, and clash rules apply.
+      const part: Attack = { ...a, dmg: damage[i], guard: guards[i],
+        knock: i === 4 ? 2.8 : 0.25, stun: i === 4 ? 0.30 : 0.10,
+        heavy: false, style: "sickle_carrion" };
+      this.melee(f, part);
+    };
+    beat(0);
+    for (let i = 1; i < 5; i++) this.later(0.14 * i, () => beat(i));
   }
 
   /** ZAREK_CYCLONE_V3: authoritative phased melee; blocks/parries/clashes use normal combat. */
@@ -1849,8 +1879,8 @@ export class Game implements MobHost {
     const id = this.nextId++;
     this.bloodFestivals.push({ id, owner: f, team: f.team, center, radius, time: a.duration, age: 0, visual, blades, captured, contact: new Map() });
     f.bloodFestivalT = a.duration;
-    // The ultimate instantly fills Bloodlust and triggers/refreshes Blood Frenzy.
-    this.activateBloodFrenzy(f);
+    // VEYR_BLOODLUST_CARRION_V7: Festival doesn't fill Bloodlust or start Frenzy.
+    // Landing attacks inside the arena can still build Bloodlust normally.
     this.fxp("ring", center, "#f33b65", radius, 0.45, 0.85);
     this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.9, 0)), "BLOOD FESTIVAL", "#ff7895", 1.0);
     this.snd("spin", 0.75);
@@ -2155,7 +2185,7 @@ export class Game implements MobHost {
           const frenzyLeech = attacker.kit === "sickle" && attacker.bloodFrenzyT > 0 ? 0.50 : 0;
           const totalLeech = attacker.lifesteal + frenzyLeech;
           if (totalLeech > 0) attacker.heal(d.lastDamage * totalLeech);
-          if (attacker.kit === "sickle" && !ranged) this.gainBloodlust(attacker, 25);
+          if (attacker.kit === "sickle" && !ranged) this.gainBloodlust(attacker, a.style === "sickle_carrion" ? 5 : 25); // VEYR_BLOODLUST_CARRION_V7
         }
         if (attacker instanceof Fighter && attacker.look.element === "earth") this.fxp("rocks", d.root.position.clone(), heavy ? 12 : 6, heavy ? 0.9 : 0.6);
         const big = this.isDuel() || attacker instanceof Mob ? 1 : 0.5;
@@ -2261,6 +2291,12 @@ export class Game implements MobHost {
       this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.9, 0)),
         `CLASH ${f.clashMomentum} • ${Math.min(2, 1 + Math.min(5, f.clashMomentum) * .2).toFixed(1)}x BASIC SPD`, "#a6efff", 0.8);
       this.fxp("lightning", f.chest(), "#6acfff");
+    }
+    // VEYR_BLOODLUST_CARRION_V7: reward a genuine Carrion Sweep weapon collision.
+    if ([a, b].some(f => f.kit === "sickle" && f.atk?.style === "sickle_carrion")) {
+      this.fxp("slashes", pos, "#ff527f");
+      this.fxp("sparks", pos, "#ffa4bb", 22, 7);
+      this.fxp("flash", pos, "#ff6088", 0.45, 0.16, 0.85);
     }
     a.clashRecoil();
     b.clashRecoil();
