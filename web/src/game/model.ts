@@ -1,3 +1,4 @@
+// NESA_HEART_SMASH_V4
 // FIGHT_ROYALE_ZAREK_PROPORTIONATE_GLAIVE_V1
 // FIGHT_ROYALE_SIGNATURE_POSES_V2
 // FIGHT_ROYALE_VICTORY_HIGHLIGHTS_V1
@@ -96,6 +97,7 @@ export class FighterModel extends THREE.Group {
   /** Nesa's heart hammer root, isolated so the carnival finisher can grow it 4x. */
   private nesaHammerPivot: THREE.Group | null = null;
   nesaHammerScale = 1;
+  nesaSpinHorizontal = 0;
   /** ASTER_EMBER_LATEST_20261106: extra sword forged from his shield. */
   private judgmentSword: THREE.Group | null = null;
   private judgmentOldSword: THREE.Object3D[] = [];
@@ -1015,35 +1017,51 @@ export class FighterModel extends THREE.Group {
   }
 
   private buildHammer() {
-    const L = this.look;
+    // NESA_HEART_SMASH_V4: ornate carnival heart hammer. Proportions remain combat-sized.
     const h = pivot(this.hand_r, [0, 0, 0], [PI / 2, 0, 0]);
     this.nesaHammerPivot = h;
-    // Two-handed striped handle and soft pink heart-shaped forged head.
-    mesh(h, cyl(0.026, 0.029, 0.92, 10), this.tn("#f9b8d2"), [0, 0.31, 0]);
-    for (let i = 0; i < 7; i++)
-      mesh(h, cyl(0.03, 0.03, 0.035, 12), this.tn(i % 2 ? "#ffffff" : "#b57b95"), [0, -0.11 + i * 0.083, 0]);
-    mesh(h, sphere(0.045, 12), this.gem(), [0, -0.19, 0]);
-    mesh(h, cyl(0.066, 0.067, 0.12, 16), this.tn(L.trim), [0, 0.78, 0]);
+    // Reinforced striped shaft; top connects to the broad crosswise barrel.
+    mesh(h, cyl(0.036, 0.043, 1.15, 12), this.tn("#392d42"), [0, 0.37, 0]);
+    for (let i = 0; i < 8; i++)
+      mesh(h, cyl(0.044, 0.044, 0.034, 12), this.tn(i % 2 ? "#f5b0d6" : "#f7d38d"), [0, -0.13 + 0.115 * i, 0]);
+    mesh(h, sphere(0.067, 16), this.tn("#ffc4df"), [0, -0.25, 0]);
+    mesh(h, cyl(0.078, 0.078, 0.14, 12), this.tn("#eeb772"), [0, 0.82, 0]);
+    // Wide dark-rose steel barrel mounted perpendicular to the shaft.
+    mesh(h, cyl(0.325, 0.325, 0.75, 20), this.tn("#56445e"), [0, 1.08, 0], [0, 0, PI / 2]);
+    for (const side of [-1, 1]) {
+      mesh(h, cyl(0.345, 0.345, 0.09, 20), this.tn("#ec89be"), [side * 0.28, 1.08, 0], [0, 0, PI / 2]);
+      mesh(h, cyl(0.302, 0.302, 0.072, 20), this.tn("#8c698c"), [side * 0.38, 1.08, 0], [0, 0, PI / 2]);
+      mesh(h, torus(0.25, 0.285), this.tn("#ffc481"), [side * 0.424, 1.08, 0], [0, PI / 2, 0]);
+    }
+    // Five-point golden star is only a bezel; the central motif is always HEART.
+    const star = new THREE.Shape();
+    for (let i = 0; i < 10; i++) {
+      const a = Math.PI / 2 + i * Math.PI / 5;
+      const r = i % 2 ? 0.22 : 0.36;
+      const x = Math.cos(a) * r, y = Math.sin(a) * r;
+      if (i === 0) star.moveTo(x, y); else star.lineTo(x, y);
+    }
+    star.closePath();
+    const starGeo = new THREE.ExtrudeGeometry(star, { depth: 0.045, bevelEnabled: true,
+      bevelSize: 0.013, bevelThickness: 0.012, bevelSegments: 2, curveSegments: 8 });
+    mesh(h, starGeo, this.tn("#ffc176"), [0.44, 1.08, 0], [0, PI / 2, 0]);
     const heart = new THREE.Shape();
-    heart.moveTo(0, -0.23);
-    heart.bezierCurveTo(-0.14, -0.14, -0.34, 0.025, -0.27, 0.17);
-    heart.bezierCurveTo(-0.19, 0.31, -0.045, 0.27, 0, 0.16);
-    heart.bezierCurveTo(0.045, 0.27, 0.19, 0.31, 0.27, 0.17);
-    heart.bezierCurveTo(0.34, 0.025, 0.14, -0.14, 0, -0.23);
-    const geo = new THREE.ExtrudeGeometry(heart, {
-      depth: 0.28, steps: 1, bevelEnabled: true,
-      bevelThickness: 0.04, bevelSize: 0.035, bevelSegments: 3, curveSegments: 16,
-    });
-    const head = mesh(h, geo, this.tn("#f39abd"), [0, 1.08, -0.14]);
-    head.castShadow = true;
-    const inset = mesh(h, geo.clone(), this.tn("#ffcee3", false), [0, 1.08, 0.153]);
-    inset.scale.set(0.78, 0.78, 0.07);
-    mesh(h, sphere(0.07, 14), this.gem(), [0, 1.05, 0.19], [0, 0, 0], [1.0, 0.8, 0.5]);
-    // Heart-shaped hammer has no star ornaments.
-    this.bladeBase = pivot(h, [0, 0.54, 0]);
-    this.bladeTip = pivot(h, [0, 1.34, 0]);
-    this.gripL = pivot(h, [0, 0.05, 0]);
-    this.shieldNode = pivot(h, [0, 0.76, 0]);
+    heart.moveTo(0, -0.22);
+    heart.bezierCurveTo(-0.12, -0.13, -0.29, 0.02, -0.23, 0.15);
+    heart.bezierCurveTo(-0.16, 0.28, -0.045, 0.23, 0, 0.15);
+    heart.bezierCurveTo(0.045, 0.23, 0.16, 0.28, 0.23, 0.15);
+    heart.bezierCurveTo(0.29, 0.02, 0.12, -0.13, 0, -0.22);
+    const gem = new THREE.ExtrudeGeometry(heart, { depth: 0.052, bevelEnabled: true,
+      bevelSize: 0.023, bevelThickness: 0.027, bevelSegments: 3, curveSegments: 16 });
+    mesh(h, gem, this.tn("#ff4fae"), [0.505, 1.08, 0], [0, PI / 2, 0]);
+    mesh(h, gem.clone(), this.tn("#ffc9f0", false), [0.574, 1.09, 0], [0, PI / 2, 0], [0.63, 0.63, 0.38]);
+    // Back face: a small rosy heart emblem on the metal cap.
+    mesh(h, gem.clone(), this.tn("#ff8acf"), [-0.48, 1.08, 0], [0, -PI / 2, 0], [0.42, 0.42, 0.6]);
+    mesh(h, sphere(0.09, 16), this.gem(), [0, 0.86, 0.17]);
+    this.bladeBase = pivot(h, [0, 0.41, 0]);
+    this.bladeTip = pivot(h, [0, 1.38, 0]);
+    this.gripL = pivot(h, [0, 0.04, 0]);
+    this.shieldNode = pivot(h, [0, 0.70, 0]);
     this.castPoint = this.bladeTip;
   }
 
@@ -1331,9 +1349,13 @@ export class FighterModel extends THREE.Group {
   /** Exponentially blends joints toward `pose` and applies overlays (walk, breathing, cloth). */
   blend(pose: Pose, dt: number, speed: number) {
     if (this.nesaHammerPivot) {
+      // NESA_HEART_SMASH_V4: horizontal, Beyblade-style hammer shaft during charged spin.
       const value = THREE.MathUtils.clamp(this.nesaHammerScale, 1, 4);
       const current = this.nesaHammerPivot.scale.x;
       this.nesaHammerPivot.scale.setScalar(THREE.MathUtils.damp(current, value, value > current ? 8 : 13, dt));
+      const flat = THREE.MathUtils.clamp(this.nesaSpinHorizontal, 0, 1);
+      this.nesaHammerPivot.rotation.z = THREE.MathUtils.damp(this.nesaHammerPivot.rotation.z,
+        -Math.PI * 0.5 * flat, flat > 0 ? 28 : 15, dt);
     }
     const k = 1 - Math.exp(-speed * dt);
     for (const j of JOINTS) {

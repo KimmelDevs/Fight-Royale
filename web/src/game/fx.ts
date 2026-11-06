@@ -1,3 +1,4 @@
+// NESA_HEART_SMASH_V4
 // FIGHT_ROYALE_ARENA_REACTIONS_V1
 // FIGHT_ROYALE_PERFECT_DODGE_V1_NOV07
 // FIGHT_ROYALE_SMALLER_COMBAT_RINGS_ZAREK_WEAPON_CLASH_V1
@@ -478,6 +479,52 @@ export class Fx {
     });
   }
 
+  /** NESA_HEART_SMASH_V4: pink heart-shaped floor shockwave, visual-only, self-expiring. */
+  heartSmash(pos: THREE.Vector3, radius = 2.7) {
+    const group = new THREE.Group();
+    group.position.set(pos.x, 0.082, pos.z);
+    const shape = new THREE.Shape();
+    shape.moveTo(0, -0.78);
+    shape.bezierCurveTo(-0.28, -0.48, -0.98, -0.02, -0.77, 0.49);
+    shape.bezierCurveTo(-0.55, 0.94, -0.10, 0.80, 0, 0.57);
+    shape.bezierCurveTo(0.10, 0.80, 0.55, 0.94, 0.77, 0.49);
+    shape.bezierCurveTo(0.98, -0.02, 0.28, -0.48, 0, -0.78);
+    const geo = new THREE.ShapeGeometry(shape, 24);
+    geo.rotateX(-Math.PI / 2);
+    const fillMat = new THREE.MeshBasicMaterial({ color: '#ff4ba9', transparent: true,
+      opacity: 0.36, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false });
+    const fill = new THREE.Mesh(geo, fillMat);
+    (fill as any).ownsMat = true;
+    group.add(fill);
+    const outlinePoints = shape.getPoints(60);
+    const edgeGeo = new THREE.BufferGeometry().setFromPoints(outlinePoints.map(p =>
+      new THREE.Vector3(p.x, 0.025, -p.y)));
+    const edgeMat = new THREE.LineBasicMaterial({ color: '#ffe0f5', transparent: true,
+      opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false });
+    const edge = new THREE.LineLoop(edgeGeo, edgeMat);
+    group.add(edge);
+    const inner = new THREE.LineLoop(edgeGeo, new THREE.LineBasicMaterial({ color: '#ff68ca',
+      transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false }));
+    inner.scale.setScalar(0.76);
+    inner.position.y = 0.035;
+    group.add(inner);
+    let age = 0;
+    this.add(group, (dt) => {
+      age += dt;
+      const u = Math.min(1, age / 0.66);
+      const e = 1 - Math.pow(1 - u, 3);
+      group.scale.setScalar(0.24 + radius * 0.93 * e);
+      fillMat.opacity = 0.33 * (1 - u);
+      edgeMat.opacity = 0.98 * (1 - u * u);
+      (inner.material as THREE.LineBasicMaterial).opacity = 0.7 * (1 - u);
+      group.position.y = 0.082 + 0.014 * u;
+      if (u >= 1) { edgeGeo.dispose(); geo.dispose(); edgeMat.dispose(); inner.material.dispose(); }
+      return age < 0.66;
+    });
+    this.sparks(pos.clone().add(new THREE.Vector3(0, 0.20, 0)), '#ff83d0', 34, 6);
+    this.sparks(pos.clone().add(new THREE.Vector3(0, 0.27, 0)), '#ffe4fb', 17, 5);
+  }
+
   ring(pos: THREE.Vector3, color: string, radius = 2, dur = 0.35, opacity = 0.9) {
     const mat = M.additive(color, opacity);
     const m = new THREE.Mesh(RING, mat);
@@ -722,8 +769,10 @@ export class Trail {
   private base: THREE.Object3D;
   private tip: THREE.Object3D;
   private color: THREE.Color;
+  private life: number;
 
-  constructor(base: THREE.Object3D, tip: THREE.Object3D, color: string) {
+  constructor(base: THREE.Object3D, tip: THREE.Object3D, color: string, life = 0.16) {
+    this.life = life;
     this.base = base;
     this.tip = tip;
     this.color = new THREE.Color(color);
@@ -734,7 +783,7 @@ export class Trail {
 
   update(dt: number) {
     for (const s of this.samples) s.age += dt;
-    while (this.samples.length && this.samples[0].age > 0.16) this.samples.shift();
+    while (this.samples.length && this.samples[0].age > this.life) this.samples.shift();
     if (this.emitting) {
       const b = this.base.getWorldPosition(new THREE.Vector3());
       const t = this.tip.getWorldPosition(new THREE.Vector3());
@@ -754,7 +803,7 @@ export class Trail {
     };
     for (let i = 0; i < n - 1; i++) {
       const s0 = this.samples[i], s1 = this.samples[i + 1];
-      const a0 = Math.max(1 - s0.age / 0.16, 0), a1 = Math.max(1 - s1.age / 0.16, 0);
+      const a0 = Math.max(1 - s0.age / this.life, 0), a1 = Math.max(1 - s1.age / this.life, 0);
       put(s0.b, 0); put(s0.t, a0); put(s1.t, a1);
       put(s0.b, 0); put(s1.t, a1); put(s1.b, 0);
     }

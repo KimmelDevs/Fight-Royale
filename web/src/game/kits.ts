@@ -1,3 +1,4 @@
+// NESA_HEART_SMASH_V4
 // FIGHT_ROYALE_ZAREK_EFFECTIVE_RANGE_NERF_V1
 // CONTINUOUS_COMBAT_ASTER_EMBER_V3_NOV06
 // GARRICK_RANGE_WALK_V2
@@ -299,7 +300,10 @@ function hammer(): Record<string, Attack> {
     heavy: a({ name: "Momentum Cyclone", desc: "Hold left-click to control spin duration; each turn hits, the final turn launches.", wind: 0.45, active: 0.48, recover: 0.43, dmg: 36, guard: 15, reach: 2.58, lunge: 2.10, knock: 1.5, stun: 0.20, heavy: false, style: "nesa_spin", pose_w: "charge", pose_s: "l3_s" }),
     z: a({ name: "Side Swipe", desc: "Huge sideways strike. Block reduces damage but cannot nullify its push.", cd: 7, wind: 0.36, active: 0.11, recover: 0.42, dmg: 180, guard: 72, reach: 2.69, lunge: 1.75, knock: 9.6, stun: 0.70, heavy: true, pose_w: "nx_w", pose_s: "nx_s" }),
     x: a({ name: "Upsie Daisie", desc: "Plant the hammer as a pole, keep a firm grip, then swing sideways into a long-reaching flying kick.", cd: 9, wind: 0.40, active: 0.16, recover: 0.50, dmg: 170, guard: 36, reach: 2.62, lunge: 7.8, knock: 7.3, stun: 0.57, heavy: true, self_jump: 6.6, pose_w: "kick_w", pose_s: "kick_s" }),
-    c: a({ name: "GIGA BONK!", desc: "Struggle to lift the heart hammer, leap and smash the arena with a huge shockwave.", cd: 19, type: "strike", at: "self", mode: "leap", self_jump: 7.9, wind: 0.69, active: 0.17, recover: 0.90, dmg: 340, guard: 95, knock: 11.2, stun: 1.13, heavy: true, radius: 3.25, style: "slam", pose_w: "charge", pose_s: "heavy_s" }),
+    c: a({ name: "Pink Heart Smash", desc: "Three stored charges. One grounded heart-hammer smash per press with a bright pink heart shockwave; charges regenerate separately.",
+      cd: 7.5, type: "strike", at: "self", wind: 0.36, active: 0.13, recover: 0.36,
+      dmg: 172, guard: 57, knock: 8.7, stun: 0.62, heavy: true,
+      delay: 0.035, radius: 2.72, style: "nesa_heart_slam", pose_w: "charge", pose_s: "heavy_s" }),
   };
 }
 

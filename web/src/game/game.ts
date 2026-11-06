@@ -1,3 +1,4 @@
+// NESA_HEART_SMASH_V4
 // FIGHT_ROYALE_GROUNDED_AIR_SLICES_V1
 // FIGHT_ROYALE_WEIGHTED_KNOCKDOWN_WAKEUP_V1
 // FIGHT_ROYALE_ZAREK_EFFECTIVE_RANGE_NERF_V1
@@ -1040,6 +1041,7 @@ export class Game implements MobHost {
       case "splash": fx.splash(v3(a[0]), a[1], a[2], a[3]); break;
       case "flash": fx.flash(v3(a[0]), a[1], a[2], a[3], a[4]); break;
       case "ring": fx.ring(v3(a[0]), a[1], a[2], a[3], a[4]); break;
+      case "heartSmash": fx.heartSmash(v3(a[0]), a[1]); break;
       case "wave": fx.waveRing(v3(a[0]), a[1], a[2]); break;
       case "geyser": fx.geyser(v3(a[0]), a[1], a[2]); break;
       case "lightning":
@@ -1249,6 +1251,11 @@ export class Game implements MobHost {
     }
     if (f.kit === "hammer" && f.atkId === "x") {
       this.nesaLeverKick(f, a); return;
+    }
+    if (f.kit === "hammer") {
+      const tip = f.model.bladeTip.getWorldPosition(new THREE.Vector3());
+      this.fxp("sparks", tip, "#ff75ce", 14, 4);
+      this.fxp("flash", tip, "#ffb8e7", 0.20, 0.13, 0.65);
     }
     const el = f.look.element;
     const big = ["z", "x", "c", "v", "heavy", "l3"].includes(f.atkId);
@@ -2159,6 +2166,12 @@ export class Game implements MobHost {
         this.fxp("splash", g.clone().setY(0.3), 50, 2.2);
         for (let i = 0; i < 10; i++) { const an = (i / 10) * Math.PI * 2; this.fxp("geyser", g.clone().add(new THREE.Vector3(Math.cos(an), 0, Math.sin(an)).multiplyScalar(radius)), 2.6, 0.05); }
         this.add_trauma(0.7);
+        break;
+      case "nesa_heart_slam":
+        this.fxp("heartSmash", g, radius);
+        this.fxp("flash", g.clone().setY(0.28), "#ff80cd", 0.55, 0.20, 0.88);
+        this.fxp("sparks", g.clone().setY(0.22), "#ffe0f3", 20, 7, [0, 1, 0]);
+        this.add_trauma(0.35);
         break;
       case "slam":
       case "cleave":
@@ -3324,6 +3337,11 @@ export class Game implements MobHost {
         // Powder keg out: the slot becomes its trigger.
         if (a.style === "bloodsickle" && me.sickleOut) return { key: k, id: a.id + "_redirect", name: "Redirect Sickle", cd: 0, max: 1 };
         if (a.type === "barrel" && me.barrelOut) return { key: k, id: a.id + "_trigger", name: "Detonate", cd: 0, max: 1 };
+        if (me.kit === "hammer" && k === "c") return {
+          key: k, id: a.id, name: `${a.name} ×${me.nesaCCharges}`,
+          cd: me.nesaCCharges > 0 ? 0 : me.nesaCRechargeT,
+          max: 7.5 * me.cdMult,
+        };
         return { key: k, id: a.id, name: a.name, cd: me.cooldowns[k], max: me.attacks[k].cd * me.cdMult };
       }) : [],
       kit: me?.kit ?? "", element: me?.look.element ?? "",
