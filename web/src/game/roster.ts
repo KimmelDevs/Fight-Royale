@@ -1,3 +1,4 @@
+// ASTER_TANK_ONLY_V2_20261107
 // The playable cast. Each entry's `look` drives both the model (colors, hair, hat, outfit,
 // weapon) and the combat kit.
 
@@ -21,8 +22,8 @@ export interface Character {
 
 export const CHARACTERS: Character[] = [
   { id: "aster", title: "Azure Knight", role: "Knight - Sword & Shield",
-    desc: "A steady guardian. Big guard, heavy sword swings, a shield that shrugs off blows.",
-    stats: { power: 4, speed: 3, range: 2, defense: 5 },
+    desc: "A tough frontline guardian with reinforced guard and armor, trading damage for endurance.",
+    stats: { power: 3, speed: 3, range: 2, defense: 5 },
     look: { name: "Aster", body: "m", vrm: "aster", kit: "knight", element: "light", outfit: "knight", style: "short", hat: "none",
       hair: "#e6edf8", hair_shade: "#b3c2f2", iris_top: "#1c6fd1", iris_bottom: "#7fe3ff", eye_dark: "#152a5e",
       tunic: "#2b4fa8", band: "#f4f6ff", pants: "#1d2442", boots: "#5a3a2a", metal: "#d5deef", trim: "#e6c26e",

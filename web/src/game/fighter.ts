@@ -1,3 +1,5 @@
+// ASTER_TANK_ONLY_V2_20261107
+// MELEE_PROJECTILE_SPRINT_V1_NOV06
 // CONTINUOUS_PARRY_AI_V4_NOV06
 // CONTINUOUS_COMBAT_ASTER_EMBER_V3_NOV06
 // Playable fighter. A brain (local input, AI, or a remote player's inputs) fills `intent`
@@ -51,7 +53,7 @@ const STUN_DR_WINDOW = 3;
 const STUN_DR = 0.6;
 const PCT_PER_DMG = 0.07;
 
-export interface Intent { attack: boolean; block: boolean; jump: boolean; skill: string; skillHeld?: string; skillMove?: THREE.Vector3; move: THREE.Vector3; dash: THREE.Vector3 }
+export interface Intent { attack: boolean; block: boolean; jump: boolean; skill: string; skillHeld?: string; skillMove?: THREE.Vector3; move: THREE.Vector3; dash: THREE.Vector3; sprint?: boolean }
 export const DASH_CD = 3;
 const DASH_T = 0.3;
 const DASH_SPEED = 14;
@@ -260,6 +262,11 @@ export class Fighter implements Entity {
     this.kit = look.kit;
     const st = Kits.STATS[this.kit];
     this.maxHp = st.hp; this.maxGuard = st.guard; this.moveSpeed = st.move; this.walkSpeed = st.walk;
+    // Aster only: +12% HP (2500 -> 2800), +25% shield guard (100 -> 125).
+    if (this.kit === "knight" && look.element === "light") {
+      this.maxHp *= 1.12;
+      this.maxGuard *= 1.25;
+    }
     this.parryWindow = st.parry; this.jumpV = st.jump;
     this.hp = this.maxHp;
     this.guard = this.maxGuard;
@@ -299,7 +306,7 @@ export class Fighter implements Entity {
   update(dt: number) {
     if (this.puppet) { this.updatePuppet(dt); return; }
     const it = this.intent;
-    it.attack = false; it.block = false; it.jump = false; it.skill = ""; it.skillHeld = "";
+    it.attack = false; it.block = false; it.jump = false; it.skill = ""; it.skillHeld = ""; it.sprint = false;
     it.skillMove?.set(0, 0, 0); it.move.set(0, 0, 0); it.dash.set(0, 0, 0);
     if (this.out) { this.waitRespawn(dt); return; }
     if (this.brain && this.state !== S.KO && this.state !== S.WIN) this.brain.think(this, dt);
@@ -852,6 +859,8 @@ export class Fighter implements Entity {
     this.atkPower = 1;
     if (id === "heavy" && this.state === S.CHARGE) this.atkPower = 1 + 0.5 * Math.min(this.stateT / CHARGE_MAX, 1);
     this.atkPower *= this.dmgMult * (this.rageT > 0 ? RAGE_MULT : 1) * this.status.dmgMult();
+    // Aster deals 15% less damage from all attacks. Judgment mechanics remain unchanged.
+    if (this.kit === "knight" && this.look.element === "light") this.atkPower *= 0.85;
     if (this.kit === "knight" && this.look.element === "light" && this.judgmentT > 0) {
       const defenseToOffense = Math.min(0.45, this.maxGuard / 100 * 0.35);
       const missingLifeBonus = Math.max(0, 1 - this.hp / Math.max(1, this.maxHp)) * 0.20;
@@ -1004,7 +1013,7 @@ export class Fighter implements Entity {
     pos.addScaledVector(dir, v * dt);
     const steer = this.state === S.IDLE ? 1 : this.state === S.BLOCK ? 0.5 : this.state === S.CHARGE ? 0.4 : 0;
     if (steer > 0 && this.intent.move.lengthSq() > 0.0001) {
-      const step = this.intent.move.clone().normalize().multiplyScalar(this.moveSpeed * (this.bloodFrenzyT > 0 ? 1.15 : 1) * (this.meteorFistArmor ? 1 : this.status.speedMult()) * steer * dt);
+      const step = this.intent.move.clone().normalize().multiplyScalar(this.moveSpeed * (this.bloodFrenzyT > 0 ? 1.15 : 1) * (this.meteorFistArmor ? 1 : this.status.speedMult()) * (this.intent.sprint && this.state === S.IDLE && this.onGround ? 1.42 : 1) * steer * dt);
       if (dist < MIN_DIST && step.dot(dir) > 0) step.addScaledVector(dir, -step.dot(dir));
       pos.add(step);
       walking = this.onGround;
@@ -1012,7 +1021,7 @@ export class Fighter implements Entity {
     if (dist < MIN_DIST * 0.9) pos.addScaledVector(dir, -(MIN_DIST * 0.9 - dist) * 0.5);
     const flat = Math.hypot(pos.x, pos.z);
     if (flat > this.arenaRadius) { pos.x *= this.arenaRadius / flat; pos.z *= this.arenaRadius / flat; }
-    this.model.walk = Math.min(Math.max(this.model.walk + (walking ? 1 : -1) * dt * 6, 0), 1);
+    this.model.walk = THREE.MathUtils.damp(this.model.walk, walking ? (this.intent.sprint && this.state === S.IDLE && this.onGround ? 1 : 0.64) : 0, 12, dt);
     if (this.state !== S.KO) this.model.rotation.y = this.viewBias;
   }
 
@@ -1074,6 +1083,8 @@ export class Fighter implements Entity {
     if (this.wardT > 0) { this.model.recoil = 0.4; return "warded"; }
     if (this.counterT > 0 && !a.no_parry) { this.counterT = 0; return "counter"; }
     let dmg = a.dmg * power;
+    // Aster's armor reduces incoming HP damage by 10%, including guard breaks.
+    if (this.kit === "knight" && this.look.element === "light") dmg *= 0.90;
     this.knockFrom = attacker ? attacker.root.position.x : this.root.position.x - this.facing;
     // Veyr's Blood Festival forbids the perfect-parry outcome against his melee swings.
     // A regular block still costs guard, and simultaneous attacks can still clash.
@@ -1276,7 +1287,7 @@ export class Fighter implements Entity {
     let walking = false;
     if (this.onGround) {
       let target = 0;
-      if (free) { target = mx * this.moveSpeed * (this.state === S.CHARGE ? 0.3 : 1.55); walking = mx !== 0; }
+      if (free) { target = mx * this.moveSpeed * (this.state === S.CHARGE ? 0.3 : 1.55) * (this.state === S.IDLE && this.onGround && this.intent.sprint ? 1.42 : 1); walking = mx !== 0; }
       if (this.state === S.ATTACK && this.atk && this.atkPhase <= 1) {
         const o = this.opponent;
         const near = o && !o.isDown() && Math.abs(o.root.position.x - pos.x) < MIN_DIST && Math.abs(o.root.position.y - pos.y) < 1;
@@ -1312,7 +1323,7 @@ export class Fighter implements Entity {
       this.root.rotation.y += d * (1 - Math.exp(-18 * dt));
       this.model.rotation.y = this.viewBias;
     }
-    this.model.walk = Math.min(Math.max(this.model.walk + (walking ? 1 : -1) * dt * 6, 0), 1);
+    this.model.walk = THREE.MathUtils.damp(this.model.walk, walking ? (this.intent.sprint && this.state === S.IDLE && this.onGround ? 1 : 0.64) : 0, 12, dt);
   }
 
   private verticalPlat(dt: number) {

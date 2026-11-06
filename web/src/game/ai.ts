@@ -1,3 +1,6 @@
+// EMBER_IGNITION_GUARD_AI_V1_NOV07
+// ENEMY_PROJECTILE_CLASH_AI_V1_NOV06
+// MELEE_PROJECTILE_SPRINT_V1_NOV06
 // EMBER_GROUND_HAZARD_AI_V1_NOV06
 // CONTINUOUS_PARRY_AI_V4_NOV06
 // CONTINUOUS_COMBAT_ASTER_EMBER_V3_NOV06
@@ -18,6 +21,8 @@ const PRESETS = [
 export interface Threats {
   projectiles(): { target: any; pos: THREE.Vector3; vel: THREE.Vector3; id: number }[];
   strikes(): { target: any; land: number; id: number }[];
+  /** Beam warnings appear only after Ember really begins gathering flames. */
+  ignitions(f: Fighter): { caster: Fighter; land: number; id: number }[];
   /** Authoritative scheduled hit timestamps for an active continuous combo. */
   comboHits(attacker: Fighter): number[];
   /** Live enemy Ember fire patches; friendly flames are filtered out by Game. */
@@ -59,6 +64,7 @@ export class AiBrain implements Brain {
   private comboParryTarget = -1;
   private comboParryExamined = -1;
   private comboParryReleased = false;
+  private ignitionChoices = new Map<number, boolean>();
 
   constructor(private threats: Threats, level: number) {
     this.p = PRESETS[Math.max(0, Math.min(level, PRESETS.length - 1))];
@@ -110,8 +116,17 @@ export class AiBrain implements Brain {
       this.aiAirTap = true;
       this.antiAirCd = rand(0.24, 0.45);
     }
+    // Guard the telegraphed beam before committing to an attack that cannot cancel.
+    if (this.defendIgnition(f)) return;
     if (!this.aiAirTap) this.offense(f, o, dt);
     if (f.kit === "wind" && !f.stage) this.airDive(f, o, dt);
+    // Sprint to close long gaps. A direction aimed at retreat/evade is not sprinted.
+    // This uses the same run animations as player Shift movement.
+    const chase = o.root.position.clone().sub(f.root.position).setY(0);
+    const travel = f.intent.move.clone().setY(0);
+    f.intent.sprint = f.state === S.IDLE && f.onGround && chase.lengthSq() > 25 &&
+      travel.lengthSq() > 0.12 && travel.normalize().dot(chase.normalize()) > 0.75 &&
+      !f.intent.block;
     // Bomber: set off the keg when the enemy walks near it.
     if (f.barrelOut && o.root.position.clone().setY(0).distanceTo(f.barrelPos) < 3) {
       const k = ["z", "x", "c"].find((key) => f.attacks[key].type === "barrel");
@@ -212,8 +227,49 @@ export class AiBrain implements Brain {
     // Hop over incoming projectiles.
     for (const pr of this.threats.projectiles()) {
       if (pr.target !== f || this.seen.has(pr.id)) continue;
+      if (this.tryProjectileClash(f, pr)) { this.seen.add(pr.id); continue; }
       this.seen.add(pr.id);
       if (Math.random() < this.p.jump + 0.15 && f.onGround) this.jumpWait = Math.max(f.chest().distanceTo(pr.pos) / Math.max(pr.vel.length(), 0.1) - 0.25, 0);
+    }
+    return false;
+  }
+
+  /** Raise guard in time for Ember's real delayed beam. The shield must have
+   * finished raising at impact; no special AI-only immunity is granted.
+   * A non-parryable beam therefore resolves as an ordinary costly block. */
+  private defendIgnition(f: Fighter): boolean {
+    const now = this.threats.now();
+    for (const warning of this.threats.ignitions(f)) {
+      const caster = warning.caster;
+      const eta = warning.land - now;
+      if (eta <= 0 || eta > 0.75) continue;
+      // Mirror the beam's target-line calculation; don't guard a shot aimed elsewhere.
+      const from = caster.model.castPoint.getWorldPosition(new THREE.Vector3());
+      const target = caster.opponent && !caster.opponent.isDown()
+        ? caster.opponent.chest() : from.clone().add(new THREE.Vector3(
+          Math.sin(caster.root.rotation.y), 0, Math.cos(caster.root.rotation.y)));
+      const direction = target.sub(from).normalize();
+      const relative = f.chest().sub(from);
+      const ahead = relative.dot(direction);
+      const lateral = relative.addScaledVector(direction, -ahead).length();
+      if (ahead < -0.2 || ahead > 11.4 || lateral > 1.45 + f.radius) continue;
+      if (!this.ignitionChoices.has(warning.id)) {
+        // Higher difficulties respond more reliably, but a compromised guard
+        // or an attack already committed still makes the beam dangerous.
+        const chance = this.p.block < 0.3 ? 0.40 : this.p.block < 0.45 ? 0.70
+          : this.p.block < 0.6 ? 0.90 : 0.98;
+        this.ignitionChoices.set(warning.id, Math.random() < chance);
+        if (this.ignitionChoices.size > 48) this.ignitionChoices.clear();
+      }
+      if (!this.ignitionChoices.get(warning.id) || eta > 0.58) continue;
+      if (f.state !== S.IDLE && f.state !== S.BLOCK) continue;
+      this.blockWait = -1; this.blockDur = 0; this.blockHold = 0;
+      this.queue = []; this.hold = 0; this.jumpWait = -1;
+      f.intent.attack = false; f.intent.skill = ""; f.intent.jump = false;
+      f.intent.block = true;
+      f.intent.move.set(0, 0, 0);
+      f.intent.sprint = false;
+      return true;
     }
     return false;
   }
@@ -351,9 +407,39 @@ export class AiBrain implements Brain {
     return true;
   }
 
+  /** Sometimes contest an incoming shot with a REAL light swing. Collision is still
+   * decided by Game's shared weapon-vs-projectile hitbox, not by this AI prediction. */
+  private tryProjectileClash(f: Fighter, pr: ReturnType<Threats["projectiles"]>[number]): boolean {
+    const a = f.attacks.l1;
+    if (pr.target !== f || f.state !== S.IDLE || !f.onGround || a?.type !== "melee" ||
+        f.atkLock > 0 || this.queue.length > 0 || this.hold > 0 ||
+        this.blockHold > 0 || this.blockWait >= 0) return false;
+    const speedSq = pr.vel.lengthSq();
+    if (speedSq < 4) return false;
+    // Predict where the shot crosses the blade arc during light attack's active frames.
+    const rel = pr.pos.clone().sub(f.chest());
+    if (rel.dot(pr.vel) >= 0) return false; // flying away
+    const t = THREE.MathUtils.clamp(-rel.dot(pr.vel) / speedSq,
+      a.wind + 0.025, a.wind + a.active);
+    if (t > 0.65) return false;
+    const intercept = pr.pos.clone().addScaledVector(pr.vel, t).sub(f.chest());
+    if (Math.abs(intercept.y) > 1.05) return false;
+    intercept.y = 0;
+    const dist = intercept.length();
+    if (dist > a.reach + 0.3) return false;
+    const forward = new THREE.Vector3(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
+    if (dist > 0.65 && intercept.dot(forward) / Math.max(0.001, dist) < 0.18) return false;
+    // Easy AI seldom reacts; stronger opponents favor a cinematic blade clash.
+    if (Math.random() > Math.min(0.78, 0.14 + this.p.block * 0.95)) return false;
+    this.queue = [[0, 0.08]];
+    this.hold = 0;
+    return true;
+  }
+
   private dodge(f: Fighter) {
     for (const p of this.threats.projectiles()) {
       if (p.target !== f || this.seen.has(p.id)) continue;
+      if (this.tryProjectileClash(f, p)) { this.seen.add(p.id); continue; }
       this.seen.add(p.id);
       const eta = f.chest().distanceTo(p.pos) / Math.max(p.vel.length(), 0.1);
       const r = Math.random();

@@ -1,3 +1,4 @@
+// MELEE_PROJECTILE_SPRINT_V1_NOV06
 // CONTINUOUS_COMBAT_ASTER_EMBER_V3_NOV06
 // Procedural cel-shaded fighter. Faces +Z. Right hand (-X side) holds the main weapon.
 // `look` (see roster.ts) picks the outfit, hair style, hat, weapon and colors.
@@ -1293,15 +1294,23 @@ export class FighterModel extends THREE.Group {
     this.knee[0] += (kn[0] - this.knee[0]) * k;
     this.knee[1] += (kn[1] - this.knee[1]) * k;
     this.t += dt;
-    this.walkPhase += dt * (this.kit === "greatsword" ? 8.5 : 11) * this.walk;
+    // 0.64 = ordinary walking; 1 = full sprint; each kit uses its own gait rate.
+    const running = THREE.MathUtils.clamp((this.walk - 0.66) / 0.34, 0, 1);
+    const moving = Math.min(1, this.walk / 0.64);
+    this.walkPhase += dt * (this.kit === "greatsword" ? 8.5 : 11) * moving * (1 + 0.46 * running);
     const s = Math.sin(this.walkPhase);
     this.recoil = Math.max(this.recoil - dt * 5, 0);
     this.hips.position.y = HIP + this.hipsY + Math.abs(s) * 0.03 * this.walk + Math.sin(this.t * 2.4) * 0.005;
     for (const j of JOINTS) this.joints[j].rotation.set(this.cur[j].x, this.cur[j].y, this.cur[j].z);
     this.torso.rotation.x += -this.recoil * 0.3 + Math.sin(this.t * 2.4) * 0.012;
     const stride = this.kit === "greatsword" ? 0.36 : 0.55;
-    this.leg_l.rotation.x += s * stride * this.walk;
-    this.leg_r.rotation.x -= s * stride * this.walk;
+    this.leg_l.rotation.x += s * stride * moving * (1 + 0.34 * running);
+    this.leg_r.rotation.x -= s * stride * moving * (1 + 0.34 * running);
+    // Distinct full-body running pose for the procedural fallback body.
+    this.torso.rotation.x += running * (this.kit === "greatsword" ? 0.08 : 0.13);
+    this.arm_l.rotation.x -= s * 0.17 * running;
+    this.arm_r.rotation.x += s * 0.14 * running;
+    this.hips.position.y += Math.abs(s) * 0.018 * running;
     // Veyr's low stalking posture also animates the procedural fallback (no VRM yet).
     if (this.kit === "sickle") {
       const stalking = this.walk;

@@ -8,3 +8,4 @@ next-env.d.ts
 !.env.example
 supabase/.temp
 web.rar
+scripts.zip

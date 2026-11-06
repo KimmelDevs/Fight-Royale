@@ -135,7 +135,7 @@ function bonusSkill(kit: string, element: string): Attack {
   switch (kit) {
     case "mage":
       // ASTER_EMBER_LATEST_20261106: fire is consumed to amplify the beam.
-      if (element === "fire") return a({ name: "Absolute Combustion — Final Ignition",
+      if (element === "fire") return a({ name: "Absolute Combustion",
         desc: "Condense nearby fire patches and active burns into a white-hot beam. Each consumed patch and burn amplifies the damage.",
         cd: 16, type: "buff", mode: "ember_ignition", wind: 0.50, active: 0.06,
         recover: 0.80, pose_w: "ember_ignite_w", pose_s: "ember_ignite_s" });

@@ -13,6 +13,16 @@ const UP = new THREE.Vector3(0, 1, 0);
 const BOX = new THREE.BoxGeometry(0.014, 0.09, 0.014);
 const DROP = new THREE.SphereGeometry(0.07, 8, 4);
 const SPH = new THREE.SphereGeometry(1, 16, 8);
+// Billboard geometry: these impacts burst AT weapon contact, including in midair.
+const CLASH_HALO = new THREE.RingGeometry(0.80, 1.0, 40);
+const clashStreakShape = new THREE.Shape();
+clashStreakShape.moveTo(-1.0, -0.065);
+clashStreakShape.lineTo(-0.08, -0.035);
+clashStreakShape.lineTo(1.04, 0);
+clashStreakShape.lineTo(-0.08, 0.035);
+clashStreakShape.lineTo(-1.0, 0.065);
+clashStreakShape.closePath();
+const CLASH_STREAK = new THREE.ShapeGeometry(clashStreakShape);
 const RING = new THREE.TorusGeometry(0.95, 0.05, 6, 48).rotateX(Math.PI / 2);
 const WRING = new THREE.TorusGeometry(0.91, 0.09, 8, 48).rotateX(Math.PI / 2);
 const GEY = new THREE.CylinderGeometry(0.08, 0.22, 1, 16).translate(0, 0.5, 0);
@@ -134,6 +144,49 @@ export class Fx {
 
   embers(pos: THREE.Vector3, color: string, amount = 20) {
     this.burst(pos, DROP, M.additive(color, 0.9), amount, 3, new THREE.Vector3(0, 1, 0), 0.8, -2, 0.7, 0.4, false);
+  }
+
+  /** Bright crossed-blade starburst + expanding shock ring at a 3D collision point.
+   * Faces the camera so both players see it, even when weapons meet in the air. */
+  clashBurst(pos: THREE.Vector3, color: string, size = 1) {
+    const root = new THREE.Group();
+    root.position.copy(pos);
+    const mats: Array<{ mat: THREE.MeshBasicMaterial; opacity: number }> = [];
+    const material = (tint: string, opacity: number) => {
+      const mat = new THREE.MeshBasicMaterial({ color: tint, transparent: true, opacity,
+        depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+      mats.push({ mat, opacity });
+      return mat;
+    };
+    const halo = new THREE.Mesh(CLASH_HALO, material(color, 0.92));
+    root.add(halo);
+    const streaks = new THREE.Group();
+    for (const [angle, tint, opacity] of [
+      [-Math.PI / 5, "#ffffff", 1], [Math.PI / 3.2, color, 0.92],
+      [Math.PI * 0.7, "#fff5d5", 0.75],
+    ] as [number, string, number][]) {
+      const streak = new THREE.Mesh(CLASH_STREAK, material(tint, opacity));
+      streak.rotation.z = angle;
+      streaks.add(streak);
+    }
+    root.add(streaks);
+    const core = new THREE.Mesh(SPH, material("#ffffff", 0.86));
+    root.add(core);
+    let t = 0;
+    this.add(root, (dt) => {
+      t += dt;
+      const progress = Math.min(t / 0.26, 1);
+      const fade = Math.pow(1 - progress, 1.4);
+      root.quaternion.copy(this.camera.quaternion);
+      halo.scale.setScalar(size * (0.15 + 1.25 * (1 - (1 - progress) ** 3)));
+      streaks.scale.setScalar(size * (1.15 - 0.25 * progress));
+      streaks.rotation.z = progress * 0.18;
+      core.scale.setScalar(size * (0.17 - progress * 0.11));
+      for (const item of mats) item.mat.opacity = item.opacity * fade;
+      return t < 0.26;
+    });
+    // The shared geometry is kept, but each individual effect material is freed.
+    for (const mesh of [halo, core, ...streaks.children]) (mesh as any).ownsMat = true;
   }
 
   flash(pos: THREE.Vector3, color: string, size = 0.5, dur = 0.14, opacity = 0.8) {

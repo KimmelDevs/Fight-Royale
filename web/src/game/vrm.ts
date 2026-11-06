@@ -1,3 +1,4 @@
+// MELEE_PROJECTILE_SPRINT_V1_NOV06
 // VRM bodies (VRoid Studio exports). The procedural rig in model.ts keeps animating every
 // frame; VrmRig copies its joint rotations onto the VRM's normalized humanoid bones, so every
 // existing pose, attack and skill drives the VRM. three-vrm then updates spring bones (hair,
@@ -212,7 +213,10 @@ export class VrmRig {
     dt = Math.max(0, Math.min(dt, 0.1)); // smoothing below assumes a sane step
     const B = (n: VRMHumanBoneName) => vrm.humanoid.getNormalizedBoneNode(n);
     root.updateMatrixWorld(true);
-    const t = m.t, walk = m.walk, idle = 1 - walk, ph = m.phase;
+    // Every VRM gets a real run cycle when Shift sprint raises model.walk above 0.66.
+    // Walking at 0.64 retains original walking pose/stride; running is faster and more forceful.
+    const run = THREE.MathUtils.clamp((m.walk - 0.66) / 0.34, 0, 1);
+    const t = m.t, walk = Math.min(1, m.walk / 0.64), idle = 1 - walk, ph = m.phase;
     const breath = Math.sin(t * TAU / 3.6);
     // Weight rests on one leg and slowly moves to the other (contrapposto), never centered.
     const shift = Math.tanh(Math.sin(t * TAU / 9 + 0.7) * 2.2);
@@ -220,13 +224,13 @@ export class VrmRig {
     const crouch = Math.max(0, -m.crouch);
     const S = STYLES[this.style];
     const feral = this.style === "feral";
-    const leanWalk = feral ? D(9) * walk : 0;
+    const leanWalk = (feral ? D(9) * walk : 0) + D(this.restSword ? 6 : this.staff ? 7 : 10) * run;
 
     // Hips: bob / crouch from the rig, idle weight shift, walk yaw + roll.
     if (this.hipsBone) {
       this.hipsBone.position.copy(this.hipsBoneRest).addScaledVector(_v.copy(j.hips.position).sub(this.hipsRest), 1 / this.scale);
       this.hipsBone.position.x += (shift * S.hipSway * idle) / this.scale;
-      this.hipsBone.position.y += (Math.abs(Math.sin(ph)) * 0.012 * walk - S.drop) / this.scale;
+      this.hipsBone.position.y += (Math.abs(Math.sin(ph)) * (0.012 * walk + 0.009 * run) - S.drop) / this.scale;
       if (this.boxer) this.hipsBone.position.y += ((Math.sin(t * TAU * 2.2) * 0.5 - 0.5) * 0.04 * idle) / this.scale; // bounce on the balls of the feet
       this.hipsBone.quaternion.setFromEuler(_e.set(0, Math.sin(ph) * S.walkYaw * walk - this.bladed * D(12) + this.followYaw * 0.3, (Math.sin(ph) * S.walkRoll * walk + shift * S.hipRoll * idle), "YXZ"));
       this.hipsBone.updateMatrixWorld(true);
@@ -269,7 +273,7 @@ export class VrmRig {
 
     // Head: neck takes 40%, head finishes, with a slow look-around and a little lag.
     const H = deltaOf(j.head, L.head.rest).multiply(new THREE.Quaternion().setFromEuler(
-      _e.set(D(3) * idle * Math.sin(t * TAU / 4.7) * S.breath + S.chin - S.lean * 1.2 + (this.boxer ? D(6) : 0),
+      _e.set(D(3) * idle * Math.sin(t * TAU / 4.7) * S.breath + S.chin - S.lean * 1.2 + D(3) * run + (this.boxer ? D(6) : 0),
         S.headYaw * idle * look + (this.boxer ? (Math.sin(t * 1.3) * D(5) + Math.sin(t * 2.9 + 1) * D(3)) * idle : 0),
         shift * S.headTilt * idle + (this.boxer ? Math.sin(t * 1.7) * D(3) * idle : 0))));
     const chestNow = quatIn(root, B("upperChest") ?? B("chest") ?? B("spine")!, new THREE.Quaternion());
@@ -292,7 +296,7 @@ export class VrmRig {
     for (const side of ["left", "right"] as const) {
       const lk = side === "left" ? L.arm_l : L.arm_r, hk = side === "left" ? L.hand_l : L.hand_r;
       const sgn = side === "left" ? 1 : -1;
-      const swing = rx(-Math.sin(ph) * sgn * (side === "left" ? S.armSwing : S.armSwing * 0.5) * walk)
+      const swing = rx(-Math.sin(ph) * sgn * (side === "left" ? S.armSwing : S.armSwing * 0.5) * walk * (1 + 0.40 * run))
         .multiply(rz(sgn * S.elbowOut)); // heavy: elbows held out from the body
       const target = swing.multiply(deltaOf(lk.joint, lk.rest)).multiply(lk.cal);
       set(B(`${side}UpperArm`), target);
@@ -372,7 +376,7 @@ export class VrmRig {
       const relaxed = Math.max(0, side === "left" ? -shift : shift);
       const load = (this.restSword && m.combat ? D(10) : 0) // knees take the sword's weight
         + (this.boxer ? (D(6) + (0.5 - Math.sin(t * TAU * 2.2) * 0.5) * D(8)) * idle : 0);
-      const knee = S.knee + load + walk * (D(10) + D(30) * cyc) + Math.min(crouch * D(260), D(55)) + relaxed * S.relaxKnee * idle;
+      const knee = S.knee + load + walk * (D(10) + D(30) * cyc) + run * D(15) * cyc + Math.min(crouch * D(260), D(55)) + relaxed * S.relaxKnee * idle;
       // Wide stance (legs out, toes out) and hip flexion matching the knee bend, so a bent
       // knee lowers the body instead of kicking the foot back.
       // Boxer stagger: lead (left) foot forward, rear foot back, knees pumping with the bounce.

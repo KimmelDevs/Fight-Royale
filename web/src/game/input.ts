@@ -1,3 +1,4 @@
+// MELEE_PROJECTILE_SPRINT_V1_NOV06
 // Keyboard + mouse state, mapped through the player's key bindings (keys.ts). Defaults: left
 // mouse attacks, right mouse blocks, WASD moves relative to the camera, Space jumps, Z/X/C
 // cast skills. Any action can be bound to a key or a mouse button.
@@ -5,7 +6,7 @@ import * as THREE from "three";
 import { actionFor, type Action } from "./keys";
 
 /** dx/dz: dash direction in world space this frame (0, 0 = no dash). */
-export interface RawInput { attack: boolean; block: boolean; jump: boolean; skill: string; mx: number; mz: number; skillHeld?: string; dx?: number; dz?: number }
+export interface RawInput { attack: boolean; block: boolean; jump: boolean; skill: string; mx: number; mz: number; skillHeld?: string; dx?: number; dz?: number; sprint?: boolean }
 
 /** Two taps of the same movement key within this many ms = dash. */
 const DOUBLE_TAP_MS = 260;
@@ -89,6 +90,8 @@ export class Input {
     if (x || y) { const m = world(x, y); mx = m.x; mz = m.z; }
     let dx = 0, dz = 0;
     if (this.dash) { const d = world(this.dash[0], this.dash[1]); dx = d.x; dz = d.z; this.dash = null; }
-    return { attack: this.held("attack"), block: this.held("block"), jump: this.held("jump"), skill: this.skills.shift() ?? "", mx, mz, skillHeld: this.held("skill1") ? "z" : "", dx, dz };
+    // Hold either Shift key while moving to sprint. Double-tap dash still works.
+    const sprint = (this.down.has("ShiftLeft") || this.down.has("ShiftRight")) && (mx * mx + mz * mz > 0.1);
+    return { attack: this.held("attack"), block: this.held("block"), jump: this.held("jump"), skill: this.skills.shift() ?? "", mx, mz, skillHeld: this.held("skill1") ? "z" : "", dx, dz, sprint };
   }
 }
