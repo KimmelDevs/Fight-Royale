@@ -88,6 +88,9 @@ export class FighterModel extends THREE.Group {
   /** Two-handed weapons: the left hand is pulled onto this point of the grip every frame. */
   private gripL: THREE.Object3D | null = null;
   private glaivePivot: THREE.Group | null = null;
+  /** ASTER_EMBER_LATEST_20261106: extra sword forged from his shield. */
+  private judgmentSword: THREE.Group | null = null;
+  private judgmentOldSword: THREE.Object3D[] = [];
   glaivePose = "idle"; // ZAREK_GLAIVE_CHOREO_V2: current attack key from the fighter
   /** KAIZEN_CHAIN_SPIN_V2 — separate flying blade, with links on a curved chain. */
   private chainLinks: THREE.Group[] = [];
@@ -184,6 +187,7 @@ export class FighterModel extends THREE.Group {
       case "kicks": this.buildKicks(); break;
       default: this.buildSword(); this.buildShield();
     }
+    if (this.kit === "knight" && this.look.element === "light") this.buildJudgmentSword();
     const weapons = new Set<THREE.Object3D>();
     this.traverse((o) => { if ((o as THREE.Mesh).isMesh && !before.has(o)) weapons.add(o); });
     this.applyBody();
@@ -925,6 +929,37 @@ export class FighterModel extends THREE.Group {
     this.bladeBase = pivot(s, [0, 0.4, 0]);
     this.bladeTip = pivot(s, [0, 1.05, 0]);
     this.castPoint = this.bladeTip;
+  }
+
+  /** Larger blade that borrows its gold/metal plates from the shield design. */
+  private buildJudgmentSword() {
+    const grip = this.bladeBase.parent;
+    if (!grip) return;
+    this.judgmentOldSword = grip.children.filter(c => c !== this.bladeBase && c !== this.bladeTip);
+    const weapon = pivot(grip);
+    mesh(weapon, box(0.15, 1.05, 0.064), this.steel(), [0, 0.69, 0]);
+    mesh(weapon, cyl(0, 0.075, 0.28, 4), this.steel(), [0, 1.32, 0], [0, 0, PI / 4], [1.1, 1, 0.55]);
+    mesh(weapon, box(0.022, 1.14, 0.072), this.glowMat, [0, 0.66, 0.024]);
+    mesh(weapon, box(0.66, 0.075, 0.13), this.tn(this.look.trim), [0, 0.22, 0]);
+    mesh(weapon, box(0.27, 0.31, 0.16), this.tn(this.look.shield), [0, 0.29, 0]);
+    for (const side of [-1, 1]) {
+      mesh(weapon, box(0.16, 0.32, 0.065), this.tn(this.look.shield), [side * 0.26, 0.33, 0], [0, 0, side * 0.46]);
+      mesh(weapon, box(0.027, 0.33, 0.075), this.glowMat, [side * 0.16, 0.34, 0.055], [0, 0, side * 0.38]);
+      mesh(weapon, sphere(0.04, 10), this.gem(), [side * 0.33, 0.22, 0.04]);
+    }
+    mesh(weapon, sphere(0.082, 12), this.gem(), [0, 0.25, 0.085]);
+    weapon.visible = false;
+    this.judgmentSword = weapon;
+  }
+
+  /** Syncs immediately on the owning client and network puppets. */
+  setJudgment(on: boolean) {
+    if (!this.judgmentSword) return;
+    this.judgmentSword.visible = on;
+    for (const part of this.judgmentOldSword) part.visible = !on;
+    this.shieldNode.visible = !on;
+    this.bladeTip.position.y = on ? 1.46 : 1.05;
+    if (this.vrmRig) this.vrmRig.shield = !on;
   }
 
   private buildShield() {

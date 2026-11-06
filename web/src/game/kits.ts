@@ -133,7 +133,11 @@ export function skillTags(a: Attack): string[] {
 function bonusSkill(kit: string, element: string): Attack {
   switch (kit) {
     case "mage":
-      if (element === "fire") return a({ name: "Inferno Ring", desc: "A ring of fire erupts around you.", cd: 9, type: "strike", at: "self", wind: 0.15, recover: 0.45, dmg: 165, guard: 45, knock: 6, stun: 0.5, delay: 0.1, radius: 2.8, style: "explosion", pose_w: "mh_w", pose_s: "m3_s" });
+      // ASTER_EMBER_LATEST_20261106: fire is consumed to amplify the beam.
+      if (element === "fire") return a({ name: "Absolute Combustion — Final Ignition",
+        desc: "Condense nearby fire patches and active burns into a white-hot beam. Each consumed patch and burn amplifies the damage.",
+        cd: 16, type: "buff", mode: "ember_ignition", wind: 0.50, active: 0.06,
+        recover: 0.62, pose_w: "mh_w", pose_s: "mh_s" });
       if (element === "electric") return a({ name: "Static Field", desc: "Three lightning bolts strike all around you.", cd: 10, type: "strike", at: "self", wind: 0.12, recover: 0.5, dmg: 75, guard: 22, knock: 2, stun: 0.5, delay: 0.15, radius: 2.2, repeat: 3, interval: 0.25, style: "lightning", pose_w: "mh_w", pose_s: "m3_s" });
       return a({ name: "Healing Rain", desc: "Restore 16% of your HP (25% in survival).", cd: 14, type: "buff", mode: "heal", duration: 0.25, wind: 0.2, recover: 0.4, pose_w: "mh_w", pose_s: "m3_s" });
     case "assassin":
@@ -163,6 +167,11 @@ function bonusSkill(kit: string, element: string): Attack {
     case "kicks":
       return a({ name: "Hundred Kicks", desc: "Blitz the target with a storm of eight rapid kicks.", cd: 10, type: "strike", wind: 0.15, recover: 0.6, dmg: 40, guard: 10, knock: 0.8, stun: 0.3, delay: 0.2, radius: 1.5, repeat: 8, interval: 0.06, style: "slashes", pose_w: "kk1_w", pose_s: "kk1_s" });
     default:
+      if (element === "light") return a({ name: "Judgment",
+        desc: "Raise your sword, receive harmless lightning, and merge your sword and shield for 10s. Defense converts to power, missing HP adds damage, and health drains while blocking weakens.",
+        cd: 16, type: "buff", mode: "judgment", duration: 10,
+        wind: 0.62, active: 0.06, recover: 0.30,
+        pose_w: "judgment_raise", pose_s: "judgment_raise" });
       return a({ name: "Judgment", desc: "A pillar of holy light crashes onto the enemy.", cd: 10, type: "strike", wind: 0.2, recover: 0.5, dmg: 220, guard: 60, knock: 5, stun: 0.7, heavy: true, delay: 0.5, radius: 1.6, style: "lightning", pose_w: "l3_w", pose_s: "l3_s" });
   }
 }
@@ -193,10 +202,11 @@ function mage(element: string): Record<string, Attack> {
     l3: a({ type: "projectile", wind: 0.24, active: 0.05, recover: 0.42, dmg: 42 * mul, guard: 14, knock: 3, stun: 0.4, speed, count: 3, spread: 0.22, pose_w: "m3_w", pose_s: "m3_s" }),
   };
   if (element === "fire") {
+    // Charged basic (heavy) leaves a 20-second fire patch at its impact.
     t.heavy = a({ type: "strike", wind: 0.15, active: 0.05, recover: 0.55, dmg: 210, guard: 60, knock: 6, stun: 0.7, heavy: true, delay: 0.5, radius: 1.6, style: "explosion", pose_w: "mh_w", pose_s: "mh_s" });
     t.z = a({ name: "Flame Burst", desc: "Erupt in flames, blasting anyone close away.", cd: 6, type: "strike", at: "self", wind: 0.12, recover: 0.4, dmg: 120, guard: 40, knock: 7, stun: 0.5, delay: 0.05, radius: 2.3, style: "explosion", pose_w: "mh_w", pose_s: "m3_s" });
     t.x = a({ name: "Fireball Volley", desc: "Hurl a fan of five fireballs.", cd: 7, type: "projectile", wind: 0.2, recover: 0.4, dmg: 40, guard: 12, knock: 2, speed: 16, count: 5, spread: 0.45, pose_w: "m3_w", pose_s: "m3_s" });
-    t.c = a({ name: "Meteor", desc: "Call a meteor down on the enemy's position.", cd: 12, type: "strike", wind: 0.3, recover: 0.6, dmg: 290, guard: 80, knock: 8, stun: 0.9, heavy: true, delay: 0.9, radius: 2.1, style: "meteor", pose_w: "mh_w", pose_s: "mh_s" });
+    t.c = a({ name: "Meteor", desc: "Call a meteor down on the enemy's position. Impact leaves burning ground for 20s.", cd: 12, type: "strike", wind: 0.3, recover: 0.6, dmg: 290, guard: 80, knock: 8, stun: 0.9, heavy: true, delay: 0.9, radius: 2.1, style: "meteor", pose_w: "mh_w", pose_s: "mh_s" });
   } else if (element === "electric") {
     t.heavy = a({ type: "strike", wind: 0.15, active: 0.05, recover: 0.5, dmg: 185, guard: 55, knock: 4, stun: 0.8, heavy: true, delay: 0.35, radius: 1.3, style: "lightning", pose_w: "mh_w", pose_s: "mh_s" });
     t.z = a({ name: "Blink", desc: "Flash backward out of danger.", cd: 4, type: "blink", mode: "back", wind: 0.04, recover: 0.15, pose_w: "m1_w", pose_s: "m1_s" });
@@ -530,6 +540,8 @@ const KNIGHT: Record<string, Pose> = {
 // SWORD_AND_CYCLONE_V1: Aster is a practiced one-handed swordsman; shield stays near the ribs.
 // These poses are exclusive to his light-element knight, not Vesper.
 const ASTER_SWINGS: Record<string, Pose> = {
+  // ASTER_EMBER_LATEST_20261106: Aster holds his sword straight up for Judgment.
+  judgment_raise: P([-0.08, 0, -0.02], [-0.22, 0, 0], [-2.95, -0.12, 0.04], [0.1, 0, 0], [-0.32, 0.14, 0.48], [0, 0, -0.2], [-0.35, 0, 0.13], [0.31, 0, -0.13], -0.06),
   l1_w: P([0.14, -0.92, -0.04], [0, 0.75, 0], [-0.9, -1.25, -0.26], [0.68, 0, 0], [-1.22, -0.3, 0.15], [0, 0, -0.8], [-0.46, 0, 0.08], [0.36, 0, -0.07], -0.13),
   l1_s: P([0.27, 0.72, 0.08], [-0.04, -0.5, 0], [-1.7, 0.95, -0.08], [0.18, 0, 0], [-1.15, -0.22, 0.14], [0, 0, -0.8], [-0.62, 0, 0.09], [0.42, 0, -0.08], -0.15),
   l2_w: P([0.15, 0.77, 0.06], [0, -0.6, 0], [-1.6, 1.1, 0.1], [0.42, 0, 0], [-1.2, -0.25, 0.15], [0, 0, -0.8], [-0.52, 0, 0.08], [0.42, 0, -0.08], -0.13),

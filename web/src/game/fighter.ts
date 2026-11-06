@@ -220,6 +220,8 @@ export class Fighter implements Entity {
 
   /** Damage multiplier from Berserk, while rageT > 0. */
   rageT = 0;
+  /** ASTER_EMBER_LATEST_20261106: 10-second empowered sword/shield form. */
+  judgmentT = 0;
 
   /**
    * `loadout` picks which 3 of the kit's 4 skills sit on Z/X/C; `emblem` applies its stat bonus.
@@ -286,6 +288,11 @@ export class Fighter implements Entity {
     this.readDash();
     this.wardT = Math.max(this.wardT - dt, 0);
     this.rageT = Math.max(this.rageT - dt, 0);
+    if (this.judgmentT > 0) {
+      this.judgmentT = Math.max(0, this.judgmentT - dt);
+      // Judgment lightning is harmless; the transformation itself costs 1.2% HP/s.
+      this.hp = Math.max(1, this.hp - this.maxHp * 0.012 * dt);
+    }
     this.chainFuryT = Math.max(this.chainFuryT - dt, 0);
     this.chainHookT = Math.max(0, this.chainHookT - dt);
     if (this.chainHookT === 0) this.chainHookTarget = null;
@@ -439,6 +446,7 @@ export class Fighter implements Entity {
     this.trail.emitting = this.state === S.ATTACK && !!a && (a.type === "melee" || a.style === "iron_tempest") &&
       (this.atkPhase === 1 || (this.atkPhase === 0 && this.stateT > a.wind * 0.6) || (this.atkPhase === 2 && this.stateT < a.wind + a.active + 0.05));
     this.model.setBarrier(this.state === S.BLOCK && this.kit === "mage");
+    this.model.setJudgment(this.kit === "knight" && this.look.element === "light" && this.judgmentT > 0);
     this.model.combat = [S.ATTACK, S.CHARGE, S.BLOCK, S.HITSTUN, S.STAGGER].includes(this.state);
     this.model.hurt = this.state === S.HITSTUN || this.state === S.STAGGER;
     this.model.charge = this.state === S.CHARGE ? Math.min(this.stateT / CHARGE_MAX, 1) : Math.max(this.model.charge - dt * 4, 0);
@@ -810,6 +818,11 @@ export class Fighter implements Entity {
     this.atkPower = 1;
     if (id === "heavy" && this.state === S.CHARGE) this.atkPower = 1 + 0.5 * Math.min(this.stateT / CHARGE_MAX, 1);
     this.atkPower *= this.dmgMult * (this.rageT > 0 ? RAGE_MULT : 1) * this.status.dmgMult();
+    if (this.kit === "knight" && this.look.element === "light" && this.judgmentT > 0) {
+      const defenseToOffense = Math.min(0.45, this.maxGuard / 100 * 0.35);
+      const missingLifeBonus = Math.max(0, 1 - this.hp / Math.max(1, this.maxHp)) * 0.20;
+      this.atkPower *= (1 + defenseToOffense + missingLifeBonus);
+    }
     // Veyr: during the 6-second Blood Festival, his LIGHT combo hits 35% harder.
     // Heavy attacks and special skills do not receive this bonus.
     if (this.kit === "sickle" && this.bloodFestivalT > 0 && /^l\d+$/.test(id)) this.atkPower *= 1.35;
@@ -1036,7 +1049,8 @@ export class Fighter implements Entity {
       // HP damage, clashes, and normal blocks otherwise behave as before.
       const festivalGuardTriple = attacker instanceof Fighter && attacker.kit === "sickle" &&
         attacker.bloodFestivalT > 0 && a.type === "melee" && /^l\d+$/.test(attacker.atkId);
-      this.guard -= a.guard * power * (festivalGuardTriple ? 2 / 1.35 : 1);
+      this.guard -= a.guard * power * (festivalGuardTriple ? 2 / 1.35 : 1) *
+        (this.judgmentT > 0 ? 1.5 : 1); // Aster Judgment weakens defense; Veyr nerf unchanged
       this.guardDelay = 1;
       if (this.guard <= 0) {
         this.guard = 0;
@@ -1073,6 +1087,8 @@ export class Fighter implements Entity {
     if (a.effect && !(this.bloodFestivalT > 0 && a.effect === "paralyze") &&
         !(this.meteorFistArmor && (a.effect === "paralyze" || a.effect === "slow")))
       this.status.apply(a.effect as StatusKind, a.effect_t, a.effect_p, attacker);
+    // ASTER_EMBER_LATEST_20261106: no repetitive hitstun from passive ground fire.
+    if (a.id === "ember_ground") return this.lastCrit ? "crit" : "hit";
     // Stun rules: one stun per skill use (multi-hit skills don't re-stun every tick), and
     // repeated stuns within a few seconds get shorter, so nobody can be locked forever.
     const src = attacker instanceof Fighter ? `${attacker.id}:${attacker.swingSerial}` : "";
@@ -1120,6 +1136,7 @@ export class Fighter implements Entity {
     this.hp = this.maxHp * frac;
     this.guard = this.maxGuard;
     this.chainFuryT = 0;
+    this.judgmentT = 0; this.model.setJudgment(false);
     this.clashMomentum = 0;
     this.bloodlust = 0; this.bloodFrenzyT = 0; this.bloodFeintT = 0; this.sickleOut = false; this.bloodFestivalT = 0;
     this.model.standUp();
@@ -1129,6 +1146,7 @@ export class Fighter implements Entity {
   heal(amount: number) { this.hp = Math.min(this.hp + amount, this.maxHp); }
 
   ko() {
+    this.judgmentT = 0; this.model.setJudgment(false);
     this.releaseChainBind();
     if (this.chainBoundBy) this.chainBoundBy.releaseChainBind();
     this.chainBoundBy = null;
@@ -1423,7 +1441,7 @@ export class Fighter implements Entity {
       this.state, this.poseName, this.poseSpeed, Math.round(this.hp), Math.round(this.guard),
       +this.model.walk.toFixed(2), +this.model.charge.toFixed(2), this.trail.emitting ? 1 : 0,
       +this.model.recoil.toFixed(2), this.cooldowns.z, this.cooldowns.x, this.cooldowns.c, this.maxHp,
-      +this.pct.toFixed(1), this.stocks, this.out ? 1 : 0, +this.atkLock.toFixed(2), +this.dashCd.toFixed(2), this.status.mask, this.barrelOut ? 1 : 0, Math.round(this.bloodlust), +this.bloodFrenzyT.toFixed(2), this.sickleOut ? 1 : 0, +this.bloodFestivalT.toFixed(2), +this.tempestSpin.toFixed(3), +this.cycloneSpin.toFixed(3), +this.bladeSwingYaw.toFixed(3), +this.chainFuryT.toFixed(2), this.clashMomentum, this.chainBindTarget ? +this.chainBindTarget.chest().x.toFixed(2) : null, this.chainBindTarget ? +this.chainBindTarget.chest().y.toFixed(2) : null, this.chainBindTarget ? +this.chainBindTarget.chest().z.toFixed(2) : null, +this.chainBindT.toFixed(2)];
+      +this.pct.toFixed(1), this.stocks, this.out ? 1 : 0, +this.atkLock.toFixed(2), +this.dashCd.toFixed(2), this.status.mask, this.barrelOut ? 1 : 0, Math.round(this.bloodlust), +this.bloodFrenzyT.toFixed(2), this.sickleOut ? 1 : 0, +this.bloodFestivalT.toFixed(2), +this.tempestSpin.toFixed(3), +this.cycloneSpin.toFixed(3), +this.bladeSwingYaw.toFixed(3), +this.chainFuryT.toFixed(2), this.clashMomentum, this.chainBindTarget ? +this.chainBindTarget.chest().x.toFixed(2) : null, this.chainBindTarget ? +this.chainBindTarget.chest().y.toFixed(2) : null, this.chainBindTarget ? +this.chainBindTarget.chest().z.toFixed(2) : null, +this.chainBindT.toFixed(2), +this.judgmentT.toFixed(2)];
   }
 
   applySnapshot(s: any[]) {
@@ -1446,6 +1464,7 @@ export class Fighter implements Entity {
       this.model.chainBindTargetWorld = s.length >= 37 && s[34] !== null
         ? new THREE.Vector3(s[34], s[35], s[36]) : null;
       this.chainBindT = s[37] ?? 0; // KAIZEN_BIND_ZX_V6: remote HUD follow-ups
+      this.judgmentT = s[38] ?? 0; // ASTER_EMBER_LATEST_20261106: append only, preserve Kaizen's snapshot indices
       const out = s[20] === 1;
       if (out !== this.out) { this.out = out; this.root.visible = !out; if (!out) this.root.position.copy(this.netPos); }
     }
@@ -1468,6 +1487,7 @@ export class Fighter implements Entity {
     this.dashCd = Math.max(this.dashCd - dt, 0);
     if (this.state !== S.KO) this.model.rotation.y = this.viewBias + this.tempestSpin + this.cycloneSpin + this.bladeSwingYaw;
     this.model.setBarrier(this.state === S.BLOCK && this.kit === "mage");
+    this.model.setJudgment(this.kit === "knight" && this.look.element === "light" && this.judgmentT > 0);
     this.model.combat = [S.ATTACK, S.CHARGE, S.BLOCK, S.HITSTUN, S.STAGGER].includes(this.state);
     this.model.hurt = this.state === S.HITSTUN || this.state === S.STAGGER;
     this.model.bloodFestivalT = this.kit === "sickle" ? this.bloodFestivalT : 0;

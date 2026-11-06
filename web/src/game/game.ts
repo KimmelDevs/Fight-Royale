@@ -329,6 +329,10 @@ export class Game implements MobHost {
   /** Blood Festival arenas. Created on host and replicated as visual events on clients. */
   private bloodFestivals: BloodFestival[] = [];
   private kaizenGuardContacts = new WeakMap<Fighter, WeakMap<Entity, number>>();
+  // ASTER_EMBER_LATEST_20261106: persistent Ember ground-fire visual + host damage timer.
+  private emberPatches: { ownerId: number; pos: THREE.Vector3; radius: number; ttl: number;
+    tick: number; visual: THREE.Group }[] = [];
+  private emberBeams: { visual: THREE.Group; ttl: number; max: number }[] = [];
   local: Fighter | null = null;
 
   private sun = new THREE.DirectionalLight(0xffffff, 1.9);
@@ -528,6 +532,10 @@ export class Game implements MobHost {
     this.traps = [];
     for (const festival of this.bloodFestivals) this.scene.remove(festival.visual);
     this.bloodFestivals = [];
+    for (const p of this.emberPatches) this.scene.remove(p.visual);
+    this.emberPatches = [];
+    for (const b of this.emberBeams) this.scene.remove(b.visual);
+    this.emberBeams = [];
     this.timers = [];
     this.strikeMarks = [];
     this.fx.clear();
@@ -791,6 +799,7 @@ export class Game implements MobHost {
     this.updateProjectiles(dt);
     this.updateTraps(dt);
     this.updateBloodFestivals(dt);
+    this.updateEmberFire(dt);
     if (this.cfg.role !== "client") {
       this.drainDots();
       for (const m of [...this.mobs]) {
@@ -934,6 +943,9 @@ export class Game implements MobHost {
       case "rocks": fx.rocks(v3(a[0]), a[1], a[2]); break;
       case "num": fx.number(v3(a[0]), a[1], a[2], a[3]); break;
       case "bubble": { const e = this.entities.get(a[0]); if (e) fx.bubble(e.root, a[1]); break; }
+      case "emberPatch": this.emberPatchVisual(a[0], v3(a[1]), a[2], a[3]); break;
+      case "emberConsume": this.emberConsumeVisual(a[0], v3(a[1]), a[2]); break;
+      case "emberBeam": this.emberBeamVisual(v3(a[0]), v3(a[1])); break;
     }
   }
 
@@ -1718,6 +1730,10 @@ export class Game implements MobHost {
         if (round !== this.round) return;
         const at = a.at === "self" ? (this.plat ? f.root.position.clone() : f.root.position.clone().setY(0)) : center;
         this.impactFx(a, at, color, a.radius);
+        if (f.look.element === "fire" && f.kit === "mage" &&
+            (a.id === "heavy" || a.id === "c") && i === 0) {
+          this.spawnEmberPatch(f, at, a.id === "c" ? 2.1 : 1.45);
+        }
         for (const d of this.enemiesOf(f)) {
           const to = d.root.position.clone().sub(at);
           const dy = Math.abs(to.y);
@@ -1888,7 +1904,8 @@ export class Game implements MobHost {
   private applyBuff(f: Fighter, a: Attack) {
     // PvP versions of defensive magic are weaker than in survival.
     const pvp = this.cfg.mode !== "survival";
-    this.snd(a.mode === "heal" ? "heal" : a.mode === "rage" ? "rage" : "ward", 0.7);
+    this.snd(a.mode === "heal" ? "heal" : a.mode === "rage" ? "rage"
+      : a.mode === "judgment" ? "cast" : a.mode === "ember_ignition" ? "fireball" : "ward", 0.7);
     if (a.mode === "ward") {
       const dur = pvp ? Math.min(a.duration, 2) : a.duration;
       f.wardT = dur;
@@ -1905,6 +1922,19 @@ export class Game implements MobHost {
       this.fxp("flash", f.chest(), "#ff5a3d", 0.7, 0.3, 0.8);
       this.fxp("embers", f.chest(), "#ff7a33", 30);
       this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.9, 0)), "BERSERK", "#ff8a50", 1.0);
+    } else if (a.mode === "judgment" && f.kit === "knight" && f.look.element === "light") {
+      // Harmless lightning strike: only VFX. Health drain starts during the form.
+      f.judgmentT = a.duration;
+      f.guard = Math.min(f.guard, f.maxGuard * 0.5);
+      f.model.setJudgment(true);
+      const sword = f.model.bladeTip.getWorldPosition(new THREE.Vector3());
+      this.fxp("lightning", sword, "#d8eaff");
+      this.fxp("flash", sword, "#fff5c2", 1.4, 0.32, 0.98);
+      this.fxp("sparks", sword, "#f0e9a3", 42, 6);
+      this.fxp("ring", f.root.position.clone(), "#ffe7a3", 1.8, 0.42, 0.9);
+      this.fxp("num", f.chest().add(new THREE.Vector3(0, 1, 0)), "JUDGMENT", "#ffefac", 1.2);
+    } else if (a.mode === "ember_ignition" && f.kit === "mage" && f.look.element === "fire") {
+      this.castEmberIgnition(f, a);
     } else if (a.mode === "blood_festival") {
       this.startBloodFestival(f, a);
     } else if (a.mode === "blood_feint") {
@@ -1916,6 +1946,130 @@ export class Game implements MobHost {
       f.counterT = a.duration;
       this.fxp("flash", f.chest(), f.look.glow, 0.5, 0.2, 0.6);
       this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.9, 0)), "COUNTER STANCE", "#ffd1da", 0.7);
+    }
+  }
+
+  /** Fire patches exist for 20 seconds, damage only enemies, and replicate to online guests. */
+  private spawnEmberPatch(owner: Fighter, pos: THREE.Vector3, radius: number) {
+    // Cap simultaneous patches at five per player, so the arena never fills forever.
+    const own = this.emberPatches.filter(p => p.ownerId === owner.id);
+    if (own.length >= 5) {
+      const oldest = own[0];
+      this.fxp("emberConsume", owner.id, oldest.pos.clone(), 0.01);
+    }
+    this.fxp("emberPatch", owner.id, pos.clone(), radius, 20);
+  }
+
+  private emberPatchVisual(ownerId: number, pos: THREE.Vector3, radius: number, ttl: number) {
+    const root = new THREE.Group();
+    root.position.copy(pos).y += 0.045;
+    const m = new THREE.MeshBasicMaterial({ color: "#ff601c", side: THREE.DoubleSide,
+      transparent: true, opacity: 0.34, depthWrite: false });
+    const pool = new THREE.Mesh(new THREE.CircleGeometry(radius * 0.88, 32), m);
+    pool.rotation.x = -Math.PI / 2;
+    root.add(pool);
+    const edge = new THREE.Mesh(new THREE.RingGeometry(radius * 0.82, radius, 32),
+      new THREE.MeshBasicMaterial({ color: "#ffcc55", side: THREE.DoubleSide,
+        transparent: true, opacity: 0.74, depthWrite: false }));
+    edge.rotation.x = -Math.PI / 2;
+    edge.position.y = 0.018;
+    root.add(edge);
+    this.scene.add(root);
+    this.emberPatches.push({ ownerId, pos: pos.clone(), radius, ttl, tick: 1, visual: root });
+  }
+
+  private emberConsumeVisual(ownerId: number, center: THREE.Vector3, radius: number) {
+    this.emberPatches = this.emberPatches.filter(p => {
+      if (p.ownerId !== ownerId || p.pos.distanceTo(center) > radius) return true;
+      this.scene.remove(p.visual);
+      return false;
+    });
+  }
+
+  /** Local mesh for replicated, brief white-hot ignition beam. */
+  private emberBeamVisual(from: THREE.Vector3, to: THREE.Vector3) {
+    const length = Math.max(0.1, from.distanceTo(to));
+    const direction = to.clone().sub(from).normalize();
+    const root = new THREE.Group();
+    root.position.copy(from).add(to).multiplyScalar(0.5);
+    root.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+    const shell = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.48, length, 14, 1, true),
+      new THREE.MeshBasicMaterial({ color: "#ff8f33", transparent: true, opacity: 0.55,
+        depthWrite: false, side: THREE.DoubleSide }));
+    const core = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.24, length, 12, 1, true),
+      new THREE.MeshBasicMaterial({ color: "#fff9d9", transparent: true, opacity: 0.95,
+        depthWrite: false, side: THREE.DoubleSide }));
+    root.add(shell, core);
+    this.scene.add(root);
+    this.emberBeams.push({ visual: root, ttl: 0.38, max: 0.38 });
+  }
+
+  private updateEmberFire(dt: number) {
+    for (const b of this.emberBeams) {
+      b.ttl -= dt;
+      b.visual.scale.x = b.visual.scale.z = Math.max(0.05, b.ttl / b.max);
+      if (b.ttl <= 0) this.scene.remove(b.visual);
+    }
+    this.emberBeams = this.emberBeams.filter(b => b.ttl > 0);
+    for (const p of this.emberPatches) {
+      p.ttl -= dt;
+      p.visual.rotation.y += dt * 0.14;
+      if (p.ttl <= 0) { this.scene.remove(p.visual); continue; }
+      if (this.cfg.role === "client") continue;
+      p.tick -= dt;
+      if (p.tick > 0) continue;
+      p.tick += 1;
+      const owner = this.entities.get(p.ownerId);
+      if (!(owner instanceof Fighter) || owner.isDown()) continue;
+      for (const enemy of this.enemiesOf(owner)) {
+        const diff = enemy.root.position.clone().sub(p.pos);
+        const height = Math.abs(diff.y);
+        diff.y = 0;
+        if (diff.length() > p.radius + enemy.radius * 0.3 || height > 1.5) continue;
+        // No stun, launch, or parry from passive ground fire.
+        const fire: Attack = { ...owner.attacks.heavy, id: "ember_ground", type: "strike",
+          dmg: 26, guard: 5, knock: 0, stun: 0, heavy: false,
+          effect: "burn", effect_t: 3, effect_p: 18, no_parry: true };
+        const dir = diff.lengthSq() > 0.01 ? diff.normalize() : new THREE.Vector3(0, 0, 1);
+        this.applyHit(owner, enemy, fire, 1, enemy.chest(), dir, true);
+      }
+    }
+    this.emberPatches = this.emberPatches.filter(p => p.ttl > 0);
+  }
+
+  private castEmberIgnition(f: Fighter, a: Attack) {
+    const pos = f.root.position.clone();
+    const burned = this.enemiesOf(f).filter((e): e is Fighter | Mob =>
+      (e instanceof Fighter || e instanceof Mob) && !e.isDown() &&
+      e.root.position.distanceTo(pos) <= 9 && e.status.has("burn"));
+    const patches = this.emberPatches.filter(p => p.ownerId === f.id &&
+      p.pos.distanceTo(pos) <= 9);
+    const consumedPatches = patches.length;
+    const consumedBurns = burned.length;
+    if (consumedPatches) this.fxp("emberConsume", f.id, pos, 9);
+    for (const enemy of burned) enemy.status.consume("burn");
+    const bonus = Math.min(5, consumedPatches) * 55 + Math.min(4, consumedBurns) * 45;
+    const start = f.model.castPoint.getWorldPosition(new THREE.Vector3());
+    const toward = f.opponent && !f.opponent.isDown()
+      ? f.opponent.chest().sub(start).normalize()
+      : new THREE.Vector3(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
+    const end = start.clone().addScaledVector(toward, 11);
+    this.fxp("emberBeam", start, end);
+    this.fxp("flash", start, "#fff9dc", 0.85, 0.22, 0.9);
+    this.fxp("sparks", start, "#ffb84a", 38, 6);
+    this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.9, 0)),
+      `FINAL IGNITION +${bonus}`, "#fff1b1", 1.1);
+    this.snd("fireball", 0.9);
+    const beamHit: Attack = { ...a, type: "strike", dmg: 320 + bonus,
+      guard: 75, knock: 7, stun: 0.75, heavy: true,
+      effect: "burn", effect_t: 4, effect_p: 30, no_parry: true };
+    for (const enemy of this.enemiesOf(f)) {
+      const rel = enemy.chest().sub(start);
+      const projection = rel.dot(toward);
+      if (projection < 0 || projection > 11) continue;
+      const off = rel.addScaledVector(toward, -projection).length();
+      if (off > 0.8 + enemy.radius) continue;
+      this.applyHit(f, enemy, beamHit, f.atkPower, enemy.chest(), toward, true);
     }
   }
 
