@@ -1,3 +1,4 @@
+// CONTINUOUS_COMBAT_ASTER_EMBER_V3_NOV06
 // The running match. Owns the renderer, scene, entities and rules for all modes:
 //   duel     - 1v1 in the 3D arena, vs CPU (offline) or vs a friend (online)
 //   brawl    - 1v1 side-view platform fight (damage %, 3 stocks, blast zones), CPU or friend
@@ -333,12 +334,17 @@ export class Game implements MobHost {
   private emberPatches: { ownerId: number; pos: THREE.Vector3; radius: number; ttl: number;
     tick: number; visual: THREE.Group }[] = [];
   private emberBeams: { visual: THREE.Group; ttl: number; max: number }[] = [];
+  /** Animated sparks flowing from consumed ground fire/burns into the staff. */
+  private emberGather: { mesh: THREE.Mesh; from: THREE.Vector3; ownerId: number;
+    progress: number; duration: number; offset: number }[] = [];
+  private emberCharge: { ownerId: number; mesh: THREE.Mesh; ttl: number; max: number }[] = [];
   local: Fighter | null = null;
 
   private sun = new THREE.DirectionalLight(0xffffff, 1.9);
   /** Brawl mode is a side-view platform fight. */
   readonly plat: boolean;
-  private timers: { t: number; fn: () => void }[] = [];
+  // CONTINUOUS_COMBAT_ASTER_EMBER_V3_NOV06: optional tagged timers can be shifted by parry.
+  private timers: { t: number; fn: () => void; owner?: Fighter; serial?: number }[] = [];
   private time = 0;
   private timeScale = 1;
   private stopUntil = 0;
@@ -536,6 +542,10 @@ export class Game implements MobHost {
     this.emberPatches = [];
     for (const b of this.emberBeams) this.scene.remove(b.visual);
     this.emberBeams = [];
+    for (const g of this.emberGather) this.scene.remove(g.mesh);
+    this.emberGather = [];
+    for (const o of this.emberCharge) this.scene.remove(o.mesh);
+    this.emberCharge = [];
     this.timers = [];
     this.strikeMarks = [];
     this.fx.clear();
@@ -895,6 +905,15 @@ export class Game implements MobHost {
   }
 
   later(delay: number, fn: () => void) { this.timers.push({ t: this.time + delay, fn }); }
+  /** Follow-up hits keep their owner/serial so parry can delay the ENTIRE remaining sequence. */
+  private laterCombo(f: Fighter, delay: number, fn: () => void) {
+    this.timers.push({ t: this.time + delay + f.comboPauseT, fn, owner: f, serial: f.swingSerial });
+  }
+  private delayComboFollowups(f: Fighter, delay: number) {
+    for (const timer of this.timers) {
+      if (timer.owner === f && timer.serial === f.swingSerial) timer.t += delay;
+    }
+  }
 
   /** Threat feed for the duel AI: incoming projectiles and pending ground strikes. */
   private threats: Threats = {
@@ -945,6 +964,8 @@ export class Game implements MobHost {
       case "bubble": { const e = this.entities.get(a[0]); if (e) fx.bubble(e.root, a[1]); break; }
       case "emberPatch": this.emberPatchVisual(a[0], v3(a[1]), a[2], a[3]); break;
       case "emberConsume": this.emberConsumeVisual(a[0], v3(a[1]), a[2]); break;
+      case "emberGather": this.emberGatherVisual(v3(a[0]), a[1], a[2]); break;
+      case "emberCharge": this.emberChargeVisual(a[0], a[1]); break;
       case "emberBeam": this.emberBeamVisual(v3(a[0]), v3(a[1])); break;
     }
   }
@@ -1048,7 +1069,7 @@ export class Game implements MobHost {
       if (a.style === "chain_return") {
         this.melee(f, a); // blade throw
         const round = this.round, serial = f.swingSerial;
-        this.later(0.18, () => {
+        this.laterCombo(f, 0.18, () => {
           if (round !== this.round || f.isDown() || f.swingSerial !== serial || f.state !== S.ATTACK) return;
           this.fxp("slashes", f.model.bladeTip.getWorldPosition(new THREE.Vector3()), "#ff8d9e");
           this.melee(f, { ...a, dmg: 45, guard: 16, knock: 2.6, stun: 0.22, heavy: false }); // returning blade bonus
@@ -1100,7 +1121,7 @@ export class Game implements MobHost {
       this.melee(f, part);
     };
     beat(0);
-    for (let i = 1; i < 5; i++) this.later(0.14 * i, () => beat(i));
+    for (let i = 1; i < 5; i++) this.laterCombo(f, 0.14 * i, () => beat(i));
   }
 
   /** ZAREK_CYCLONE_V3: authoritative phased melee; blocks/parries/clashes use normal combat. */
@@ -1121,7 +1142,7 @@ export class Game implements MobHost {
       // adds three blade turns. A released click never triggers the extra hits.
       const extended = f.intent.attack;
       if (!extended) { at(0, a, "gl5_s"); return; }
-      for (let i = 0; i < 4; i++) this.later(i * 0.13, () => {
+      for (let i = 0; i < 4; i++) this.laterCombo(f, i * 0.13, () => {
         const part: Attack = { ...a, dmg: [38, 41, 42, 68][i], guard: [11, 11, 12, 20][i],
           knock: i === 3 ? 3.5 : 0.4, stun: i === 3 ? 0.38 : 0.12 };
         at(i, part, ["gl5_s", "gl2_s", "gl3_s", "gl5_s"][i]);
@@ -1130,7 +1151,7 @@ export class Game implements MobHost {
     }
     if (a.style === "glaive_serpent") {
       // Five real damaging passes, one weapon-contact check per turn.
-      for (let i = 0; i < 5; i++) this.later(i * 0.21, () => {
+      for (let i = 0; i < 5; i++) this.laterCombo(f, i * 0.21, () => {
         const part: Attack = { ...a, dmg: i === 4 ? 45 : 33, guard: i === 4 ? 17 : 11,
           knock: i === 4 ? 2.2 : 0.35, stun: i === 4 ? 0.27 : 0.10,
           no_parry: true }; // still blockable and clashable
@@ -1147,7 +1168,7 @@ export class Game implements MobHost {
         const length = across.length();
         if (length > 0.2 && length < 4.6) {
           const dest = opponent.root.position.clone().addScaledVector(across.normalize(), 0.85);
-          for (let n = 1; n <= 3; n++) this.later(n * 0.055, () => {
+          for (let n = 1; n <= 3; n++) this.laterCombo(f, n * 0.055, () => {
             if (!alive()) return;
             const p = from.clone().lerp(dest, n / 3); p.y = f.root.position.y;
             if (f.stage) f.root.position.x = Math.max(f.stage.blast.l + 1.5, Math.min(f.stage.blast.r - 1.5, p.x));
@@ -1165,7 +1186,7 @@ export class Game implements MobHost {
           });
         }
       }
-      this.later(0.23, () => at(1, { ...a, dmg: 115, guard: 32, knock: 3.4, stun: 0.40 }, "glx_turn"));
+      this.laterCombo(f, 0.23, () => at(1, { ...a, dmg: 115, guard: 32, knock: 3.4, stun: 0.40 }, "glx_turn"));
       return;
     }
     if (a.style === "glaive_infinite") {
@@ -1174,7 +1195,7 @@ export class Game implements MobHost {
       let connected = false;
       for (let i = 0; i < 8; i++) {
         const elapsed = [0, .26, .49, .70, .89, 1.07, 1.24, 1.55][i];
-        this.later(elapsed, () => {
+        this.laterCombo(f, elapsed, () => {
           if (!alive()) return;
           const launch = i === 6, final = i === 7;
           const part: Attack = { ...a,
@@ -1207,7 +1228,7 @@ export class Game implements MobHost {
   /** KAIZEN_CHAINBLADE_V1: three independent, interruptible chain swipes. */
   private chainRazorCyclone(f: Fighter, a: Attack) {
     const round = this.round, serial = f.swingSerial;
-    for (let i = 0; i < 9; i++) this.later(i * 0.18, () => {
+    for (let i = 0; i < 9; i++) this.laterCombo(f, i * 0.18, () => {
       if (round !== this.round || f.isDown() || f.state !== S.ATTACK || f.swingSerial !== serial) return;
       if (i >= 4 && f.intent.skillHeld !== "z") return;
       const reach = 1.65 + Math.min(i, 8) * 0.10;
@@ -1228,7 +1249,7 @@ export class Game implements MobHost {
   private chainDeathSpiral(f: Fighter, a: Attack) {
     const round = this.round, serial = f.swingSerial, origin = f.root.position.clone();
     const times = [0.05, 0.28, 0.51, 0.74, 0.97, 1.20, 1.43];
-    for (let i = 0; i < times.length; i++) this.later(times[i], () => {
+    for (let i = 0; i < times.length; i++) this.laterCombo(f, times[i], () => {
       if (round !== this.round || f.isDown() || f.state !== S.ATTACK || f.swingSerial !== serial) return;
       const radius = Math.max(1.7, 4.2 - i * 0.40);
       this.fxp("ring", origin.clone().add(new THREE.Vector3(0, 0.8, 0)), "#fa536c", radius, 0.18, 0.9);
@@ -1240,7 +1261,7 @@ export class Game implements MobHost {
         this.applyHit(f, d, { ...a, dmg: 38, guard: 11, stun: 0.13, knock: 0, heavy: false }, f.atkPower, d.chest(), diff.normalize(), false);
       }
     });
-    this.later(1.67, () => {
+    this.laterCombo(f, 1.67, () => {
       if (round !== this.round || f.isDown() || f.state !== S.ATTACK || f.swingSerial !== serial) return;
       f.poseOverride = "cb5_s";
       this.fxp("slashes", origin.clone().add(new THREE.Vector3(0, 1.9, 0)), "#ffbbc2");
@@ -1323,7 +1344,7 @@ export class Game implements MobHost {
 
   private chainbladeCarousel(f: Fighter, a: Attack) {
     const round = this.round, serial = f.swingSerial;
-    for (let i = 0; i < 3; i++) this.later(i * 0.22, () => {
+    for (let i = 0; i < 3; i++) this.laterCombo(f, i * 0.22, () => {
       if (round !== this.round || f.isDown() || f.state !== S.ATTACK || f.swingSerial !== serial) return;
       const hit: Attack = { ...a, dmg: [65, 77, 98][i], guard: [17, 20, 28][i],
         knock: i === 2 ? 3.8 : 0.8, stun: i === 2 ? 0.39 : 0.19,
@@ -1670,7 +1691,7 @@ export class Game implements MobHost {
     const round = this.round;
     const serial = f.swingSerial;
     const times = [0.03, 0.22, 0.41];
-    for (let i = 0; i < times.length; i++) this.later(times[i], () => {
+    for (let i = 0; i < times.length; i++) this.laterCombo(f, times[i], () => {
       if (round !== this.round || f.isDown() || f.state !== S.ATTACK ||
           f.swingSerial !== serial || f.atk?.style !== "cyclone_kick_v2") return;
       const center = f.root.position.clone();
@@ -1709,7 +1730,7 @@ export class Game implements MobHost {
     ];
     for (let i = 0; i < stages.length; i++) {
       const s = stages[i];
-      this.later(s.time, () => {
+      this.laterCombo(f, s.time, () => {
         if (round !== this.round || f.isDown() || f.state !== S.ATTACK ||
             f.swingSerial !== swing || f.atk?.style !== "iron_tempest") return;
         const at = f.root.position.clone();
@@ -1960,7 +1981,10 @@ export class Game implements MobHost {
       const sword = f.model.bladeTip.getWorldPosition(new THREE.Vector3());
       this.fxp("lightning", sword, "#d8eaff");
       this.fxp("flash", sword, "#fff5c2", 1.4, 0.32, 0.98);
-      this.fxp("sparks", sword, "#f0e9a3", 42, 6);
+      this.fxp("sparks", sword, "#f0e9a3", 70, 9);
+      this.fxp("sparks", f.model.shieldNode.getWorldPosition(new THREE.Vector3()), "#c4e8ff", 40, 7);
+      this.fxp("flash", f.chest(), "#d6efff", 1.1, 0.24, 0.85);
+      this.fxp("ring", sword, "#c6eeff", 1.35, 0.24, 0.85);
       this.fxp("ring", f.root.position.clone(), "#ffe7a3", 1.8, 0.42, 0.9);
       this.fxp("num", f.chest().add(new THREE.Vector3(0, 1, 0)), "JUDGMENT", "#ffefac", 1.2);
     } else if (a.mode === "ember_ignition" && f.kit === "mage" && f.look.element === "fire") {
@@ -2011,9 +2035,33 @@ export class Game implements MobHost {
   private emberConsumeVisual(ownerId: number, center: THREE.Vector3, radius: number) {
     this.emberPatches = this.emberPatches.filter(p => {
       if (p.ownerId !== ownerId || p.pos.distanceTo(center) > radius) return true;
+      if (radius > 0.1) this.emberGatherVisual(p.pos.clone(), ownerId, 11);
       this.scene.remove(p.visual);
       return false;
     });
+  }
+
+  /** Each consumed flame produces individual moving embers, not instantaneous light rays. */
+  private emberGatherVisual(from: THREE.Vector3, ownerId: number, count = 8) {
+    for (let i = 0; i < count; i++) {
+      const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.035 + Math.random() * 0.04, 6, 5),
+        new THREE.MeshBasicMaterial({ color: i % 4 === 0 ? "#fffbd4" : i % 3 === 0 ? "#ffc04e" : "#ff672d" }));
+      const origin = from.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.9,
+        Math.random() * 0.30, (Math.random() - 0.5) * 0.9));
+      mesh.position.copy(origin);
+      this.scene.add(mesh);
+      this.emberGather.push({ mesh, from: origin, ownerId, progress: -i * 0.045,
+        duration: 0.58, offset: Math.random() * Math.PI * 2 });
+    }
+  }
+
+  private emberChargeVisual(ownerId: number, ttl = 0.64) {
+    const fighter = this.entities.get(ownerId);
+    if (!(fighter instanceof Fighter)) return;
+    const mat = new THREE.MeshBasicMaterial({ color: "#fff9e5", transparent: true, opacity: 0.95, depthWrite: false });
+    const sphere = new THREE.Mesh(new THREE.SphereGeometry(0.18, 14, 12), mat);
+    fighter.model.castPoint.add(sphere);
+    this.emberCharge.push({ ownerId, mesh: sphere, ttl, max: ttl });
   }
 
   /** Local mesh for replicated, brief white-hot ignition beam. */
@@ -2035,6 +2083,30 @@ export class Game implements MobHost {
   }
 
   private updateEmberFire(dt: number) {
+    for (const p of this.emberGather) {
+      p.progress += dt / p.duration;
+      if (p.progress >= 1) { this.scene.remove(p.mesh); continue; }
+      if (p.progress < 0) continue;
+      const caster = this.entities.get(p.ownerId);
+      const target = caster instanceof Fighter
+        ? caster.model.castPoint.getWorldPosition(new THREE.Vector3())
+        : p.from.clone().add(new THREE.Vector3(0, 1.5, 0));
+      const u = Math.max(0, Math.min(1, p.progress));
+      const ease = u * u * (3 - 2 * u);
+      p.mesh.position.copy(p.from).lerp(target, ease);
+      p.mesh.position.y += Math.sin(Math.PI * u) * 0.70;
+      p.mesh.position.x += Math.sin(u * Math.PI * 5 + p.offset) * 0.22 * (1 - u);
+      p.mesh.position.z += Math.cos(u * Math.PI * 5 + p.offset) * 0.22 * (1 - u);
+      p.mesh.scale.setScalar(Math.max(0.12, 1 - u * 0.70));
+    }
+    this.emberGather = this.emberGather.filter(p => p.progress < 1);
+    for (const orb of this.emberCharge) {
+      orb.ttl -= dt;
+      const t = 1 - Math.max(0, orb.ttl) / orb.max;
+      orb.mesh.scale.setScalar(0.3 + 1.0 * Math.sin(Math.PI * t));
+      if (orb.ttl <= 0) orb.mesh.parent?.remove(orb.mesh);
+    }
+    this.emberCharge = this.emberCharge.filter(o => o.ttl > 0);
     for (const b of this.emberBeams) {
       b.ttl -= dt;
       b.visual.scale.x = b.visual.scale.z = Math.max(0.05, b.ttl / b.max);
@@ -2068,46 +2140,58 @@ export class Game implements MobHost {
   }
 
   private castEmberIgnition(f: Fighter, a: Attack) {
+    // The cast is authoritative. Consume buffs/patches now; release the beam only
+    // after animated embers have visibly travelled to the staff tip.
+    const round = this.round, serial = f.swingSerial;
     const pos = f.root.position.clone();
     const burned = this.enemiesOf(f).filter((e): e is Fighter | Mob =>
       (e instanceof Fighter || e instanceof Mob) && !e.isDown() &&
       e.root.position.distanceTo(pos) <= 9 && e.status.has("burn"));
-    const patches = this.emberPatches.filter(p => p.ownerId === f.id &&
-      p.pos.distanceTo(pos) <= 9);
-    const consumedPatches = patches.length;
-    const consumedBurns = burned.length;
-    if (consumedPatches) this.fxp("emberConsume", f.id, pos, 9);
-    for (const enemy of burned) enemy.status.consume("burn");
-    const bonus = Math.min(5, consumedPatches) * 55 + Math.min(4, consumedBurns) * 45;
-    const start = f.model.castPoint.getWorldPosition(new THREE.Vector3());
-    const toward = f.opponent && !f.opponent.isDown()
-      ? f.opponent.chest().sub(start).normalize()
-      : new THREE.Vector3(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
-    const end = start.clone().addScaledVector(toward, 11);
-    this.fxp("emberBeam", start, end);
-    this.fxp("flash", start, "#fff9dc", 0.85, 0.22, 0.9);
-    this.fxp("sparks", start, "#ffb84a", 38, 6);
-    this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.9, 0)),
-      `FINAL IGNITION +${bonus}`, "#fff1b1", 1.1);
-    this.snd("fireball", 0.9);
-    const beamHit: Attack = { ...a, type: "strike", dmg: 320 + bonus,
-      guard: 75, knock: 7, stun: 0.75, heavy: true,
-      effect: "burn", effect_t: 4, effect_p: 30, no_parry: true };
-    for (const enemy of this.enemiesOf(f)) {
-      const rel = enemy.chest().sub(start);
-      const projection = rel.dot(toward);
-      if (projection < 0 || projection > 11) continue;
-      const off = rel.addScaledVector(toward, -projection).length();
-      if (off > 0.8 + enemy.radius) continue;
-      this.applyHit(f, enemy, beamHit, f.atkPower, enemy.chest(), toward, true);
+    const patches = this.emberPatches.filter(p => p.ownerId === f.id && p.pos.distanceTo(pos) <= 9);
+    const bonus = Math.min(5, patches.length) * 55 + Math.min(4, burned.length) * 45;
+    this.fxp("emberCharge", f.id, 0.64);
+    if (patches.length) this.fxp("emberConsume", f.id, pos, 9);
+    for (const enemy of burned) {
+      this.fxp("emberGather", enemy.chest(), f.id, 9);
+      enemy.status.consume("burn");
     }
+    this.fxp("ring", pos, "#ff9b40", 2.0, 0.32, 0.90);
+    this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.85, 0)),
+      `GATHERING FLAMES +${bonus}`, "#ffe4a0", 0.9);
+    this.snd("fireball", 0.60);
+    this.later(0.60, () => {
+      if (round !== this.round || f.isDown() || f.swingSerial !== serial) return;
+      const start = f.model.castPoint.getWorldPosition(new THREE.Vector3());
+      const toward = f.opponent && !f.opponent.isDown()
+        ? f.opponent.chest().sub(start).normalize()
+        : new THREE.Vector3(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
+      const end = start.clone().addScaledVector(toward, 11);
+      this.fxp("emberBeam", start, end);
+      this.fxp("flash", start, "#fffdf0", 1.4, 0.27, 1.0);
+      this.fxp("sparks", start, "#ffcf63", 72, 9);
+      this.fxp("ring", f.root.position.clone(), "#ffd3a1", 2.5, 0.35, 0.9);
+      this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.85, 0)),
+        `FINAL IGNITION +${bonus}`, "#fff5bf", 1.05);
+      this.snd("fireball", 1.0);
+      const beamHit: Attack = { ...a, type: "strike", dmg: 320 + bonus,
+        guard: 75, knock: 7, stun: 0.75, heavy: true,
+        effect: "burn", effect_t: 4, effect_p: 30, no_parry: true };
+      for (const enemy of this.enemiesOf(f)) {
+        const rel = enemy.chest().sub(start);
+        const projection = rel.dot(toward);
+        if (projection < 0 || projection > 11) continue;
+        const off = rel.addScaledVector(toward, -projection).length();
+        if (off > 0.8 + enemy.radius) continue;
+        this.applyHit(f, enemy, beamHit, f.atkPower, enemy.chest(), toward, true);
+      }
+    });
   }
 
   /** Teleport behind the target and kick, `repeat` times `interval` apart (alternating sides). */
   private phantom(f: Fighter, a: Attack) {
     const kicks = ["kk3_s", "kk2_s", "kk1_s", "kk4_s"];
     const power = f.atkPower;
-    for (let i = 0; i < a.repeat; i++) this.later(i * a.interval, () => {
+    for (let i = 0; i < a.repeat; i++) this.laterCombo(f, i * a.interval, () => {
       const o = f.opponent;
       if (f.isDown() || f.state !== S.ATTACK || !o || o.isDown()) return;
       const from = f.root.position.clone();
@@ -2137,7 +2221,11 @@ export class Game implements MobHost {
   }
 
   private applyHit(attacker: Entity | null, d: Entity, a: Attack, power: number, hitPos: THREE.Vector3, dir: THREE.Vector3, ranged: boolean): string {
-    const result = d.receiveHit(attacker, a, power);
+    // Includes Zarek's launch/finisher (their style labels differ from the base skill).
+    const scaledAttack = attacker instanceof Fighter && attacker.isContinuousComboActive() &&
+      !ranged && attacker.comboDamageMult < 1
+      ? { ...a, dmg: a.dmg * attacker.comboDamageMult } : a;
+    const result = d.receiveHit(attacker, scaledAttack, power);
     const glow = attacker instanceof Fighter ? attacker.look.glow : attacker instanceof Mob ? attacker.def.color : "#ffffff";
     const heavy = a.heavy || a.id === "l3";
     const shieldPos = d instanceof Fighter ? d.model.shieldNode.getWorldPosition(new THREE.Vector3()) : hitPos;
@@ -2166,7 +2254,7 @@ export class Game implements MobHost {
         this.fxp("num", shieldPos.clone().add(new THREE.Vector3(0, 0.5, 0)),
           "CLASH!", "#ffe08a", 1.1);
         this.add_trauma(0.3);
-        this.hitStop(0.09);
+        if (!(attacker instanceof Fighter && attacker.isContinuousComboActive())) this.hitStop(0.09);
         break;
       }
       case "hit": case "crit": case "ko": {
@@ -2211,8 +2299,12 @@ export class Game implements MobHost {
         this.hitStop(0.04);
         break;
       case "parry":
-        if (a.parry_stun && attacker instanceof Fighter) {
-          // Weakness (Gale): a parried skill leaves him stunned.
+        if (!ranged && attacker instanceof Fighter && attacker.onComboParried()) {
+          this.delayComboFollowups(attacker, 0.20);
+          this.fxp("num", attacker.chest().add(new THREE.Vector3(0, 0.9, 0)),
+            "COMBO -10% • +0.2s", "#b8eaff", 0.82);
+        } else if (a.parry_stun && attacker instanceof Fighter) {
+          // Single-hit vulnerability (Gale, etc.) remains as it was.
           attacker.stagger(a.parry_stun);
           this.fxp("num", attacker.chest().add(new THREE.Vector3(0, 0.9, 0)), "STUNNED", "#ffe066", 1.1);
         } else if (!ranged && attacker instanceof Fighter) attacker.stagger(0.95);
@@ -2308,7 +2400,7 @@ export class Game implements MobHost {
     this.fxp("num", pos.clone().add(new THREE.Vector3(0, 0.45, 0)), "CLASH!", "#ffe08a", 1.3);
     this.snd("clash", 1);
     this.add_trauma(0.45);
-    this.hitStop(0.13);
+    if (!a.isContinuousComboActive() && !b.isContinuousComboActive()) this.hitStop(0.13);
   }
 
   // --- mob attacks (MobHost) -------------------------------------------------------------

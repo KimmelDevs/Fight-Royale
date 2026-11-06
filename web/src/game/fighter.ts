@@ -1,3 +1,4 @@
+// CONTINUOUS_COMBAT_ASTER_EMBER_V3_NOV06
 // Playable fighter. A brain (local input, AI, or a remote player's inputs) fills `intent`
 // every frame:
 //   attack tap (release < HOLD_T)  -> normal attack, chains into the kit's combo
@@ -18,6 +19,14 @@ import * as Kits from "./kits";
 import type { Attack, Pose } from "./kits";
 import type { Look } from "./roster";
 import { emblemBonus, DEFAULT_LOADOUT } from "./economy";
+
+/** Long, individually-timed attacks keep their choreography after parries/clashes.
+ * Basic light chains and single-hit skills intentionally keep ordinary reactions. */
+export const CONTINUOUS_STYLES = new Set([
+  "sickle_carrion", "glaive_cyclone", "glaive_serpent", "glaive_phantom", "glaive_infinite",
+  "chain_razor_cyclone", "chain_death_spiral", "chain_carousel", "chain_return",
+  "cyclone_kick_v2", "iron_tempest", "phantom_rush",
+]);
 
 export enum S { IDLE, ATTACK, CHARGE, BLOCK, HITSTUN, STAGGER, KO, WIN }
 
@@ -154,6 +163,24 @@ export class Fighter implements Entity {
   private holding = false;
   private holdT = 0;
   private guardDelay = 0;
+  /** Normal shield takes 0.10s to rise; the first re-raise after a successful parry is 0.05s. */
+  shieldRaise = 0.10;
+  nextShieldFast = false;
+  /** Only ongoing multi-hit specials accumulate these parry/clash penalties. */
+  comboDamageMult = 1;
+  comboPauseT = 0;
+  isContinuousComboActive() {
+    return this.state === S.ATTACK && !!this.atk &&
+      (CONTINUOUS_STYLES.has(this.atk.style) || (this.atk.type === "phantom" && this.atk.repeat > 1));
+  }
+  /** Returns false for ordinary single-hit attacks (their normal stagger is preserved). */
+  onComboParried(): boolean {
+    if (!this.isContinuousComboActive()) return false;
+    this.comboDamageMult = Math.max(0.35, this.comboDamageMult * 0.90);
+    this.comboPauseT += 0.20;
+    this.model.recoil = Math.max(this.model.recoil, 0.30);
+    return true;
+  }
   private knock = 0;
   private netPos = new THREE.Vector3();
   private netRot = 0;
@@ -279,7 +306,12 @@ export class Fighter implements Entity {
     this.tryAirRecovery();
     // Ground and airborne blocks both work; perfect parry still uses its normal timing.
     // Escaping hitstun is handled separately, once per airtime.
-    this.stateT += dt;
+    // A successful parry pauses a persistent combo for exactly 0.20 seconds;
+    // its delayed arena hits are shifted by the same amount in Game.
+    const advancing = this.state === S.ATTACK && this.comboPauseT > 0
+      ? Math.max(0, dt - this.comboPauseT) : dt;
+    this.comboPauseT = Math.max(0, this.comboPauseT - dt);
+    this.stateT += advancing;
     for (const k in this.cooldowns) this.cooldowns[k] = Math.max(this.cooldowns[k] - dt, 0);
     this.atkLock = Math.max(this.atkLock - dt, 0);
     this.clock += dt;
@@ -845,6 +877,8 @@ export class Fighter implements Entity {
       this.atk = { ...this.atk, wind: this.atk.wind * 0.88, recover: this.atk.recover * 0.88 };
     this.atkPhase = 0;
     this.buffered = false;
+    this.comboDamageMult = 1;
+    this.comboPauseT = 0;
     this.swingSerial++;
     if (this.atk.self_jump > 0 && this.atk.mode !== "leap") { this.velY = this.atk.self_jump * (this.stage ? 1.35 : 1); this.onGround = false; this.ground = null; }
     this.setState(S.ATTACK);
@@ -908,7 +942,13 @@ export class Fighter implements Entity {
     this.comboTimer = a.next ? 0.45 : 0;
   }
 
-  private setState(s: S) { this.state = s; this.stateT = 0; this.poseOverride = ""; }
+  private setState(s: S) {
+    if (s === S.BLOCK && this.state !== S.BLOCK) {
+      this.shieldRaise = this.nextShieldFast ? 0.05 : 0.10;
+      this.nextShieldFast = false;
+    }
+    this.state = s; this.stateT = 0; this.poseOverride = "";
+  }
   /** Pose forced by the arena during an attack (e.g. each kick of a teleport combo). */
   poseOverride = "";
 
@@ -1038,10 +1078,13 @@ export class Fighter implements Entity {
     // A regular block still costs guard, and simultaneous attacks can still clash.
     const festivalUnparryable = attacker instanceof Fighter && attacker.kit === "sickle" &&
       attacker.bloodFestivalT > 0 && a.type === "melee";
-    if (this.state === S.BLOCK) {
-      if (this.stateT <= this.parryWindow && !a.no_parry && !festivalUnparryable) {
+    // Guard is not instantly active while the shield is still being raised.
+    if (this.state === S.BLOCK && this.stateT >= this.shieldRaise) {
+      if (this.stateT - this.shieldRaise <= this.parryWindow && !a.no_parry && !festivalUnparryable) {
         this.guard = Math.min(this.guard + 20, this.maxGuard);
         this.model.flash("#99e6ff", 0.15);
+        // Reward applies to the NEXT shield raise, once only; never stack it.
+        this.nextShieldFast = true;
         return "parry";
       }
       // Blood Festival: Veyr's blocked LIGHT sickle hits drain 3x normal guard.
@@ -1109,6 +1152,12 @@ export class Fighter implements Entity {
   stagger(d: number) { if (this.bloodFestivalT > 0 || this.meteorFistArmor) return; this.stun = d; this.stunPose = "stagger"; this.holding = false; this.setState(S.STAGGER); }
 
   clashRecoil() {
+    if (this.isContinuousComboActive()) {
+      // Clash does not interrupt the remaining hits or pause their timeline.
+      this.comboDamageMult = Math.max(0.35, this.comboDamageMult * 0.95);
+      this.model.recoil = Math.max(this.model.recoil, 0.24);
+      return;
+    }
     if (this.meteorFistArmor) {
       this.model.recoil = Math.max(this.model.recoil, 0.25);
       return; // Clash counted; Meteor Fist keeps going without being crowd-controlled.
@@ -1147,6 +1196,8 @@ export class Fighter implements Entity {
   heal(amount: number) { this.hp = Math.min(this.hp + amount, this.maxHp); }
 
   ko() {
+    this.nextShieldFast = false; this.shieldRaise = 0.10;
+    this.comboPauseT = 0; this.comboDamageMult = 1;
     this.judgmentT = 0; this.model.setJudgment(false);
     this.releaseChainBind();
     if (this.chainBoundBy) this.chainBoundBy.releaseChainBind();
@@ -1449,7 +1500,7 @@ export class Fighter implements Entity {
       this.state, this.poseName, this.poseSpeed, Math.round(this.hp), Math.round(this.guard),
       +this.model.walk.toFixed(2), +this.model.charge.toFixed(2), this.trail.emitting ? 1 : 0,
       +this.model.recoil.toFixed(2), this.cooldowns.z, this.cooldowns.x, this.cooldowns.c, this.maxHp,
-      +this.pct.toFixed(1), this.stocks, this.out ? 1 : 0, +this.atkLock.toFixed(2), +this.dashCd.toFixed(2), this.status.mask, this.barrelOut ? 1 : 0, Math.round(this.bloodlust), +this.bloodFrenzyT.toFixed(2), this.sickleOut ? 1 : 0, +this.bloodFestivalT.toFixed(2), +this.tempestSpin.toFixed(3), +this.cycloneSpin.toFixed(3), +this.bladeSwingYaw.toFixed(3), +this.chainFuryT.toFixed(2), this.clashMomentum, this.chainBindTarget ? +this.chainBindTarget.chest().x.toFixed(2) : null, this.chainBindTarget ? +this.chainBindTarget.chest().y.toFixed(2) : null, this.chainBindTarget ? +this.chainBindTarget.chest().z.toFixed(2) : null, +this.chainBindT.toFixed(2), +this.judgmentT.toFixed(2)];
+      +this.pct.toFixed(1), this.stocks, this.out ? 1 : 0, +this.atkLock.toFixed(2), +this.dashCd.toFixed(2), this.status.mask, this.barrelOut ? 1 : 0, Math.round(this.bloodlust), +this.bloodFrenzyT.toFixed(2), this.sickleOut ? 1 : 0, +this.bloodFestivalT.toFixed(2), +this.tempestSpin.toFixed(3), +this.cycloneSpin.toFixed(3), +this.bladeSwingYaw.toFixed(3), +this.chainFuryT.toFixed(2), this.clashMomentum, this.chainBindTarget ? +this.chainBindTarget.chest().x.toFixed(2) : null, this.chainBindTarget ? +this.chainBindTarget.chest().y.toFixed(2) : null, this.chainBindTarget ? +this.chainBindTarget.chest().z.toFixed(2) : null, +this.chainBindT.toFixed(2), +this.judgmentT.toFixed(2), +this.comboDamageMult.toFixed(3), +this.comboPauseT.toFixed(2)];
   }
 
   applySnapshot(s: any[]) {
@@ -1472,7 +1523,9 @@ export class Fighter implements Entity {
       this.model.chainBindTargetWorld = s.length >= 37 && s[34] !== null
         ? new THREE.Vector3(s[34], s[35], s[36]) : null;
       this.chainBindT = s[37] ?? 0; // KAIZEN_BIND_ZX_V6: remote HUD follow-ups
-      this.judgmentT = s[38] ?? 0; // ASTER_EMBER_LATEST_20261106: append only, preserve Kaizen's snapshot indices
+      this.judgmentT = s[38] ?? 0; // ASTER_EMBER_LATEST_20261106: preserve older fields
+      this.comboDamageMult = s[39] ?? 1;
+      this.comboPauseT = s[40] ?? 0;
       const out = s[20] === 1;
       if (out !== this.out) { this.out = out; this.root.visible = !out; if (!out) this.root.position.copy(this.netPos); }
     }

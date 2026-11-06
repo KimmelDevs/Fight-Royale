@@ -1,3 +1,4 @@
+// CONTINUOUS_COMBAT_ASTER_EMBER_V3_NOV06
 // Procedural cel-shaded fighter. Faces +Z. Right hand (-X side) holds the main weapon.
 // `look` (see roster.ts) picks the outfit, hair style, hat, weapon and colors.
 // Posed by blend() every frame with joint rotations from a pose (see kits.ts).
@@ -931,34 +932,44 @@ export class FighterModel extends THREE.Group {
     this.castPoint = this.bladeTip;
   }
 
-  /** Larger blade that borrows its gold/metal plates from the shield design. */
+  /** CONTINUOUS_COMBAT_ASTER_EMBER_V3_NOV06: ceremonial forged greatblade. */
   private buildJudgmentSword() {
     const grip = this.bladeBase.parent;
     if (!grip) return;
     this.judgmentOldSword = grip.children.filter(c => c !== this.bladeBase && c !== this.bladeTip);
     const weapon = pivot(grip);
-    mesh(weapon, box(0.15, 1.05, 0.064), this.steel(), [0, 0.69, 0]);
-    mesh(weapon, cyl(0, 0.075, 0.28, 4), this.steel(), [0, 1.32, 0], [0, 0, PI / 4], [1.1, 1, 0.55]);
-    mesh(weapon, box(0.022, 1.14, 0.072), this.glowMat, [0, 0.66, 0.024]);
-    mesh(weapon, box(0.66, 0.075, 0.13), this.tn(this.look.trim), [0, 0.22, 0]);
-    mesh(weapon, box(0.27, 0.31, 0.16), this.tn(this.look.shield), [0, 0.29, 0]);
+    // Primary steel silhouette; the shield's defensive plates become the blade's ribs.
+    mesh(weapon, box(0.20, 1.26, 0.075), this.steel(), [0, 0.77, 0]);
+    mesh(weapon, cyl(0, 0.11, 0.45, 4), this.steel(), [0, 1.57, 0], [0, 0, PI / 4], [1.25, 1, 0.60]);
+    mesh(weapon, box(0.035, 1.56, 0.095), this.glowMat, [0, 0.84, 0.035]);
+    mesh(weapon, box(0.8, 0.090, 0.16), this.tn(this.look.trim), [0, 0.20, 0]);
+    mesh(weapon, box(0.38, 0.42, 0.20), this.tn(this.look.shield), [0, 0.34, 0]);
     for (const side of [-1, 1]) {
-      mesh(weapon, box(0.16, 0.32, 0.065), this.tn(this.look.shield), [side * 0.26, 0.33, 0], [0, 0, side * 0.46]);
-      mesh(weapon, box(0.027, 0.33, 0.075), this.glowMat, [side * 0.16, 0.34, 0.055], [0, 0, side * 0.38]);
-      mesh(weapon, sphere(0.04, 10), this.gem(), [side * 0.33, 0.22, 0.04]);
+      // Large detached shield-metal wing plates with gold bevels and crackling cores.
+      mesh(weapon, box(0.19, 0.48, 0.075), this.tn(this.look.shield),
+        [side * 0.31, 0.48, 0], [0, 0, side * 0.40]);
+      mesh(weapon, box(0.12, 0.38, 0.075), this.tn(this.look.trim),
+        [side * 0.235, 0.80, 0], [0, 0, side * 0.25]);
+      mesh(weapon, box(0.028, 0.55, 0.09), this.glowMat,
+        [side * 0.19, 0.54, 0.062], [0, 0, side * 0.38]);
+      mesh(weapon, sphere(0.055, 12), this.gem(), [side * 0.36, 0.22, 0.05]);
+      mesh(weapon, box(0.045, 0.30, 0.07), this.glowMat,
+        [side * 0.14, 1.14, 0.065], [0, 0, side * 0.18]);
     }
-    mesh(weapon, sphere(0.082, 12), this.gem(), [0, 0.25, 0.085]);
+    mesh(weapon, sphere(0.105, 16), this.gem(), [0, 0.35, 0.095]);
+    mesh(weapon, box(0.09, 0.33, 0.15), this.tn(this.look.trim), [0, -0.01, 0]);
+    mesh(weapon, sphere(0.075, 12), this.gem(), [0, -0.15, 0]);
     weapon.visible = false;
     this.judgmentSword = weapon;
   }
 
-  /** Syncs immediately on the owning client and network puppets. */
+  /** Use the shield as the greatblade's defensive metal without leaving a second shield behind. */
   setJudgment(on: boolean) {
     if (!this.judgmentSword) return;
     this.judgmentSword.visible = on;
     for (const part of this.judgmentOldSword) part.visible = !on;
     this.shieldNode.visible = !on;
-    this.bladeTip.position.y = on ? 1.46 : 1.05;
+    this.bladeTip.position.y = on ? 1.76 : 1.05;
     if (this.vrmRig) this.vrmRig.shield = !on;
   }
 

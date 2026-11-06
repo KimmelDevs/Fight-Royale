@@ -1,3 +1,4 @@
+// CONTINUOUS_COMBAT_ASTER_EMBER_V3_NOV06
 // Duel CPU. Presses the same virtual buttons a player would, with human-ish reaction times:
 // reacts once per enemy swing / projectile / ground marker (block, parry, jump, sidestep),
 // keeps its preferred range (ranged kits kite), and picks attacks and skills when idle.
@@ -42,6 +43,8 @@ export class AiBrain implements Brain {
   private seen = new Set<number>();
   // KAIZEN_PREDATOR_HOOK_V9: use the second X press instead of waiting for WASD.
   private chainDecisionT = 0;
+  // CONTINUOUS_COMBAT_ASTER_EMBER_V3_NOV06: track the active enemy combo through all beats.
+  private comboThreatSerial = -1;
 
   constructor(private threats: Threats, level: number) {
     this.p = PRESETS[Math.max(0, Math.min(level, PRESETS.length - 1))];
@@ -71,6 +74,7 @@ export class AiBrain implements Brain {
     if (f.chainBoundBy && f.chainBoundBy.chainBindT > 0) return;
     if (f.stage) { if (this.platform(f, o, dt)) return; }
     this.react(f, o);
+    this.defendLongCombo(f, o);
     if (!f.stage) { this.dodge(f); this.position(f, o, dt); }
     this.antiAirCd = Math.max(0, this.antiAirCd - dt);
     this.aiAirTap = false;
@@ -227,8 +231,12 @@ export class AiBrain implements Brain {
         else if (!canClash) { this.sideT = 0.30; this.sideSign = Math.random() < 0.5 ? -1 : 1; }
         return;
       }
-      if (r < this.p.parry) this.schedule(Math.max(tth - 0.07, 0), 0.3);
-      else if (r < this.p.parry + bc) this.schedule(rand(this.p.react[0], this.p.react[1]) * 0.6, tth + 0.45);
+      // Shield needs real raise time; after a parry, the next raise is twice as fast.
+      const raise = f.nextShieldFast ? 0.05 : 0.10;
+      if (r < this.p.parry) this.schedule(Math.max(tth - raise - 0.03, 0),
+        o.isContinuousComboActive() ? Math.max(0.35, o.atk.wind + o.atk.active + o.atk.recover) : 0.3);
+      else if (r < this.p.parry + bc) this.schedule(rand(this.p.react[0], this.p.react[1]) * 0.45,
+        o.isContinuousComboActive() ? Math.max(0.5, o.atk.wind + o.atk.active + o.atk.recover) : tth + 0.45);
       else if (r < this.p.parry + bc + 0.15) this.trySkill(f, "z", true);
     }
     const charging = o.state === S.CHARGE;
@@ -236,6 +244,26 @@ export class AiBrain implements Brain {
       this.seenCharge = true;
       if (Math.random() < 0.45) this.schedule(rand(this.p.react[0], this.p.react[1]), 1.4);
     } else if (!charging) this.seenCharge = false;
+  }
+
+  /** CPUs no longer assume that a parry or clash ends a multi-hit special. */
+  private defendLongCombo(f: Fighter, o: Fighter) {
+    if (!o.isContinuousComboActive()) { this.comboThreatSerial = -1; return; }
+    const a = o.atk!;
+    const remaining = Math.max(0.15, a.wind + a.active + a.recover - o.stateT + o.comboPauseT);
+    const close = f.root.position.distanceTo(o.root.position) <= Math.max(3.0, a.reach + 0.7);
+    if (!close || f.state === S.KO) return;
+    // A successful first parry only softens later hits. Keep the shield raised.
+    if (this.blockWait >= 0) this.blockDur = Math.max(this.blockDur, remaining + 0.15);
+    if (this.blockHold > 0) this.blockHold = Math.max(this.blockHold, remaining + 0.10);
+    if (this.comboThreatSerial !== o.swingSerial) {
+      this.comboThreatSerial = o.swingSerial;
+      // If missed the first telegraph, higher-level CPUs can still prepare for later beats.
+      if (this.blockWait < 0 && this.blockHold <= 0 && f.state === S.IDLE &&
+          Math.random() < this.p.block * 0.70) {
+        this.schedule(0, Math.min(1.95, remaining + 0.10));
+      }
+    }
   }
 
   private dodge(f: Fighter) {

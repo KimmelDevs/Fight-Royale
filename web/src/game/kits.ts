@@ -1,3 +1,4 @@
+// CONTINUOUS_COMBAT_ASTER_EMBER_V3_NOV06
 // GARRICK_RANGE_WALK_V2
 // SWORD_AND_CYCLONE_V1
 // Per-class combat data: stats, attack/skill tables and pose tables.
@@ -137,7 +138,7 @@ function bonusSkill(kit: string, element: string): Attack {
       if (element === "fire") return a({ name: "Absolute Combustion — Final Ignition",
         desc: "Condense nearby fire patches and active burns into a white-hot beam. Each consumed patch and burn amplifies the damage.",
         cd: 16, type: "buff", mode: "ember_ignition", wind: 0.50, active: 0.06,
-        recover: 0.62, pose_w: "mh_w", pose_s: "mh_s" });
+        recover: 0.80, pose_w: "ember_ignite_w", pose_s: "ember_ignite_s" });
       if (element === "electric") return a({ name: "Static Field", desc: "Three lightning bolts strike all around you.", cd: 10, type: "strike", at: "self", wind: 0.12, recover: 0.5, dmg: 75, guard: 22, knock: 2, stun: 0.5, delay: 0.15, radius: 2.2, repeat: 3, interval: 0.25, style: "lightning", pose_w: "mh_w", pose_s: "m3_s" });
       return a({ name: "Healing Rain", desc: "Restore 16% of your HP (25% in survival).", cd: 14, type: "buff", mode: "heal", duration: 0.25, wind: 0.2, recover: 0.4, pose_w: "mh_w", pose_s: "m3_s" });
     case "assassin":
@@ -583,6 +584,9 @@ function twoHanded(src: Record<string, Pose>): Record<string, Pose> {
 
 // Staff in the right hand; hand_r x tilts the staff so it stays upright as the arm rises.
 const MAGE: Record<string, Pose> = {
+  // CONTINUOUS_COMBAT_ASTER_EMBER_V3_NOV06: planted explosive-mage ritual stance, Ember only.
+  ember_ignite_w: P([-0.27, 0, 0], [-0.20, 0, 0], [-2.55, -0.10, -0.14], [0.14, 0, 0], [-0.95, -0.28, 0.58], [0.17, 0, -0.45], [-0.45, 0.0, 0.16], [0.40, 0, -0.16], -0.20),
+  ember_ignite_s: P([0.16, 0, 0], [0.09, 0, 0], [-1.72, 0.04, -0.15], [0.22, 0, 0], [-1.10, -0.15, 0.72], [0.10, 0, -0.42], [-0.56, 0, 0.18], [0.46, 0, -0.18], -0.24),
   idle: P([0.05, -0.15, 0], [0, 0.12, 0], [-0.35, 0, -0.3], [0.45, 0, 0.3], [-0.5, -0.3, 0.45], [0, 0, -0.6], [-0.15, 0, 0.05], [0.15, 0, -0.05], -0.02),
   block: P([0, -0.1, 0], [0, 0.1, 0], [-0.35, 0, -0.35], [0.5, 0, 0.3], [-1.5, -0.45, 0], [0, 0, 0], [-0.3, 0, 0.06], [0.3, 0, -0.06], -0.06),
   m1_w: P([0, 0.3, 0], [0, -0.2, 0], [-0.5, 0, -0.3], [0.6, 0, 0.3], [-1.1, 0.5, 0.5], [0, 0, -0.6], [-0.2, 0, 0.05], [0.2, 0, -0.05], -0.04),
