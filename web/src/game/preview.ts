@@ -1,3 +1,4 @@
+// FIGHT_ROYALE_SIGNATURE_POSES_V2
 // FIGHT_ROYALE_VICTORY_HIGHLIGHTS_V1
 // Turntable preview for the character select screen.
 import * as THREE from "three";
@@ -87,8 +88,18 @@ export class Preview {
     if (this.model) {
       this.poseT += dt;
       // Unique, looping VRM-compatible presentation; visual only.
-      this.model.glaivePose = this.lookName.toLowerCase() === "zarek" ? "show_baton" : "idle";
-      this.model.blend(presentationPose(this.lookName, this.poseT, this.poses.idle, this.mode), dt, 9);
+      // Distinct showcase timing, independent of live combat/skill logic.
+      const phase = this.mode === "victory" ? this.poseT : this.poseT % 6.2;
+      const who = this.lookName.toLowerCase();
+      this.model.presentationT = phase;
+      this.model.presentationMode = this.mode;
+      this.model.glaivePose = who === "zarek" ? "show_baton" : "idle";
+      // Kaizen: a controlled chain orbit, not an unrelated giant VFX circle.
+      this.model.chainPose = who === "kaizen" && phase >= 0.55 && phase <= 2.30 ? "cbz_w" : "idle";
+      // Ash: nock and pull a real bow string, then release at the flourish.
+      this.model.draw = who === "ash" && phase >= 0.55 && phase < 1.35
+        ? Math.min(1, (phase - 0.55) / 0.32) : 0;
+      this.model.blend(presentationPose(this.lookName, this.poseT, this.poses.idle, this.mode), dt, 11);
     }
     M.updateLight(this.camera);
     this.renderer.render(this.scene, this.camera);

@@ -1,3 +1,4 @@
+// FIGHT_ROYALE_SIGNATURE_POSES_V2
 // FIGHT_ROYALE_VICTORY_HIGHLIGHTS_V1
 // MELEE_PROJECTILE_SPRINT_V1_NOV06
 // CONTINUOUS_COMBAT_ASTER_EMBER_V3_NOV06
@@ -95,6 +96,9 @@ export class FighterModel extends THREE.Group {
   private judgmentSword: THREE.Group | null = null;
   private judgmentOldSword: THREE.Object3D[] = [];
   glaivePose = "idle"; // ZAREK_GLAIVE_CHOREO_V2: current attack key from the fighter
+  // Only used by presentation visuals; combat abilities, reach and momentum untouched.
+  presentationT = 0;
+  presentationMode: "select" | "victory" = "select";
   /** KAIZEN_CHAIN_SPIN_V2 — separate flying blade, with links on a curved chain. */
   private chainLinks: THREE.Group[] = [];
   private chainAnchor: THREE.Group | null = null;
@@ -1344,9 +1348,15 @@ export class FighterModel extends THREE.Group {
       };
       const a = angles[this.glaivePose] ?? angles.idle;
       const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(...a, "YXZ"));
-      // Show-only double-glaive baton spin, rotating about an axis perpendicular to the pole.
+      // Choreographed Zarek baton flourish: two smooth rotations, then a readable hold.
+      // Never used by an attack; the visual's weapon mount still follows both hands.
       if (this.glaivePose === "show_baton") {
-        q.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), this.t * 9.5));
+        const phase = this.presentationMode === "select" ? this.presentationT % 6.2 : this.presentationT;
+        const turn = THREE.MathUtils.smoothstep(phase, 0.55, 1.53) * (Math.PI * 4)
+          + THREE.MathUtils.smoothstep(phase, 1.53, 2.29) * (Math.PI * 2)
+          + (this.presentationMode === "select"
+            ? THREE.MathUtils.smoothstep(phase, 4.19, 5.36) * (Math.PI * 2) : 0);
+        q.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), turn));
       }
       // Live figure-eight spin around the weapon shaft (kept local so both hands follow).
       if (this.glaivePose === "glz_s" || this.glaivePose === "gl3_s" ||

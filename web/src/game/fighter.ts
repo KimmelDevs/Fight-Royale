@@ -1,3 +1,4 @@
+// FIGHT_ROYALE_SIGNATURE_POSES_V2
 // FIGHT_ROYALE_VICTORY_HIGHLIGHTS_V1
 // FIGHT_ROYALE_PERFECT_DODGE_V1_NOV07
 // ASTER_TANK_ONLY_V2_20261107
@@ -527,9 +528,13 @@ export class Fighter implements Entity {
     this.computePose();
     this.model.bloodFestivalT = this.kit === "sickle" ? this.bloodFestivalT : 0;
     this.model.chainFuryT = this.kit === "chainblade" ? this.chainFuryT : 0;
-    this.model.chainPose = this.kit === "chainblade" ? this.poseName : "idle";
+    this.model.chainPose = this.kit === "chainblade"
+      ? (this.state === S.WIN && this.stateT >= 0.55 && this.stateT <= 2.30 ? "cbz_w" : this.poseName)
+      : "idle";
     this.model.chainExtended = this.kit === "chainblade" && (this.chainFuryT > 0 ||
       ["cbz_w", "cbz_s", "cbx_w", "cbx1_s", "cbx2_s", "cbx3_s", "cbh_w", "cbh_s", "cbv_w", "cbv_s"].includes(this.poseName));
+    this.model.presentationT = this.stateT;
+    this.model.presentationMode = "victory";
     this.model.glaivePose = this.kit === "glaive" ? (this.state === S.WIN ? "show_baton" : this.poseName) : "idle";
     this.model.blend(this.state === S.WIN
       ? presentationPose(this.look.name, this.stateT, this.poses.idle, "victory")
@@ -541,6 +546,12 @@ export class Fighter implements Entity {
   /** Archer: the string comes back during the wind-up / charge and snaps forward on release. */
   private bowDraw(dt: number) {
     if (this.kit !== "bow") return;
+    if (this.state === S.WIN) {
+      // Show-off bow draw on the victory animation, with real string/arrow motion.
+      this.model.draw = this.stateT >= 0.55 && this.stateT < 1.35
+        ? Math.min(1, (this.stateT - 0.55) / 0.32) : 0;
+      return;
+    }
     const drawing = this.poseName === "bow_w" || this.poseName === "rain_w" || this.poseName === "charge";
     this.model.draw = drawing ? Math.min(this.model.draw + dt * 8, 1) : 0;
   }
@@ -1593,9 +1604,13 @@ export class Fighter implements Entity {
     this.model.hurt = this.state === S.HITSTUN || this.state === S.STAGGER;
     this.model.bloodFestivalT = this.kit === "sickle" ? this.bloodFestivalT : 0;
     this.model.chainFuryT = this.kit === "chainblade" ? this.chainFuryT : 0;
-    this.model.chainPose = this.kit === "chainblade" ? this.poseName : "idle";
+    this.model.chainPose = this.kit === "chainblade"
+      ? (this.state === S.WIN && this.stateT >= 0.55 && this.stateT <= 2.30 ? "cbz_w" : this.poseName)
+      : "idle";
     this.model.chainExtended = this.kit === "chainblade" && (this.chainFuryT > 0 ||
       ["cbz_w", "cbz_s", "cbx_w", "cbx1_s", "cbx2_s", "cbx3_s", "cbh_w", "cbh_s", "cbv_w", "cbv_s"].includes(this.poseName));
+    this.model.presentationT = this.stateT;
+    this.model.presentationMode = "victory";
     this.model.glaivePose = this.kit === "glaive" ? (this.state === S.WIN ? "show_baton" : this.poseName) : "idle";
     this.model.blend(this.state === S.WIN
       ? presentationPose(this.look.name, this.stateT, this.poses.idle, "victory")

@@ -1,3 +1,4 @@
+// FIGHT_ROYALE_ARENA_REACTIONS_V1
 // FIGHT_ROYALE_VICTORY_HIGHLIGHTS_V1
 // FIGHT_ROYALE_PERFECT_DODGE_V1_NOV07
 // FIGHT_ROYALE_SMALLER_COMBAT_RINGS_ZAREK_WEAPON_CLASH_V1
@@ -1038,15 +1039,23 @@ export class Game implements MobHost {
       case "ring": fx.ring(v3(a[0]), a[1], a[2], a[3], a[4]); break;
       case "wave": fx.waveRing(v3(a[0]), a[1], a[2]); break;
       case "geyser": fx.geyser(v3(a[0]), a[1], a[2]); break;
-      case "lightning": fx.lightning(v3(a[0]), a[1]); break;
+      case "lightning":
+        fx.lightning(v3(a[0]), a[1]);
+        fx.arenaReaction(v3(a[0]), "arc", 0.75);
+        break;
       case "tele": fx.telegraph(v3(a[0]), a[1], a[2], a[3]); break;
-      case "explosion": fx.explosion(v3(a[0]), a[1], a[2]); break;
+      case "explosion":
+        fx.explosion(v3(a[0]), a[1], a[2]);
+        // Persistent but small cosmetic scorch; the original damage radius is unchanged.
+        fx.arenaReaction(v3(a[0]), "scorch", Math.min(1.1, Math.max(0.4, (a[2] ?? 1) * 0.28)));
+        break;
       case "meteor": fx.meteor(v3(a[0]), a[1], a[2]); break;
       case "smoke": fx.smoke(v3(a[0]), a[1]); break;
       case "orb": fx.bigOrb(v3(a[0]), a[1]); break;
       case "slashes": fx.slashes(v3(a[0]), a[1]); break;
       case "clashBurst": fx.clashBurst(v3(a[0]), a[1], a[2]); break;
       case "dodgeGhost": fx.dodgeGhost(v3(a[0]), a[1], a[2] ?? 0); break;
+      case "arenaReact": fx.arenaReaction(v3(a[0]), a[1], a[2]); break;
       case "impactBurst": fx.impactBurst(v3(a[0]), a[1], a[2], a[3]); break;
       case "impactFrame":
         fx.screenImpact(a[0], a[1], a[2]);
@@ -1056,10 +1065,16 @@ export class Game implements MobHost {
         break;
       case "arrows": fx.arrowRain(v3(a[0]), a[1], a[2], a[3]); break;
       case "embers": fx.embers(v3(a[0]), a[1], a[2]); break;
-      case "rocks": fx.rocks(v3(a[0]), a[1], a[2]); break;
+      case "rocks":
+        fx.rocks(v3(a[0]), a[1], a[2]);
+        fx.arenaReaction(v3(a[0]), "crack", Math.min(1.1, Math.max(0.55, a[2] ?? 1)));
+        break;
       case "num": fx.number(v3(a[0]), a[1], a[2], a[3]); break;
       case "bubble": { const e = this.entities.get(a[0]); if (e) fx.bubble(e.root, a[1]); break; }
-      case "emberPatch": this.emberPatchVisual(a[0], v3(a[1]), a[2], a[3]); break;
+      case "emberPatch":
+        this.emberPatchVisual(a[0], v3(a[1]), a[2], a[3]);
+        fx.arenaReaction(v3(a[1]), "scorch", Math.min(0.85, Math.max(0.4, (a[2] ?? 1) * 0.55)));
+        break;
       case "emberConsume": this.emberConsumeVisual(a[0], v3(a[1]), a[2]); break;
       case "emberGather": this.emberGatherVisual(v3(a[0]), a[1], a[2]); break;
       case "emberCharge": this.emberChargeVisual(a[0], a[1]); break;
@@ -1137,6 +1152,9 @@ export class Game implements MobHost {
     this.swingSound(f, a);
     const el = f.look.element;
     const big = ["z", "x", "c", "v", "heavy", "l3"].includes(f.atkId);
+    // Zarek leaves quick traces only on major glaive swings. Works for CPU and players.
+    if (f.kit === "glaive" && big && f.root.position.y < 2.1)
+      this.fxp("arenaReact", f.root.position.clone(), "arc", 0.68);
     if (el === "earth" && big && a.style !== "iron_tempest") {
       // Earth skills and heavy blows crack the ground in front of the fighter.
       const fwd = new THREE.Vector3(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
@@ -2471,6 +2489,9 @@ export class Game implements MobHost {
         this.fxp("sparks", hitPos, glow, heavy ? 30 : 18, heavy ? 8 : 6, dir);
         this.fxp("flash", hitPos, glow, heavy ? 0.45 : 0.3, 0.14, 0.8);
         if (a.heavy) this.fxp("ring", hitPos, glow, 1.1, 0.35, 0.9);
+        // Heavy sword, hammer and kick hits leave small floor fractures, not bigger rings.
+        if (!ranged && a.type === "melee" && heavy && d.root.position.y < 1.4)
+          this.fxp("arenaReact", d.root.position.clone(), "crack", a.heavy ? 0.72 : 0.48);
         const label = this.plat && d instanceof Fighter ? `${Math.round(d.lastDamage)}%` : `${Math.round(d.lastDamage)}`;
         this.fxp("num", hitPos.clone().add(new THREE.Vector3(0, 0.5, 0)), `${label}${crit ? "!" : ""}`,
           d.team === (this.local?.team ?? 0) && !this.isDuel() ? "#ff7b7b" : crit ? "#ffb347" : "#ffffff", crit ? 1.5 : 1);

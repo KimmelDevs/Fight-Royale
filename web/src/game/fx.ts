@@ -1,3 +1,4 @@
+// FIGHT_ROYALE_ARENA_REACTIONS_V1
 // FIGHT_ROYALE_PERFECT_DODGE_V1_NOV07
 // FIGHT_ROYALE_SMALLER_COMBAT_RINGS_ZAREK_WEAPON_CLASH_V1
 // FIGHT_ROYALE_IMPACT_CLASH_OVERHAUL_V1
@@ -31,6 +32,9 @@ const WRING = new THREE.TorusGeometry(0.91, 0.09, 8, 48).rotateX(Math.PI / 2);
 const GEY = new THREE.CylinderGeometry(0.08, 0.22, 1, 16).translate(0, 0.5, 0);
 const DISC = new THREE.CylinderGeometry(1, 1, 0.01, 40);
 const ROCK = new THREE.DodecahedronGeometry(0.07, 0);
+// ARENA_REACTIONS_V1 shared floor geometry, not attack collision geometry.
+const ARENA_REACTION_STRIP = new THREE.BoxGeometry(1, 0.008, 1);
+const ARENA_REACTION_DISC = new THREE.CircleGeometry(1, 22).rotateX(-Math.PI / 2);
 const MOTE = new THREE.OctahedronGeometry(0.03, 0);
 const rockMats = ["#8a6a48", "#6e5a46", "#a08060", "#5c4a3a"].map((c) => new THREE.MeshLambertMaterial({ color: c }));
 const moteMats = new Map<string, THREE.Material>();
@@ -45,6 +49,9 @@ export class Fx {
   // Impact & Clash Overhaul: screen flashes run on real time through hitstop.
   private screenFlashes: { el: HTMLDivElement; elapsed: number; duration: number; strength: number }[] = [];
   private lastScreenImpact = -1e9;
+  private arenaClock = 0;
+  private arenaActive = 0;
+  private arenaRecent = new Map<string, number>();
 
   constructor(scene: THREE.Scene, camera: THREE.Camera, overlay: HTMLElement | null) {
     this.scene = scene;
@@ -53,6 +60,7 @@ export class Fx {
   }
 
   update(dt: number, realDt: number, w: number, h: number) {
+    this.arenaClock += dt;
     this.items = this.items.filter((u) => u(dt));
     // Update in real time: flashes shouldn't remain on screen during hitstop.
     this.screenFlashes = this.screenFlashes.filter((flash) => {
@@ -85,6 +93,8 @@ export class Fx {
     this.numbers = [];
     for (const flash of this.screenFlashes) flash.el.remove();
     this.screenFlashes = [];
+    this.arenaRecent.clear();
+    this.arenaActive = 0;
   }
 
   private add(obj: THREE.Object3D, u: Updater) {
@@ -297,6 +307,132 @@ export class Fx {
       this.sparks(pos, "#ffffff", isClash || kind === "finish" ? 14 : 8, 8 * weight);
       this.sparks(pos, color, isClash || kind === "finish" ? 14 : 9, 6 * weight);
     }
+  }
+
+  // ARENA_REACTIONS_V1: entirely cosmetic ground stamps. No physics, damage, or hitboxes.
+  // Shared geometry limits allocations; per-mark materials are cleaned up by Fx.add().
+  /** Compact cracks, scorch stains and lightning trails; these are NOT attack indicators. */
+  arenaReaction(pos: THREE.Vector3, kind: string, size = 1) {
+    if (kind !== "crack" && kind !== "scorch" && kind !== "arc") return;
+    if (!Number.isFinite(pos.x) || !Number.isFinite(pos.z) || pos.y > 3.0) return;
+    if (Math.hypot(pos.x, pos.z) > 15.5 || this.arenaActive >= 18) return;
+    const scale = Math.max(0.28, Math.min(size, 1.15));
+    const key = `${kind}:${Math.round(pos.x / 1.35)}:${Math.round(pos.z / 1.35)}`;
+    const last = this.arenaRecent.get(key) ?? -999;
+    const cooldown = kind === "arc" ? 0.25 : kind === "scorch" ? 0.75 : 0.5;
+    if (this.arenaClock - last < cooldown) return;
+    this.arenaRecent.set(key, this.arenaClock);
+    // Avoid an indefinitely growing lookup table in hour-long survival sessions.
+    if (this.arenaRecent.size > 150) this.arenaRecent.clear();
+
+    const root = new THREE.Group();
+    root.position.set(pos.x, 0.038, pos.z);
+    const materials: THREE.MeshBasicMaterial[] = [];
+    const material = (color: string, opacity: number) => {
+      const m = new THREE.MeshBasicMaterial({ color, transparent: true, opacity,
+        depthWrite: false, side: THREE.DoubleSide, polygonOffset: true,
+        polygonOffsetFactor: -2 });
+      m.userData.initialOpacity = opacity;
+      materials.push(m);
+      return m;
+    };
+    const line = (x1: number, z1: number, x2: number, z2: number,
+      thickness: number, depth: number, mat: THREE.MeshBasicMaterial) => {
+      const dx = x2 - x1, dz = z2 - z1;
+      const mesh = new THREE.Mesh(ARENA_REACTION_STRIP, mat);
+      mesh.position.set((x1 + x2) * 0.5, depth, (z1 + z2) * 0.5);
+      mesh.rotation.y = Math.atan2(dx, dz);
+      mesh.scale.set(thickness, 1, Math.hypot(dx, dz));
+      root.add(mesh);
+    };
+    const flatDisc = (x: number, z: number, rx: number, rz: number, depth: number,
+      mat: THREE.MeshBasicMaterial) => {
+      const mesh = new THREE.Mesh(ARENA_REACTION_DISC, mat);
+      mesh.position.set(x, depth, z);
+      mesh.rotation.y = Math.random() * Math.PI;
+      mesh.scale.set(rx, 1, rz);
+      root.add(mesh);
+    };
+
+    let life = 0.45;
+    if (kind === "crack") {
+      life = 4.0;
+      const dark = material("#22282c", 0.85);
+      const edge = material("#b6a38c", 0.27);
+      // Uneven branching fractures; no large circular shockwave or solid ring.
+      const angle0 = Math.random() * Math.PI * 2;
+      for (let arm = 0; arm < 5; arm++) {
+        let x = 0, z = 0;
+        let angle = angle0 + arm * Math.PI * 2 / 5;
+        for (let part = 0; part < 3; part++) {
+          angle += (Math.random() - 0.5) * 0.50;
+          const length = (0.13 + Math.random() * 0.14) * scale;
+          const nx = x + Math.sin(angle) * length;
+          const nz = z + Math.cos(angle) * length;
+          line(x, z, nx, nz, 0.027 * scale, 0.014, edge);
+          line(x, z, nx, nz, 0.015 * scale, 0.021, dark);
+          x = nx; z = nz;
+        }
+      }
+      // A restrained puff of dirt and a few chips, not a huge ground ring.
+      const dustAt = new THREE.Vector3(pos.x, 0.08, pos.z);
+      this.burst(dustAt, DROP, dustMat, 5, 1.25, UP, 1.15, 4.2, 0.38, 0.55, false);
+      this.burst(dustAt, ROCK, rockMats[0], 4, 2.1, UP, 1.1, 12, 0.42, 0.9, false);
+    } else if (kind === "scorch") {
+      life = 5.2;
+      const outer = material("#3a2824", 0.43);
+      const ash = material("#151a1b", 0.31);
+      const ember = material("#9b441c", 0.18);
+      // Irregular, mostly dark patches that sit under existing damaging fire.
+      flatDisc(0, 0, 0.69 * scale, 0.48 * scale, 0.001, outer);
+      flatDisc(0.11 * scale, -0.08 * scale, 0.53 * scale, 0.39 * scale, 0.004, ash);
+      flatDisc(-0.17 * scale, 0.10 * scale, 0.37 * scale, 0.19 * scale, 0.008, ember);
+      for (let i = 0; i < 4; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const r = (0.35 + Math.random() * 0.36) * scale;
+        flatDisc(Math.cos(a) * r, Math.sin(a) * r, 0.09 * scale,
+          0.05 * scale, 0.005 + i * 0.001, outer);
+      }
+    } else {
+      life = 0.54;
+      const blue = material("#2b8eff", 0.93);
+      const white = material("#d6faff", 0.87);
+      const rotation = Math.random() * Math.PI * 2;
+      for (let arm = 0; arm < 3; arm++) {
+        let x = 0, z = 0;
+        let a = rotation + arm * Math.PI * 2 / 3;
+        for (let part = 0; part < 3; part++) {
+          a += (Math.random() - 0.5) * 0.82;
+          const length = (0.16 + Math.random() * 0.11) * scale;
+          const nx = x + Math.sin(a) * length;
+          const nz = z + Math.cos(a) * length;
+          line(x, z, nx, nz, 0.057 * scale, 0.012, blue);
+          line(x, z, nx, nz, 0.018 * scale, 0.019, white);
+          x = nx; z = nz;
+        }
+      }
+    }
+
+    // Mark only the first mesh using each material, so shared materials are freed once.
+    const owned = new Set<THREE.Material>();
+    root.traverse((obj) => {
+      const m = obj as THREE.Mesh;
+      if (m.isMesh && !owned.has(m.material as THREE.Material)) {
+        (m as any).ownsMat = true;
+        owned.add(m.material as THREE.Material);
+      }
+    });
+    this.arenaActive++;
+    let elapsed = 0;
+    this.add(root, (dt) => {
+      elapsed += dt;
+      const f = Math.min(1, elapsed / life);
+      const opacity = kind === "arc" ? Math.pow(1 - f, 1.8)
+        : f < 0.5 ? 1 : (1 - f) * 2;
+      for (const m of materials) m.opacity = m.userData.initialOpacity * opacity;
+      if (elapsed >= life) this.arenaActive = Math.max(0, this.arenaActive - 1);
+      return elapsed < life;
+    });
   }
 
   /** Real-time (not hitstop-scaled) screen flash; throttle multihit spam. */
