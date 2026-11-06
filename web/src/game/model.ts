@@ -1,3 +1,4 @@
+// FIGHT_ROYALE_ZAREK_PROPORTIONATE_GLAIVE_V1
 // FIGHT_ROYALE_SIGNATURE_POSES_V2
 // FIGHT_ROYALE_VICTORY_HIGHLIGHTS_V1
 // MELEE_PROJECTILE_SPRINT_V1_NOV06
@@ -664,6 +665,9 @@ export class FighterModel extends THREE.Group {
   private buildGlaive() {
     const staff = pivot(this.hand_r, [0, 0, 0], [PI / 2, 0, 0]);
     this.glaivePivot = staff;
+    // ZAREK_PROPORTIONATE_GLAIVE_V1: shorten shaft, blades, tip, and offhand grip together.
+    // -22% on procedural bodies; the VRoid hand mount is adjusted separately below.
+    staff.scale.setScalar(0.78);
     mesh(staff, cyl(0.019, 0.022, 1.53, 12), this.tn("#233449"));
     mesh(staff, cyl(0.028, 0.028, 0.42, 12), this.tn("#101a2a"), [0, 0, 0]);
     for (const s of [-1, 1]) {
@@ -1446,7 +1450,7 @@ export class FighterModel extends THREE.Group {
     // A longbow is about 85-90% of body height.
     if (this.kit === "bow") { this.vrmRig.archer = true; this.vrmRig.followArm = 0; this.bowPivot?.scale.setScalar(1.45); }
     // ZAREK_WEAPON_RANGE_MATCH_V1_NOV06: keep Zarek's long double-ended blade visible on VRM bodies.
-    const weaponScale = this.kit === "glaive" ? 0.95 : VRM_WEAPON_SCALE;
+    const weaponScale = this.kit === "glaive" ? 0.87 : VRM_WEAPON_SCALE; // ZAREK_PROPORTIONATE_GLAIVE_V1: total VRoid weapon length about -29%
     for (const h of [this.hand_l, this.hand_r]) h.scale.multiplyScalar(weaponScale);
     JN.forEach((n, i) => this.joints[n].quaternion.copy(save[i]));
     this.hips.position.copy(hipsPos);

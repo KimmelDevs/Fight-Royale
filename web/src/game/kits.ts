@@ -1,3 +1,4 @@
+// FIGHT_ROYALE_ZAREK_EFFECTIVE_RANGE_NERF_V1
 // CONTINUOUS_COMBAT_ASTER_EMBER_V3_NOV06
 // GARRICK_RANGE_WALK_V2
 // SWORD_AND_CYCLONE_V1
@@ -92,6 +93,16 @@ export function attacks(kit: string, element: string): Record<string, Attack> {
   // AIR_COMBAT_V1: shared air commands keep each kit's existing Z/X/C untouched.
   Object.assign(t, airCombatMoves(kit, element, t));
   t.v = bonusSkill(kit, element);
+  // ZAREK_EFFECTIVE_RANGE_NERF_V1: hitboxes now match the smaller double-ended glaive.
+  // Only grounded melee attack data for Zarek is changed: no damage or passive changes.
+  if (kit === "glaive") {
+    for (const key of ["l1", "l2", "l3", "l4", "l5", "heavy", "z", "x", "c", "v"]) {
+      const move = t[key];
+      if (!move || move.type !== "melee") continue;
+      move.reach = Math.round(move.reach * 0.82 * 100) / 100; // -18% hit reach
+      move.lunge = Math.round(move.lunge * 0.80 * 100) / 100; // -20% forward travel
+    }
+  }
   for (const k of Object.keys(t)) {
     t[k].element = element;
     t[k].id = k;

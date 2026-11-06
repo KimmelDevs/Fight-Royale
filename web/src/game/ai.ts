@@ -1,3 +1,4 @@
+// FIGHT_ROYALE_ZAREK_EFFECTIVE_RANGE_NERF_V1
 // EMBER_IGNITION_GUARD_AI_V1_NOV07
 // ENEMY_PROJECTILE_CLASH_AI_V1_NOV06
 // MELEE_PROJECTILE_SPRINT_V1_NOV06
@@ -598,14 +599,14 @@ export class AiBrain implements Brain {
     }
     if (f.stage && Math.abs(o.root.position.y - f.root.position.y) > 1.4 && !RANGED.has(f.kit)) return;
     const ranged = RANGED.has(f.kit);
-    const reach = ranged ? 9 : f.kit === "assassin" || f.kit === "knuckles" || f.kit === "kicks" ? 1.7 : f.kit === "greatsword" ? 2.3 : 1.9;
+    const reach = ranged ? 9 : f.kit === "assassin" || f.kit === "knuckles" || f.kit === "kicks" ? 1.7 : f.kit === "greatsword" ? 2.3 : f.kit === "glaive" ? 1.62 : 1.9;
     this.skillCd -= dt;
     if (this.skillCd <= 0) {
       this.skillCd = rand(this.p.skill[0], this.p.skill[1]);
       for (const key of ["c", "x", "z"].sort(() => Math.random() - 0.5)) {
         const a = f.attacks[key];
         let ok = true;
-        if (a.type === "melee") ok = dist < a.reach + 1.5;
+        if (a.type === "melee") ok = dist < a.reach + (f.kit === "glaive" ? 0.85 : 1.5);
         else if (a.type === "strike") ok = a.at !== "self" || dist < a.radius;
         else if (a.type === "buff") ok = a.mode === "counter" ? dist < 2.5 : f.hp < f.maxHp * 0.7;
         else if (a.type === "blink") ok = (a.mode === "behind" && dist < 6) || (a.mode === "back" && dist < 2.5);

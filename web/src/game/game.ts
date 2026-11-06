@@ -1,3 +1,4 @@
+// FIGHT_ROYALE_ZAREK_EFFECTIVE_RANGE_NERF_V1
 // FIGHT_ROYALE_ARENA_REACTIONS_V1
 // FIGHT_ROYALE_VICTORY_HIGHLIGHTS_V1
 // FIGHT_ROYALE_PERFECT_DODGE_V1_NOV07
@@ -1287,7 +1288,7 @@ export class Game implements MobHost {
         const from = f.root.position.clone();
         const across = opponent.root.position.clone().sub(from).setY(0);
         const length = across.length();
-        if (length > 0.2 && length < 4.6) {
+        if (length > 0.2 && length < 3.85) { // ZAREK_EFFECTIVE_RANGE_NERF_V1
           const dest = opponent.root.position.clone().addScaledVector(across.normalize(), 0.85);
           for (let n = 1; n <= 3; n++) this.laterCombo(f, n * 0.055, () => {
             if (!alive()) return;
@@ -1325,7 +1326,7 @@ export class Game implements MobHost {
             knock: final ? 5.0 : launch ? 0.7 : 0.35,
             stun: final ? .55 : launch ? .4 : .17,
             // ZAREK_WEAPON_RANGE_MATCH_V1_NOV06: use the same visible-length calibration as the glaive.
-            reach: final ? 2.34 : 2.18,
+            reach: final ? 1.92 : 1.79, // ZAREK_EFFECTIVE_RANGE_NERF_V1 (-18%)
             style: final ? "glaive_crescent_final" : launch ? "glaive_crescent_launch" : "glaive_infinite" };
           if (final && !connected) return; // no cinematic finish on missed/blocked starter
           if (launch && f.opponent && !f.opponent.isDown()) {
