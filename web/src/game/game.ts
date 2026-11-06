@@ -1,3 +1,4 @@
+// ZAREK_PROJECTILE_DESTROY_ONLY_V2_NOV07
 // EMBER_IGNITION_GUARD_ZAREK_PROJECTILE_V1_NOV07
 // WEAPON_CONTACT_CLASH_V2_NOV06 — visible projectile and enemy clash impacts, for either side
 // MELEE_PROJECTILE_SPRINT_V1_NOV06
@@ -1712,8 +1713,9 @@ export class Game implements MobHost {
     this.snd("clash", bomb ? 0.95 : 0.85);
     this.add_trauma(bomb ? 0.32 : 0.23);
     this.hitStop(0.085, 0.22);
-    // Zarek earns Momentum from a genuine melee intercept (player or CPU).
-    this.awardZarekClash(defender);
+    // Only an actually destroyed projectile builds Zarek's passive (player or AI).
+    // Bob's bombs explode on contact, so intercepting them does not grant Momentum.
+    if (!bomb) this.awardZarekClash(defender);
     if (bomb && p.atk) {
       // Keep Bob's original blast damage and radius — melee interception is NOT a defuse.
       this.bombBlast(p.shooter, p.atk, p.power, contact, p.team);
@@ -2347,9 +2349,7 @@ export class Game implements MobHost {
         // melee attack. The attacker recoils; Kaizen remains guarding. Guard was
         // already drained in receiveHit(), so enough pressure can still break it.
         if (attacker instanceof Fighter) {
-          // A clash against Kaizen's rotating chain counts as a real weapon clash
-          // for Zarek's round-based Clash Counter.
-          this.awardZarekClash(attacker);
+          // Weapon-on-weapon clashes never award projectile-destruction Momentum.
           attacker.clashRecoil();
         }
         this.snd("clash", 0.9);
@@ -2402,30 +2402,17 @@ export class Game implements MobHost {
         }
         break;
       }
-      case "blocked": {
-        // Only real projectile blocks count as defensive clashes for Zarek.
-        // Ember's beam and passive fire are strikes, not projectile clashes.
-        const projectileClash = ranged && a.type === "projectile" && d instanceof Fighter;
-        this.snd(projectileClash ? "clash" : "block", projectileClash ? 0.88 : 0.7);
-        if (projectileClash) {
-          this.awardZarekClash(d);
-          this.fxp("clashBurst", shieldPos, "#a9eaff", 1.10);
-          this.fxp("sparks", shieldPos, "#d8faff", 34, 8);
-          this.fxp("ring", shieldPos, "#a9eaff", 1.4, 0.21, 0.8);
-        } else if (!ranged && a.type === "melee") this.fxp("clashBurst", shieldPos, "#ffd27a", 0.72);
+      case "blocked":
+        this.snd("block", 0.7);
+        if (!ranged && a.type === "melee") this.fxp("clashBurst", shieldPos, "#ffd27a", 0.72);
         this.fxp("sparks", shieldPos, "#ffd27a", 16, 5, dir.clone().negate().add(new THREE.Vector3(0, 0.3, 0)));
-        this.fxp("flash", shieldPos, projectileClash ? "#c5f4ff" : "#ffd980", 0.35, 0.1, 0.6);
-        this.fxp("num", shieldPos.clone().add(new THREE.Vector3(0, 0.4, 0)),
-          projectileClash ? "CLASH!" : "BLOCK", projectileClash ? "#a9eaff" : "#c9d3e6", projectileClash ? 1.1 : 0.7);
+        this.fxp("flash", shieldPos, "#ffd980", 0.35, 0.1, 0.6);
+        this.fxp("num", shieldPos.clone().add(new THREE.Vector3(0, 0.4, 0)), "BLOCK", "#c9d3e6", 0.7);
         if (!ranged && attacker instanceof Fighter) attacker.model.recoil = 0.6;
         this.add_trauma(0.14);
-        this.hitStop(projectileClash ? 0.085 : 0.04);
+        this.hitStop(0.04);
         break;
-      }
       case "parry":
-        // A perfectly timed projectile deflection also gives Zarek Momentum.
-        if (ranged && a.type === "projectile" && d instanceof Fighter)
-          this.awardZarekClash(d);
         if (!ranged && attacker instanceof Fighter && attacker.onComboParried()) {
           this.delayComboFollowups(attacker, 0.20);
           this.fxp("num", attacker.chest().add(new THREE.Vector3(0, 0.9, 0)),
@@ -2437,7 +2424,7 @@ export class Game implements MobHost {
         } else if (!ranged && attacker instanceof Fighter) attacker.stagger(0.95);
         else if (!ranged && attacker instanceof Mob) attacker.receiveHit(d, { ...a, dmg: 0, knock: 4 }, 0);
         this.snd("parry", 0.9);
-        if ((!ranged && a.type === "melee") || (ranged && a.type === "projectile"))
+        if (!ranged && a.type === "melee")
           this.fxp("clashBurst", shieldPos, "#aee9ff", 1.15);
         this.fxp("sparks", shieldPos, "#aee9ff", 40, 9);
         this.fxp("flash", shieldPos, "#b3f2ff", 0.5, 0.2, 0.9);
@@ -2517,8 +2504,6 @@ export class Game implements MobHost {
   }
 
   private clash(a: Fighter, b: Fighter, pos: THREE.Vector3) {
-    // True blade-to-blade contact rewards Zarek once per weapon clash.
-    for (const f of [a, b]) this.awardZarekClash(f);
     // VEYR_BLOODLUST_CARRION_V7: reward a genuine Carrion Sweep weapon collision.
     if ([a, b].some(f => f.kit === "sickle" && f.atk?.style === "sickle_carrion")) {
       this.fxp("slashes", pos, "#ff527f");
