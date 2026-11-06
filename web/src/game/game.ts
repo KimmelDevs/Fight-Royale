@@ -1,3 +1,4 @@
+// EMBER_DAMAGE_RADIUS_NERF_V2_20261106
 // EMBER_GROUND_HAZARD_AI_V1_NOV06
 // CONTINUOUS_PARRY_AI_V4_NOV06
 // CONTINUOUS_COMBAT_ASTER_EMBER_V3_NOV06
@@ -1801,7 +1802,7 @@ export class Game implements MobHost {
         if (f.look.element === "fire" && f.kit === "mage" &&
             (a.id === "heavy" || a.id === "c") && i === 0) {
           // EMBER_GROUND_HAZARD_AI_V1_NOV06: smaller persistent fire circles (Meteor / charged heavy).
-          this.spawnEmberPatch(f, at, a.id === "c" ? 1.25 : 0.9);
+          this.spawnEmberPatch(f, at, a.id === "c" ? 1.25 : 0.65);
         }
         for (const d of this.enemiesOf(f)) {
           const to = d.root.position.clone().sub(at);
@@ -2148,8 +2149,8 @@ export class Game implements MobHost {
         if (diff.length() > p.radius + enemy.radius * 0.3 || height > 1.5) continue;
         // No stun, launch, or parry from passive ground fire.
         const fire: Attack = { ...owner.attacks.heavy, id: "ember_ground", type: "strike",
-          dmg: 26, guard: 5, knock: 0, stun: 0, heavy: false,
-          effect: "burn", effect_t: 3, effect_p: 18, no_parry: true };
+          dmg: 13, guard: 5, knock: 0, stun: 0, heavy: false,
+          effect: "burn", effect_t: 3, effect_p: 10, no_parry: true };
         const dir = diff.lengthSq() > 0.01 ? diff.normalize() : new THREE.Vector3(0, 0, 1);
         this.applyHit(owner, enemy, fire, 1, enemy.chest(), dir, true);
       }
@@ -2166,7 +2167,7 @@ export class Game implements MobHost {
       (e instanceof Fighter || e instanceof Mob) && !e.isDown() &&
       e.root.position.distanceTo(pos) <= 9 && e.status.has("burn"));
     const patches = this.emberPatches.filter(p => p.ownerId === f.id && p.pos.distanceTo(pos) <= 9);
-    const bonus = Math.min(5, patches.length) * 55 + Math.min(4, burned.length) * 45;
+    const bonus = Math.min(5, patches.length) * 30 + Math.min(4, burned.length) * 25;
     this.fxp("emberCharge", f.id, 0.64);
     if (patches.length) this.fxp("emberConsume", f.id, pos, 9);
     for (const enemy of burned) {
@@ -2191,9 +2192,9 @@ export class Game implements MobHost {
       this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.85, 0)),
         `FINAL IGNITION +${bonus}`, "#fff5bf", 1.05);
       this.snd("fireball", 1.0);
-      const beamHit: Attack = { ...a, type: "strike", dmg: 320 + bonus,
+      const beamHit: Attack = { ...a, type: "strike", dmg: 240 + bonus,
         guard: 75, knock: 7, stun: 0.75, heavy: true,
-        effect: "burn", effect_t: 4, effect_p: 30, no_parry: true };
+        effect: "burn", effect_t: 4, effect_p: 20, no_parry: true };
       for (const enemy of this.enemiesOf(f)) {
         const rel = enemy.chest().sub(start);
         const projection = rel.dot(toward);

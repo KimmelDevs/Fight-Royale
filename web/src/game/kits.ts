@@ -106,7 +106,7 @@ export function attacks(kit: string, element: string): Record<string, Attack> {
 
 /** Which skills carry each element's status effect: [kind, seconds, power, skill keys]. */
 const ELEMENT_EFFECT: Record<string, [StatusKind, number, number, string[]]> = {
-  fire: ["burn", 4, 30, ["z", "x", "c", "v"]],        // Ember
+  fire: ["burn", 4, 20, ["z", "x", "c", "v"]],        // Ember
   flame: ["burn", 4, 25, ["c", "v"]],                 // Vesper: Blade Wave, Judgment
   light: ["weaken", 4, 0.8, ["c", "v"]],              // Aster: Blade Wave, Judgment
   electric: ["paralyze", 2.5, 0, ["x", "c", "v"]],    // Raven
@@ -201,6 +201,8 @@ function mage(element: string): Record<string, Attack> {
   let speed = 15, mul = 1;
   if (element === "electric") { speed = 24; mul = 0.9; }
   else if (element === "water") speed = 13;
+  // EMBER_DAMAGE_RADIUS_NERF_V2_20261106: Ember basic projectiles deal 15% less damage.
+  if (element === "fire") mul = 0.85;
   const t: Record<string, Attack> = {
     l1: a({ type: "projectile", wind: 0.16, active: 0.05, recover: 0.26, dmg: 55 * mul, guard: 15, knock: 1.6, stun: 0.28, speed, pose_w: "m1_w", pose_s: "m1_s", next: "l2" }),
     l2: a({ type: "projectile", wind: 0.16, active: 0.05, recover: 0.28, dmg: 60 * mul, guard: 15, knock: 1.8, stun: 0.3, speed, pose_w: "m2_w", pose_s: "m2_s", next: "l3" }),
@@ -208,10 +210,10 @@ function mage(element: string): Record<string, Attack> {
   };
   if (element === "fire") {
     // Charged basic (heavy) leaves a 20-second fire patch at its impact.
-    t.heavy = a({ type: "strike", wind: 0.15, active: 0.05, recover: 0.55, dmg: 210, guard: 60, knock: 6, stun: 0.7, heavy: true, delay: 0.5, radius: 1.6, style: "explosion", pose_w: "mh_w", pose_s: "mh_s" });
-    t.z = a({ name: "Flame Burst", desc: "Erupt in flames, blasting anyone close away.", cd: 6, type: "strike", at: "self", wind: 0.12, recover: 0.4, dmg: 120, guard: 40, knock: 7, stun: 0.5, delay: 0.05, radius: 2.3, style: "explosion", pose_w: "mh_w", pose_s: "m3_s" });
-    t.x = a({ name: "Fireball Volley", desc: "Hurl a fan of five fireballs.", cd: 7, type: "projectile", wind: 0.2, recover: 0.4, dmg: 40, guard: 12, knock: 2, speed: 16, count: 5, spread: 0.45, pose_w: "m3_w", pose_s: "m3_s" });
-    t.c = a({ name: "Meteor", desc: "Call a meteor down on the enemy's position. Impact leaves burning ground for 20s.", cd: 12, type: "strike", wind: 0.3, recover: 0.6, dmg: 290, guard: 80, knock: 8, stun: 0.9, heavy: true, delay: 0.9, radius: 2.1, style: "meteor", pose_w: "mh_w", pose_s: "mh_s" });
+    t.heavy = a({ type: "strike", wind: 0.15, active: 0.05, recover: 0.55, dmg: 155, guard: 60, knock: 6, stun: 0.7, heavy: true, delay: 0.5, radius: 1.05, style: "explosion", pose_w: "mh_w", pose_s: "mh_s" });
+    t.z = a({ name: "Flame Burst", desc: "Erupt in flames, blasting anyone close away.", cd: 6, type: "strike", at: "self", wind: 0.12, recover: 0.4, dmg: 95, guard: 40, knock: 7, stun: 0.5, delay: 0.05, radius: 2.3, style: "explosion", pose_w: "mh_w", pose_s: "m3_s" });
+    t.x = a({ name: "Fireball Volley", desc: "Hurl a fan of five fireballs.", cd: 7, type: "projectile", wind: 0.2, recover: 0.4, dmg: 31, guard: 12, knock: 2, speed: 16, count: 5, spread: 0.45, pose_w: "m3_w", pose_s: "m3_s" });
+    t.c = a({ name: "Meteor", desc: "Call a meteor down on the enemy's position. Impact leaves burning ground for 20s.", cd: 12, type: "strike", wind: 0.3, recover: 0.6, dmg: 215, guard: 80, knock: 8, stun: 0.9, heavy: true, delay: 0.9, radius: 2.1, style: "meteor", pose_w: "mh_w", pose_s: "mh_s" });
   } else if (element === "electric") {
     t.heavy = a({ type: "strike", wind: 0.15, active: 0.05, recover: 0.5, dmg: 185, guard: 55, knock: 4, stun: 0.8, heavy: true, delay: 0.35, radius: 1.3, style: "lightning", pose_w: "mh_w", pose_s: "mh_s" });
     t.z = a({ name: "Blink", desc: "Flash backward out of danger.", cd: 4, type: "blink", mode: "back", wind: 0.04, recover: 0.15, pose_w: "m1_w", pose_s: "m1_s" });
