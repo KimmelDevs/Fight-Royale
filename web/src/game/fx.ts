@@ -1,3 +1,5 @@
+// FIGHT_ROYALE_SMALLER_COMBAT_RINGS_ZAREK_WEAPON_CLASH_V1
+// FIGHT_ROYALE_IMPACT_CLASH_OVERHAUL_V1
 // Combat VFX: sparks, droplets, flashes, rings, water effects, lightning, meteors, ground
 // markers, floating damage numbers (DOM overlay) and blade trails. Everything self-expires.
 import * as THREE from "three";
@@ -39,6 +41,9 @@ export class Fx {
   overlay: HTMLElement | null;
   private items: Updater[] = [];
   private numbers: { el: HTMLDivElement; pos: THREE.Vector3; t: number }[] = [];
+  // Impact & Clash Overhaul: screen flashes run on real time through hitstop.
+  private screenFlashes: { el: HTMLDivElement; elapsed: number; duration: number; strength: number }[] = [];
+  private lastScreenImpact = -1e9;
 
   constructor(scene: THREE.Scene, camera: THREE.Camera, overlay: HTMLElement | null) {
     this.scene = scene;
@@ -48,6 +53,15 @@ export class Fx {
 
   update(dt: number, realDt: number, w: number, h: number) {
     this.items = this.items.filter((u) => u(dt));
+    // Update in real time: flashes shouldn't remain on screen during hitstop.
+    this.screenFlashes = this.screenFlashes.filter((flash) => {
+      flash.elapsed += realDt;
+      const f = Math.min(flash.elapsed / flash.duration, 1);
+      const appear = Math.min(1, f / 0.13);
+      flash.el.style.opacity = String(flash.strength * appear * Math.pow(1 - f, 2.3));
+      if (f >= 1) { flash.el.remove(); return false; }
+      return true;
+    });
     const p = new THREE.Vector3();
     this.numbers = this.numbers.filter((n) => {
       n.t += realDt;
@@ -68,6 +82,8 @@ export class Fx {
     this.items = [];
     this.numbers.forEach((n) => n.el.remove());
     this.numbers = [];
+    for (const flash of this.screenFlashes) flash.el.remove();
+    this.screenFlashes = [];
   }
 
   private add(obj: THREE.Object3D, u: Updater) {
@@ -84,8 +100,9 @@ export class Fx {
 
   /** Instanced burst of small pieces flying out under gravity. */
   private burst(pos: THREE.Vector3, geo: THREE.BufferGeometry, mat: THREE.Material, amount: number,
-    speed: number, dir: THREE.Vector3 | null, spread: number, gravity: number, life: number, scale: number, align: boolean) {
+    speed: number, dir: THREE.Vector3 | null, spread: number, gravity: number, life: number, scale: number, align: boolean, ownMat = false) {
     const inst = new THREE.InstancedMesh(geo, mat, amount);
+    if (ownMat) (inst as any).ownsMat = true;
     inst.frustumCulled = false;
     const vel: THREE.Vector3[] = [], p: THREE.Vector3[] = [];
     const base = dir && dir.lengthSq() > 0 ? dir.clone().normalize() : null;
@@ -117,7 +134,7 @@ export class Fx {
   }
 
   sparks(pos: THREE.Vector3, color: string, amount = 20, speed = 7, dir: THREE.Vector3 | null = null) {
-    this.burst(pos, BOX, new THREE.MeshBasicMaterial({ color }), amount, speed, dir, dir ? 0.7 : 1, 9, 0.35, 1, true);
+    this.burst(pos, BOX, new THREE.MeshBasicMaterial({ color }), amount, speed, dir, dir ? 0.7 : 1, 9, 0.35, 1, true, true);
   }
 
   splash(pos: THREE.Vector3, amount = 16, size = 1, color = "#3a8cff") {
@@ -178,7 +195,7 @@ export class Fx {
       const progress = Math.min(t / 0.26, 1);
       const fade = Math.pow(1 - progress, 1.4);
       root.quaternion.copy(this.camera.quaternion);
-      halo.scale.setScalar(size * (0.15 + 1.25 * (1 - (1 - progress) ** 3)));
+      halo.scale.setScalar(size * 0.5 * (0.15 + 1.25 * (1 - (1 - progress) ** 3))); // SMALLER_COMBAT_RINGS_V1
       streaks.scale.setScalar(size * (1.15 - 0.25 * progress));
       streaks.rotation.z = progress * 0.18;
       core.scale.setScalar(size * (0.17 - progress * 0.11));
@@ -187,6 +204,91 @@ export class Fx {
     });
     // The shared geometry is kept, but each individual effect material is freed.
     for (const mesh of [halo, core, ...streaks.children]) (mesh as any).ownsMat = true;
+  }
+
+  /** IMPACT_OVERHAUL_V1: short-lived anime impact spokes, concentric halos,
+   * and directional fragments. Rendered at the actual hit position. */
+  impactBurst(pos: THREE.Vector3, color: string, power = 1, kind = "hit") {
+    const weight = Math.max(0.4, Math.min(power, 2.4));
+    const isClash = kind === "clash" || kind === "projectile";
+    const group = new THREE.Group();
+    group.position.copy(pos);
+    const faded: { material: THREE.MeshBasicMaterial; alpha: number }[] = [];
+    const mat = (hex: string, alpha: number) => {
+      const m = new THREE.MeshBasicMaterial({ color: hex, transparent: true, opacity: alpha,
+        depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+      faded.push({ material: m, alpha });
+      return m;
+    };
+    const ringA = new THREE.Mesh(CLASH_HALO, mat("#ffffff", 0.96));
+    const ringB = new THREE.Mesh(CLASH_HALO, mat(color, 0.85));
+    group.add(ringA, ringB);
+    const core = new THREE.Mesh(SPH, mat("#fffbea", 0.83));
+    group.add(core);
+    const spokes = new THREE.Group();
+    const count = kind === "finish" ? 12 : isClash ? 10 : 7;
+    for (let i = 0; i < count; i++) {
+      const spike = new THREE.Mesh(CLASH_STREAK, mat(i % 3 === 0 ? "#ffffff" : color,
+        i % 3 === 0 ? 0.92 : 0.76));
+      spike.rotation.z = i * Math.PI * 2 / count + 0.14;
+      spike.position.set(Math.cos(spike.rotation.z) * 0.3, Math.sin(spike.rotation.z) * 0.3, 0);
+      spike.scale.set(0.85 + (i % 3) * 0.17, 0.85, 1);
+      spokes.add(spike);
+    }
+    group.add(spokes);
+    // Each spawned material belongs to this effect; shared geometry is never disposed.
+    group.traverse((obj) => { if ((obj as THREE.Mesh).isMesh) (obj as any).ownsMat = true; });
+    const duration = kind === "finish" ? 0.40 : isClash ? 0.32 : 0.22;
+    let t = 0;
+    this.add(group, (dt) => {
+      t += dt;
+      const f = Math.min(t / duration, 1);
+      group.quaternion.copy(this.camera.quaternion);
+      const ease = 1 - Math.pow(1 - f, 3);
+      const fading = Math.pow(1 - f, 1.6);
+      ringA.scale.setScalar(weight * 0.5 * (0.15 + 1.45 * ease)); // SMALLER_COMBAT_RINGS_V1
+      ringB.scale.setScalar(weight * 0.5 * (0.08 + 1.95 * ease)); // SMALLER_COMBAT_RINGS_V1
+      ringB.rotation.z = f * 0.26;
+      spokes.scale.setScalar(weight * (0.8 + 0.5 * ease));
+      spokes.rotation.z = f * 0.23;
+      core.scale.setScalar(weight * Math.max(0.04, 0.18 - f * 0.14));
+      for (const item of faded) item.material.opacity = item.alpha * fading;
+      return t < duration;
+    });
+    // Existing regular-hit sparks stay in place. Only powerful impacts get extras,
+    // limiting overdraw during fast continuous combos.
+    if (weight >= 1) {
+      this.sparks(pos, "#ffffff", isClash || kind === "finish" ? 14 : 8, 8 * weight);
+      this.sparks(pos, color, isClash || kind === "finish" ? 14 : 9, 6 * weight);
+    }
+  }
+
+  /** Real-time (not hitstop-scaled) screen flash; throttle multihit spam. */
+  screenImpact(kind: string, color: string, power = 1) {
+    if (typeof document === "undefined" || !document.body) return;
+    const now = performance.now();
+    if (kind !== "finish" && now - this.lastScreenImpact < 90) return;
+    this.lastScreenImpact = now;
+    const strength = Math.max(0.2, Math.min(power, 1.2));
+    const life = kind === "finish" ? 0.34 : kind === "parry" ? 0.19 : 0.14;
+    const el = document.createElement("div");
+    el.setAttribute("aria-hidden", "true");
+    el.style.position = "fixed";
+    el.style.inset = "0";
+    el.style.zIndex = "999";
+    el.style.pointerEvents = "none";
+    if (kind === "finish") {
+      // The dark outer frame and white center mimic an anime finishing impact.
+      el.style.background = "radial-gradient(ellipse at 50% 46%, rgba(255,255,255,0.94) 0%, rgba(255,255,255,0.68) 19%, rgba(0,0,0,0.10) 44%, rgba(0,0,0,0.83) 100%)";
+    } else {
+      el.style.background = `radial-gradient(ellipse at 50% 48%, rgba(255,255,255,0.65) 0%, ${color}30 29%, transparent 65%)`;
+      el.style.boxShadow = `inset 0 0 110px 22px ${color}55`;
+    }
+    el.style.opacity = "0";
+    document.body.appendChild(el);
+    this.screenFlashes.push({ el, elapsed: 0, duration: life, strength });
+    // Prevent too many overlapping DOM nodes during very rapid multi-hit skills.
+    while (this.screenFlashes.length > 3) this.screenFlashes.shift()!.el.remove();
   }
 
   flash(pos: THREE.Vector3, color: string, size = 0.5, dur = 0.14, opacity = 0.8) {

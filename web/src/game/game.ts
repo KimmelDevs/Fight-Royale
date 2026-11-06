@@ -1,3 +1,5 @@
+// FIGHT_ROYALE_SMALLER_COMBAT_RINGS_ZAREK_WEAPON_CLASH_V1
+// FIGHT_ROYALE_IMPACT_CLASH_OVERHAUL_V1
 // ZAREK_PROJECTILE_DESTROY_ONLY_V2_NOV07
 // EMBER_IGNITION_GUARD_ZAREK_PROJECTILE_V1_NOV07
 // WEAPON_CONTACT_CLASH_V2_NOV06 — visible projectile and enemy clash impacts, for either side
@@ -361,6 +363,7 @@ export class Game implements MobHost {
   private stopScale = 1;
   private trauma = 0;
   private shakeT = 0;
+  private impactCameraPunch = 0;
   private nextId = 1;
   private events: any[] = [];
   private snapT = 0;
@@ -987,6 +990,13 @@ export class Game implements MobHost {
       case "orb": fx.bigOrb(v3(a[0]), a[1]); break;
       case "slashes": fx.slashes(v3(a[0]), a[1]); break;
       case "clashBurst": fx.clashBurst(v3(a[0]), a[1], a[2]); break;
+      case "impactBurst": fx.impactBurst(v3(a[0]), a[1], a[2], a[3]); break;
+      case "impactFrame":
+        fx.screenImpact(a[0], a[1], a[2]);
+        if (a[0] === "clash" || a[0] === "finish" || a[0] === "guardbreak")
+          Sound.play("hit_big", a[0] === "finish" ? 0.48 : 0.23);
+        this.impactCameraPunch = Math.max(this.impactCameraPunch, Math.min(a[2] ?? 0.7, 1.2));
+        break;
       case "arrows": fx.arrowRain(v3(a[0]), a[1], a[2], a[3]); break;
       case "embers": fx.embers(v3(a[0]), a[1], a[2]); break;
       case "rocks": fx.rocks(v3(a[0]), a[1], a[2]); break;
@@ -1005,8 +1015,14 @@ export class Game implements MobHost {
   /** Freeze-frame on impact (host / offline only; guests just render snapshots). */
   hitStop(dur: number, scale = 0.03) {
     if (this.cfg.role === "client") return;
-    this.timeScale = scale;
-    this.stopUntil = performance.now() + dur * 1000;
+    const now = performance.now();
+    if (this.stopUntil <= now) {
+      this.timeScale = scale;
+      this.stopUntil = now + dur * 1000;
+    } else {
+      this.timeScale = Math.min(this.timeScale, scale);
+      this.stopUntil = Math.max(this.stopUntil, now + dur * 1000);
+    }
   }
 
   banner(text: string, color: string, sub = "", hold = 0) {
@@ -1703,6 +1719,8 @@ export class Game implements MobHost {
     if (p.done) return;
     p.done = true;
     const bomb = !!p.atk && (p.atk.type === "lob" || p.style === "bomb");
+    this.fxp("impactBurst", contact, defender.look.glow, bomb ? 1.55 : 1.35, "projectile");
+    this.fxp("impactFrame", "projectile", defender.look.glow, bomb ? 0.75 : 0.55);
     this.fxp("clashBurst", contact, defender.look.glow, bomb ? 1.2 : 1.05);
     this.fxp("sparks", contact, "#fff3ce", 40, 9);
     this.fxp("sparks", contact, p.color, 20, 7);
@@ -2345,6 +2363,8 @@ export class Game implements MobHost {
     const shieldPos = d instanceof Fighter ? d.model.shieldNode.getWorldPosition(new THREE.Vector3()) : hitPos;
     switch (result) {
       case "kaizen_guard_clash": {
+        this.fxp("impactBurst", shieldPos, "#ffedbc", 1.65, "clash");
+        this.fxp("impactFrame", "clash", "#ffe8b0", 0.75);
         // KAIZEN_GUARD_CLASH_V8: successful spinning-block contact clashes with a
         // melee attack. The attacker recoils; Kaizen remains guarding. Guard was
         // already drained in receiveHit(), so enough pressure can still break it.
@@ -2357,7 +2377,7 @@ export class Game implements MobHost {
         this.fxp("sparks", shieldPos, "#fff0c2", 38, 8);
         this.fxp("sparks", shieldPos, "#d65a6e", 12, 5);
         this.fxp("flash", shieldPos, "#ffe0b0", 0.46, 0.15, 0.85);
-        this.fxp("ring", shieldPos, "#ffe0b0", 1.7, 0.25, 0.8);
+        this.fxp("ring", shieldPos, "#ffe0b0", 0.85, 0.25, 0.8);
         this.fxp("num", shieldPos.clone().add(new THREE.Vector3(0, 0.5, 0)),
           "CLASH!", "#ffe08a", 1.1);
         this.add_trauma(0.3);
@@ -2367,6 +2387,13 @@ export class Game implements MobHost {
       case "hit": case "crit": case "ko": {
         const crit = d.lastCrit;
         this.hitSound(attacker, a, crit);
+        // Full-screen finish only for duel fighters and bosses, not every survival mob.
+        const cinematicKo = result === "ko" && (d instanceof Fighter || (d instanceof Mob && d.def.boss));
+        if (!ranged || a.heavy || crit || result === "ko")
+          this.fxp("impactBurst", hitPos, glow, cinematicKo ? 2.0 : heavy || crit ? 1.25 : 0.65,
+            cinematicKo ? "finish" : heavy || crit ? "heavy" : "hit");
+        if (cinematicKo) this.fxp("impactFrame", "finish", glow, 1.0);
+        else if (heavy || crit) this.fxp("impactFrame", "heavy", glow, crit ? 0.75 : 0.58);
         // Striking an enemy with a real melee swing gets a smaller version of the
         // weapon-impact starburst. No CLASH label: this was a damage hit, not a parry.
         if (!ranged && a.type === "melee") {
@@ -2375,7 +2402,7 @@ export class Game implements MobHost {
         }
         this.fxp("sparks", hitPos, glow, heavy ? 30 : 18, heavy ? 8 : 6, dir);
         this.fxp("flash", hitPos, glow, heavy ? 0.45 : 0.3, 0.14, 0.8);
-        if (a.heavy) this.fxp("ring", hitPos, glow, 2.2, 0.35, 0.9);
+        if (a.heavy) this.fxp("ring", hitPos, glow, 1.1, 0.35, 0.9);
         const label = this.plat && d instanceof Fighter ? `${Math.round(d.lastDamage)}%` : `${Math.round(d.lastDamage)}`;
         this.fxp("num", hitPos.clone().add(new THREE.Vector3(0, 0.5, 0)), `${label}${crit ? "!" : ""}`,
           d.team === (this.local?.team ?? 0) && !this.isDuel() ? "#ff7b7b" : crit ? "#ffb347" : "#ffffff", crit ? 1.5 : 1);
@@ -2403,6 +2430,10 @@ export class Game implements MobHost {
         break;
       }
       case "blocked":
+        if (ranged && a.type === "projectile")
+          this.fxp("impactBurst", shieldPos, "#a9e8ff", 0.88, "block");
+        else if (!ranged && a.type === "melee")
+          this.fxp("impactBurst", shieldPos, "#ffe19c", 0.76, "block");
         this.snd("block", 0.7);
         if (!ranged && a.type === "melee") this.fxp("clashBurst", shieldPos, "#ffd27a", 0.72);
         this.fxp("sparks", shieldPos, "#ffd27a", 16, 5, dir.clone().negate().add(new THREE.Vector3(0, 0.3, 0)));
@@ -2413,6 +2444,8 @@ export class Game implements MobHost {
         this.hitStop(0.04);
         break;
       case "parry":
+        this.fxp("impactBurst", shieldPos, "#b9f5ff", 1.65, "clash");
+        this.fxp("impactFrame", "parry", "#b9f5ff", 0.72);
         if (!ranged && attacker instanceof Fighter && attacker.onComboParried()) {
           this.delayComboFollowups(attacker, 0.20);
           this.fxp("num", attacker.chest().add(new THREE.Vector3(0, 0.9, 0)),
@@ -2428,7 +2461,7 @@ export class Game implements MobHost {
           this.fxp("clashBurst", shieldPos, "#aee9ff", 1.15);
         this.fxp("sparks", shieldPos, "#aee9ff", 40, 9);
         this.fxp("flash", shieldPos, "#b3f2ff", 0.5, 0.2, 0.9);
-        this.fxp("ring", shieldPos, "#b3f2ff", 1.6, 0.35, 0.9);
+        this.fxp("ring", shieldPos, "#b3f2ff", 0.8, 0.35, 0.9);
         this.fxp("num", shieldPos.clone().add(new THREE.Vector3(0, 0.5, 0)), "PARRY!", "#8fe6ff", 1.4);
         this.add_trauma(0.4);
         // Keep the classic dramatic PARRY slow motion, slightly stronger for
@@ -2459,6 +2492,8 @@ export class Game implements MobHost {
         break;
       }
       case "guard_break":
+        this.fxp("impactBurst", hitPos, "#ff9f43", 1.65, "clash");
+        this.fxp("impactFrame", "guardbreak", "#ff9f43", 0.85);
         this.fxp("sparks", hitPos, "#ffb347", 40, 9);
         this.fxp("flash", hitPos, "#ffb34d", 0.5, 0.2, 0.9);
         this.fxp("num", hitPos.clone().add(new THREE.Vector3(0, 0.55, 0)), "GUARD BREAK", "#ff8a50", 1.2);
@@ -2504,6 +2539,11 @@ export class Game implements MobHost {
   }
 
   private clash(a: Fighter, b: Fighter, pos: THREE.Vector3) {
+    this.fxp("impactBurst", pos, "#ffedb7", 1.95, "clash");
+    this.fxp("impactFrame", "clash", "#ffe5a2", 0.80);
+    // ZAREK_WEAPON_CLASH_MOMENTUM_V1: reward genuine opposing melee weapon contact,
+    // not passive blocks, parries, shield hits or projectile defenses.
+    for (const fighter of [a, b]) this.awardZarekClash(fighter);
     // VEYR_BLOODLUST_CARRION_V7: reward a genuine Carrion Sweep weapon collision.
     if ([a, b].some(f => f.kit === "sickle" && f.atk?.style === "sickle_carrion")) {
       this.fxp("slashes", pos, "#ff527f");
@@ -2517,7 +2557,7 @@ export class Game implements MobHost {
     this.fxp("sparks", pos, a.look.glow, 16, 7);
     this.fxp("sparks", pos, b.look.glow, 16, 7);
     this.fxp("flash", pos, "#fff2cc", 0.55, 0.18, 0.95);
-    this.fxp("ring", pos, "#ffe699", 3, 0.45, 0.9);
+    this.fxp("ring", pos, "#ffe699", 1.5, 0.45, 0.9);
     this.fxp("num", pos.clone().add(new THREE.Vector3(0, 0.45, 0)), "CLASH!", "#ffe08a", 1.3);
     this.snd("clash", 1);
     this.add_trauma(0.45);
@@ -2581,6 +2621,7 @@ export class Game implements MobHost {
   // --- rounds -----------------------------------------------------------------------------
   /** A fighter crossed the blast zone: burst at the screen edge, shake, lose a stock. */
   private onBlast(f: Fighter) {
+    this.fxp("impactFrame", "finish", f.look.glow, 0.85);
     const b = STAGE.blast;
     const p = f.root.position;
     const at = new THREE.Vector3(Math.max(b.l + 1.5, Math.min(b.r - 1.5, p.x)), Math.max(b.b + 1.5, Math.min(b.t - 1.5, p.y)), 0);
@@ -2951,6 +2992,11 @@ export class Game implements MobHost {
     cam.position.x += 0.22 * sh * Math.sin(this.shakeT * 1.7);
     cam.position.y += 0.16 * sh * Math.sin(this.shakeT * 2.3);
     cam.rotateZ(0.04 * sh * Math.sin(this.shakeT * 1.1));
+    // Brief visual camera punch; never moves character hitboxes or changes damage.
+    this.impactCameraPunch = Math.max(0, this.impactCameraPunch - dt * 6.5);
+    if (this.impactCameraPunch > 0) {
+      cam.position.lerp(look, Math.min(0.095, this.impactCameraPunch * 0.065));
+    }
     this.sun.target.position.copy(look);
     this.sun.position.copy(look).addScaledVector(M.LIGHT_DIR, 30);
   }
