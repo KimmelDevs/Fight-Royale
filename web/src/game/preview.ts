@@ -1,9 +1,11 @@
+// FIGHT_ROYALE_VICTORY_HIGHLIGHTS_V1
 // Turntable preview for the character select screen.
 import * as THREE from "three";
 import * as M from "./mat";
 import { FighterModel } from "./model";
 import * as Kits from "./kits";
 import type { Look } from "./roster";
+import { presentationPose } from "./presentation";
 
 export class Preview {
   private renderer: THREE.WebGLRenderer;
@@ -12,7 +14,9 @@ export class Preview {
   private stand = new THREE.Group();
   private model: FighterModel | null = null;
   private poses: Record<string, Kits.Pose> = {};
-  private pose = "win";
+  private pose = "idle";
+  private mode: "select" | "victory" = "select";
+  private lookName = "";
   private poseT = 0;
   private spin = 0;
   private raf = 0;
@@ -51,10 +55,13 @@ export class Preview {
     this.raf = requestAnimationFrame(loop);
   }
 
+  setMode(mode: "select" | "victory") { this.mode = mode; this.poseT = 0; }
+
   setLook(look: Look | null) {
     if (this.model) this.stand.remove(this.model);
     this.model = null;
     if (!look) return;
+    this.lookName = look.name;
     const model = new FighterModel(look);
     this.model = model;
     this.onLoading(model.loading);
@@ -62,7 +69,7 @@ export class Preview {
     this.model.traverse((o) => { if ((o as THREE.Mesh).isMesh) o.castShadow = !(o as any).userData.outline; });
     this.stand.add(this.model);
     this.poses = Kits.poses(look.kit);
-    this.pose = "win";
+    this.pose = "idle";
     this.poseT = 0;
   }
 
@@ -79,8 +86,9 @@ export class Preview {
     this.stand.rotation.y = Math.sin(this.spin) * 0.6;
     if (this.model) {
       this.poseT += dt;
-      if (this.pose === "win" && this.poseT > 1.1) this.pose = "idle";
-      this.model.blend(this.poses[this.pose], dt, 6);
+      // Unique, looping VRM-compatible presentation; visual only.
+      this.model.glaivePose = this.lookName.toLowerCase() === "zarek" ? "show_baton" : "idle";
+      this.model.blend(presentationPose(this.lookName, this.poseT, this.poses.idle, this.mode), dt, 9);
     }
     M.updateLight(this.camera);
     this.renderer.render(this.scene, this.camera);

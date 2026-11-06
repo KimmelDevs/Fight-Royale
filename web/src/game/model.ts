@@ -1,3 +1,4 @@
+// FIGHT_ROYALE_VICTORY_HIGHLIGHTS_V1
 // MELEE_PROJECTILE_SPRINT_V1_NOV06
 // CONTINUOUS_COMBAT_ASTER_EMBER_V3_NOV06
 // Procedural cel-shaded fighter. Faces +Z. Right hand (-X side) holds the main weapon.
@@ -1343,6 +1344,10 @@ export class FighterModel extends THREE.Group {
       };
       const a = angles[this.glaivePose] ?? angles.idle;
       const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(...a, "YXZ"));
+      // Show-only double-glaive baton spin, rotating about an axis perpendicular to the pole.
+      if (this.glaivePose === "show_baton") {
+        q.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), this.t * 9.5));
+      }
       // Live figure-eight spin around the weapon shaft (kept local so both hands follow).
       if (this.glaivePose === "glz_s" || this.glaivePose === "gl3_s" ||
           this.glaivePose === "glc_launch") {

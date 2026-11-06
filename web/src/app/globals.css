@@ -269,3 +269,31 @@ input:focus { border-color: #e6c26e; }
 .credits { font-size: 11px; color: #8a93b8; margin: 6px 0 0; text-align: center; }
 .model-loading { position: absolute; left: 50%; top: 45%; transform: translate(-50%, -50%); padding: 8px 16px; border-radius: 10px;
   background: rgba(10, 14, 32, 0.7); color: #e8ecff; font-weight: 700; font-size: 14px; pointer-events: none; }
+
+/* FIGHT_ROYALE_VICTORY_HIGHLIGHTS_V1: compact results overlay and VRM celebration. */
+.over:has(.match-highlights-layout) { background: rgba(6, 12, 32, .72); gap: 8px; padding: 14px; box-sizing: border-box; z-index: 12; overflow-y: auto; }
+.over:has(.match-highlights-layout) > .txt { font-size: clamp(32px, 5vw, 58px); line-height: 1; }
+.over:has(.match-highlights-layout) > .bsub { font-size: 13px; text-align: center; }
+.match-highlights-layout { width: min(790px, 96vw); display: grid; grid-template-columns: minmax(170px, .8fr) minmax(280px, 1.45fr); align-items: stretch; gap: 12px; max-height: min(54vh, 410px); }
+.victory-character { background: linear-gradient(145deg, rgba(56,74,130,.87), rgba(10,19,48,.9)); border: 1px solid rgba(230,194,110,.5); border-radius: 14px; position: relative; overflow: hidden; min-height: 170px; display: flex; flex-direction: column; align-items: center; }
+.victory-character-canvas { width: 100%; min-height: 125px; height: 100%; flex: 1; display: block; }
+.victory-character > b { position: absolute; bottom: 22px; font-size: 15px; color: #fff4d2; text-shadow: 0 1px 5px #000; }
+.victory-character > span { position: absolute; bottom: 8px; font-size: 9px; letter-spacing: .17em; color: #e6c26e; }
+.match-highlights { min-width: 0; overflow-y: auto; background: rgba(8,18,44,.95); border: 1px solid rgba(179,197,237,.35); border-radius: 14px; padding: 13px; color: #e7efff; }
+.highlight-heading { text-align: center; font-weight: 900; letter-spacing: .14em; color: #ffe08a; font-size: 15px; margin-bottom: 9px; }
+.highlight-finisher { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; background: rgba(230,194,110,.1); border-left: 3px solid #e6c26e; border-radius: 6px; }
+.highlight-finisher span { color: #ffdf89; font-size: 10px; letter-spacing: .12em; font-weight: 800; }
+.highlight-finisher b { color: #fff; font-size: 14px; }
+.highlight-finisher em { font-size: 11px; color: #b9c6e6; }
+.highlight-fighters { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; margin-top: 10px; }
+.highlight-fighter { background: rgba(47,65,111,.4); border: 1px solid rgba(170,194,255,.17); padding: 9px; border-radius: 8px; min-width: 0; }
+.highlight-fighter strong { display: block; font-size: 13px; padding-bottom: 5px; overflow-wrap: anywhere; }
+.highlight-fighter > div { display: flex; justify-content: space-between; gap: 8px; margin-top: 5px; font-size: 11px; }
+.highlight-fighter > div span { color: #bac7e6; }
+.highlight-fighter > div b { color: #fff; white-space: nowrap; }
+@media (max-width: 620px) {
+  .match-highlights-layout { grid-template-columns: 1fr; max-height: 50vh; overflow-y: auto; }
+  .victory-character { display: none; }
+  .highlight-fighters { grid-template-columns: 1fr 1fr; }
+  .over:has(.match-highlights-layout) { justify-content: flex-start; padding-top: 8vh; }
+}

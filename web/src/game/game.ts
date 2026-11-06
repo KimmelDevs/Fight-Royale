@@ -1,3 +1,4 @@
+// FIGHT_ROYALE_VICTORY_HIGHLIGHTS_V1
 // FIGHT_ROYALE_PERFECT_DODGE_V1_NOV07
 // FIGHT_ROYALE_SMALLER_COMBAT_RINGS_ZAREK_WEAPON_CLASH_V1
 // FIGHT_ROYALE_IMPACT_CLASH_OVERHAUL_V1
@@ -69,7 +70,17 @@ export type UiEvent =
   | { type: "perks"; options: Perk[] }
   | { type: "over"; text: string; sub: string; color: string }
   | { type: "reward"; reason: "duel" | "team" | "survival"; gold: number }
-  | { type: "result"; winner: number };
+  | { type: "result"; winner: number }
+  | { type: "highlights"; summary: MatchHighlights };
+
+export interface HighlightFighter {
+  name: string; peer: string; team: number; glow: string;
+  totalDamage: number; hits: number; bestCombo: number; clashes: number; perfectDodges: number;
+}
+export interface MatchHighlights {
+  fighters: HighlightFighter[];
+  finisher: { fighter: string; move: string; damage: number } | null;
+}
 
 const v3 = (a: any) => a instanceof THREE.Vector3 ? a : new THREE.Vector3(a.x ?? a[0], a.y ?? a[1], a.z ?? a[2]);
 const DUEL_RADIUS = 7;
@@ -331,6 +342,37 @@ export class Game implements MobHost {
   input = new Input();
   localInput: RawInput = { attack: false, block: false, jump: false, skill: "", mx: 0, mz: 0 };
   onEvent: (e: UiEvent) => void = () => {};
+  // Per-series statistics; remain across rounds, reset on rematch.
+  private highlightRecords = new Map<string, HighlightFighter & { combo: number; lastHit: number }>();
+  private highlightFinisher: MatchHighlights["finisher"] = null;
+  private highlightKey(f: Fighter) { return `${f.team}:${f.owner}:${f.look.name}`; }
+  private highlightRecord(f: Fighter) {
+    const key = this.highlightKey(f);
+    let rec = this.highlightRecords.get(key);
+    if (!rec) {
+      rec = { name: f.look.name, peer: f.owner, team: f.team, glow: f.look.glow,
+        totalDamage: 0, hits: 0, bestCombo: 0, clashes: 0, perfectDodges: 0,
+        combo: 0, lastHit: -999 };
+      this.highlightRecords.set(key, rec);
+    }
+    return rec;
+  }
+  private highlightHit(f: Fighter, a: Attack, damage: number, isKo: boolean) {
+    const r = this.highlightRecord(f);
+    r.hits++;
+    r.totalDamage += Math.max(0, damage);
+    r.combo = this.time - r.lastHit <= 1.65 ? r.combo + 1 : 1;
+    r.lastHit = this.time;
+    r.bestCombo = Math.max(r.bestCombo, r.combo);
+    if (isKo) this.highlightFinisher = { fighter: f.look.name,
+      move: a.name || (a.heavy ? "Heavy Strike" : a.id.startsWith("l") ? "Light Combo" : a.id.replace(/_/g, " ")),
+      damage: Math.round(Math.max(0, damage)) };
+  }
+  private matchHighlights(): MatchHighlights {
+    const fighters = [...this.highlightRecords.values()].map(({ combo, lastHit, ...r }) => ({
+      ...r, totalDamage: Math.round(r.totalDamage) }));
+    return { fighters, finisher: this.highlightFinisher };
+  }
 
   fighters: Fighter[] = [];
   mobs: Mob[] = [];
@@ -537,6 +579,8 @@ export class Game implements MobHost {
     if (this.cfg.role === "client") return;
     // Rematch is a fresh best-of-three series, not another round of the old match.
     this.matchWins = [0, 0];
+    this.highlightRecords.clear();
+    this.highlightFinisher = null;
     this.emit(["roundScore", 0, 0]);
     this.startRound();
   }
@@ -724,6 +768,7 @@ export class Game implements MobHost {
     f.id = id || this.nextId++;
     f.team = team;
     f.owner = slot.peer;
+    this.highlightRecord(f);
     f.puppet = this.cfg.role === "client";
     f.arenaRadius = this.cfg.mode === "survival" ? SURVIVAL_RADIUS : DUEL_RADIUS;
     if (this.plat) {
@@ -1731,6 +1776,7 @@ export class Game implements MobHost {
     if (p.done) return;
     p.done = true;
     const bomb = !!p.atk && (p.atk.type === "lob" || p.style === "bomb");
+    if (!bomb) this.highlightRecord(defender).clashes++;
     this.fxp("impactBurst", contact, defender.look.glow, bomb ? 1.55 : 1.35, "projectile");
     this.fxp("impactFrame", "projectile", defender.look.glow, bomb ? 0.75 : 0.55);
     this.fxp("clashBurst", contact, defender.look.glow, bomb ? 1.2 : 1.05);
@@ -2406,6 +2452,7 @@ export class Game implements MobHost {
         break;
       }
       case "hit": case "crit": case "ko": {
+        if (attacker instanceof Fighter) this.highlightHit(attacker, a, d.lastDamage, result === "ko");
         const crit = d.lastCrit;
         this.hitSound(attacker, a, crit);
         // Full-screen finish only for duel fighters and bosses, not every survival mob.
@@ -2529,6 +2576,7 @@ export class Game implements MobHost {
         break;
       case "perfect_dodge": {
         const defender = d as Fighter;
+        this.highlightRecord(defender).perfectDodges++;
         // No extra i-frames or damage immunity: this was already a legitimate
         // dash-invulnerable hit, with exactly one Perfect Dodge per dash.
         this.fxp("dodgeGhost", defender.root.position.clone(), "#aeffff", defender.root.rotation.y);
@@ -2576,6 +2624,8 @@ export class Game implements MobHost {
   }
 
   private clash(a: Fighter, b: Fighter, pos: THREE.Vector3) {
+    this.highlightRecord(a).clashes++;
+    this.highlightRecord(b).clashes++;
     this.fxp("impactBurst", pos, "#ffedb7", 1.95, "clash");
     this.fxp("impactFrame", "clash", "#ffe5a2", 0.80);
     // ZAREK_WEAPON_CLASH_MOMENTUM_V1: reward genuine opposing melee weapon contact,
@@ -2658,6 +2708,8 @@ export class Game implements MobHost {
   // --- rounds -----------------------------------------------------------------------------
   /** A fighter crossed the blast zone: burst at the screen edge, shake, lose a stock. */
   private onBlast(f: Fighter) {
+    // An arena ring-out has no recorded damaging finishing move.
+    if (f.stocks <= 1) this.highlightFinisher = null;
     this.fxp("impactFrame", "finish", f.look.glow, 0.85);
     const b = STAGE.blast;
     const p = f.root.position;
@@ -2767,6 +2819,9 @@ export class Game implements MobHost {
   }
 
   private over(text: string, sub: string, color: string) {
+    const summary = this.matchHighlights();
+    this.onEvent({ type: "highlights", summary });
+    this.emit(["highlights", summary]);
     this.onEvent({ type: "over", text, sub, color });
     this.emit(["over", text, sub, color]);
   }
@@ -2970,6 +3025,7 @@ export class Game implements MobHost {
         break;
       }
       case "banner": this.onEvent({ type: "banner", text: ev[1], color: ev[2], sub: ev[3], hold: ev[4] }); break;
+      case "highlights": this.onEvent({ type: "highlights", summary: ev[1] as MatchHighlights }); break;
       case "over": this.onEvent({ type: "over", text: ev[1], sub: ev[2], color: ev[3] }); break;
       case "result": this.onEvent({ type: "result", winner: ev[1] }); break;
       case "roundScore": this.matchWins = [ev[1], ev[2]]; break;

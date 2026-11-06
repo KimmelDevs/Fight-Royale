@@ -1,3 +1,4 @@
+// FIGHT_ROYALE_VICTORY_HIGHLIGHTS_V1
 // FIGHT_ROYALE_PERFECT_DODGE_V1_NOV07
 // ASTER_TANK_ONLY_V2_20261107
 // MELEE_PROJECTILE_SPRINT_V1_NOV06
@@ -20,6 +21,7 @@ import * as THREE from "three";
 import { FighterModel } from "./model";
 import { Trail } from "./fx";
 import * as Kits from "./kits";
+import { presentationPose } from "./presentation";
 import type { Attack, Pose } from "./kits";
 import type { Look } from "./roster";
 import { emblemBonus, DEFAULT_LOADOUT } from "./economy";
@@ -528,8 +530,10 @@ export class Fighter implements Entity {
     this.model.chainPose = this.kit === "chainblade" ? this.poseName : "idle";
     this.model.chainExtended = this.kit === "chainblade" && (this.chainFuryT > 0 ||
       ["cbz_w", "cbz_s", "cbx_w", "cbx1_s", "cbx2_s", "cbx3_s", "cbh_w", "cbh_s", "cbv_w", "cbv_s"].includes(this.poseName));
-    this.model.glaivePose = this.kit === "glaive" ? this.poseName : "idle";
-    this.model.blend(this.poses[this.poseName] ?? this.poses.idle, dt, this.poseSpeed);
+    this.model.glaivePose = this.kit === "glaive" ? (this.state === S.WIN ? "show_baton" : this.poseName) : "idle";
+    this.model.blend(this.state === S.WIN
+      ? presentationPose(this.look.name, this.stateT, this.poses.idle, "victory")
+      : (this.poses[this.poseName] ?? this.poses.idle), dt, this.poseSpeed);
     this.bowDraw(dt);
     this.trail.update(dt);
   }
@@ -1592,8 +1596,10 @@ export class Fighter implements Entity {
     this.model.chainPose = this.kit === "chainblade" ? this.poseName : "idle";
     this.model.chainExtended = this.kit === "chainblade" && (this.chainFuryT > 0 ||
       ["cbz_w", "cbz_s", "cbx_w", "cbx1_s", "cbx2_s", "cbx3_s", "cbh_w", "cbh_s", "cbv_w", "cbv_s"].includes(this.poseName));
-    this.model.glaivePose = this.kit === "glaive" ? this.poseName : "idle";
-    this.model.blend(this.poses[this.poseName] ?? this.poses.idle, dt, this.poseSpeed);
+    this.model.glaivePose = this.kit === "glaive" ? (this.state === S.WIN ? "show_baton" : this.poseName) : "idle";
+    this.model.blend(this.state === S.WIN
+      ? presentationPose(this.look.name, this.stateT, this.poses.idle, "victory")
+      : (this.poses[this.poseName] ?? this.poses.idle), dt, this.poseSpeed);
     this.bowDraw(dt);
     this.trail.update(dt);
   }

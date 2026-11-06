@@ -1,3 +1,4 @@
+// FIGHT_ROYALE_VICTORY_HIGHLIGHTS_V1
 "use client";
 import { STATUS, type StatusKind } from "@/game/status";
 import { Sound } from "@/game/sound";
@@ -6,12 +7,26 @@ import { RankBadge } from "./Ranked";
 import { useEffect, useRef, useState } from "react";
 import { label, type Action } from "@/game/keys";
 const SKILL_ACTION: Record<string, Action> = { z: "skill1", x: "skill2", c: "skill3" };
-import { Game, type GameConfig, type Perk, type UiEvent } from "@/game/game";
+import { Game, type GameConfig, type Perk, type UiEvent, type MatchHighlights } from "@/game/game";
+import { CHARACTERS } from "@/game/roster";
+import { Preview } from "@/game/preview";
 import type { Net } from "@/game/net";
 import { account } from "@/lib/account";
 import { Icon, skillIcon, charIcon } from "./icons";
 
 type Hud = ReturnType<Game["hud"]>;
+
+// A second, lightweight 3D camera for the winning fighter's signature celebration.
+function WinnerPreview({ index }: { index: number }) {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const view = new Preview(canvas.current!);
+    view.setMode("victory");
+    view.setLook(CHARACTERS[index].look);
+    return () => view.dispose();
+  }, [index]);
+  return <canvas ref={canvas} className="victory-character-canvas" />;
+}
 
 function StatusChips({ list, right }: { list?: StatusKind[]; right?: boolean }) {
   if (!list?.length) return null;
@@ -40,6 +55,8 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
   const [banner, setBanner] = useState<{ text: string; color: string; sub?: string; key: number } | null>(null);
   const [perks, setPerks] = useState<Perk[] | null>(null);
   const [over, setOver] = useState<{ text: string; sub: string; color: string } | null>(null);
+  const [highlights, setHighlights] = useState<MatchHighlights | null>(null);
+  const [winnerChar, setWinnerChar] = useState<number | null>(null);
   const [rankChange, setRankChange] = useState<RankChange | null>(null);
   const rankDone = useRef(false);
   /** Ranked: apply the result once per match. */
@@ -82,10 +99,14 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
           if (got > 0) { toast(`+${got} gold`); Sound.play("coins", 0.7, 0); }
           else if (account.signedIn) toast("Reward limit reached for now");
         });
-      } else if (e.type === "result" && cfg.ranked) {
-        rankResult(e.winner === (g.local?.team ?? 0));
-      } else if (e.type === "result" && betPlaced) {
-        account.reportResult(matchId!, e.winner).then(() => toast(e.winner === team ? "Bet won! Pot paid out." : "Bet settled."));
+      } else if (e.type === "highlights") {
+        setHighlights(e.summary);
+      } else if (e.type === "result") {
+        const winningFighter = g.fighters.find((f) => f.team === e.winner && !f.isDown())
+          ?? g.fighters.find((f) => f.team === e.winner);
+        setWinnerChar(winningFighter?.charIndex ?? null);
+        if (cfg.ranked) rankResult(e.winner === (g.local?.team ?? 0));
+        if (betPlaced) account.reportResult(matchId!, e.winner).then(() => toast(e.winner === team ? "Bet won! Pot paid out." : "Bet settled."));
       }
     };
     // Stake the gold bet once, when the match starts.
@@ -101,7 +122,7 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
     const iv = setInterval(() => setHud(g.hud()), 80);
     const key = (e: KeyboardEvent) => {
       if (e.code === "Escape") { e.preventDefault(); const p = !g.paused; g.paused = p; setPausedState(p); }
-      if (e.code === "KeyR" && g.canRestart) { setOver(null); setRankChange(null); rankDone.current = false; g.restart(); }
+      if (e.code === "KeyR" && g.canRestart) { setOver(null); setHighlights(null); setWinnerChar(null); setRankChange(null); rankDone.current = false; g.restart(); }
     };
     window.addEventListener("keydown", key);
     return () => {
@@ -112,7 +133,7 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
     };
   }, []);
 
-  const rematch = () => { setOver(null); setPerks(null); setRankChange(null); rankDone.current = false; game.current?.restart(); };
+  const rematch = () => { setOver(null); setHighlights(null); setWinnerChar(null); setPerks(null); setRankChange(null); rankDone.current = false; game.current?.restart(); };
   const me = hud?.me;
   const other = hud?.other;
 
@@ -314,6 +335,32 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
         <div className="over">
           <div className="txt" style={{ color: over?.color ?? "#ff7b7b" }}>{lost ? "DISCONNECTED" : over!.text}</div>
           <div className="bsub">{lost ? "The host left the match." : over!.sub}</div>
+          {!lost && (winnerChar !== null || highlights) && (
+            <div className="match-highlights-layout">
+              {winnerChar !== null && <div className="victory-character">
+                <WinnerPreview index={winnerChar} />
+                <b>{CHARACTERS[winnerChar]?.look.name ?? "Winner"}</b>
+                <span>VICTORY POSE</span>
+              </div>}
+              {highlights && <div className="match-highlights">
+                <div className="highlight-heading">MATCH HIGHLIGHTS</div>
+                <div className="highlight-finisher">
+                  <span>FINISHING MOVE</span>
+                  <b>{highlights.finisher ? `${highlights.finisher.fighter} · ${highlights.finisher.move}` : "Final blow / ring-out"}</b>
+                  {highlights.finisher && <em>{highlights.finisher.damage} damage</em>}
+                </div>
+                <div className="highlight-fighters">
+                  {highlights.fighters.map((f, i) => <div className="highlight-fighter" key={`${f.peer}-${f.team}-${i}`}>
+                    <strong style={{ color: f.glow }}>{f.name}{f.peer === cfg.localPeer ? " · YOU" : ""}</strong>
+                    <div><span>Biggest combo</span><b>{f.bestCombo} hits</b></div>
+                    <div><span>Successful clashes</span><b>{f.clashes}</b></div>
+                    <div><span>Perfect dodges</span><b>{f.perfectDodges}</b></div>
+                    <div><span>Damage dealt</span><b>{f.totalDamage}</b></div>
+                  </div>)}
+                </div>
+              </div>}
+            </div>
+          )}
           {rankChange && (
             <div className="rank-result">
               <RankBadge st={rankChange.after} size={64} />
