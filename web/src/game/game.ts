@@ -1255,7 +1255,9 @@ export class Game implements MobHost {
       // The victim remains attached to the chain until the cinematic ends;
       // collision and ordinary physics never interrupt the grappling trajectory.
       if (!victim.isDown()) {
-        victim.vx = 0; victim.velY = 0; victim.knock = 0;
+        victim.vx = 0;
+        victim.velY = 0;
+        
       }
     }));
   }

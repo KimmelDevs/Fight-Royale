@@ -8,7 +8,10 @@ export type MusicTrack = "menu" | "battle" | "";
 const STORE = "fr-volume";
 const MUSIC: Record<Exclude<MusicTrack, "">, string> = { menu: "music_menu", battle: "music_battle" };
 
-interface Volumes { master: number; sfx: number; music: number }
+// INDEPENDENT_AUDIO_BUSES_V1
+// Music uses HTMLAudioElement; general SFX and combat feedback use separate Web Audio buses.
+interface Volumes { master: number; sfx: number; music: number; combat: number }
+const COMBAT_SOUNDS = new Set(["clash", "parry", "block", "guard_break"]);
 
 /**
  * Longest an effect may ring (seconds) before it fades out. Library sounds often have long
@@ -22,9 +25,10 @@ const MAX_LEN: Record<string, number> = {
 };
 
 class SoundEngine {
-  vol: Volumes = { master: 0.8, sfx: 0.9, music: 0.45 };
+  vol: Volumes = { master: 0.8, sfx: 0.9, music: 0.45, combat: 1 };
   private ctx: AudioContext | null = null;
   private out: GainNode | null = null;
+  private combatOut: GainNode | null = null;
   private buffers = new Map<string, AudioBuffer | null>();
   private loading = new Map<string, Promise<AudioBuffer | null>>();
   private lastPlay = new Map<string, number>();
@@ -57,6 +61,9 @@ class SoundEngine {
     this.out = this.ctx.createGain();
     this.out.gain.value = this.vol.master * this.vol.sfx;
     this.out.connect(this.ctx.destination);
+    this.combatOut = this.ctx.createGain();
+    this.combatOut.gain.value = this.vol.master * this.vol.combat;
+    this.combatOut.connect(this.ctx.destination);
     return this.ctx;
   }
 
@@ -83,14 +90,16 @@ class SoundEngine {
    * sound is skipped if it played in the last 40 ms (a multi-hit skill won't stack 8 copies).
    */
   play(name: string, vol = 1, vary = 0.06) {
-    if (!name || this.vol.master * this.vol.sfx <= 0) return;
+    const combat = COMBAT_SOUNDS.has(name);
+    if (!name || this.vol.master * (combat ? this.vol.combat : this.vol.sfx) <= 0) return;
     const now = performance.now();
     if (now - (this.lastPlay.get(name) ?? -1e9) < 40) return;
     this.lastPlay.set(name, now);
     const ctx = this.context();
     if (!ctx || ctx.state === "closed") return;
     const start = (buf: AudioBuffer | null) => {
-      if (!buf || !this.out) return;
+      const bus = combat ? this.combatOut : this.out;
+      if (!buf || !bus) return;
       const src = ctx.createBufferSource();
       src.buffer = buf;
       src.playbackRate.value = 1 + (Math.random() * 2 - 1) * vary;
@@ -99,7 +108,7 @@ class SoundEngine {
       const t0 = ctx.currentTime;
       const max = MAX_LEN[name] ?? DEFAULT_MAX;
       g.gain.setValueAtTime(v, t0);
-      src.connect(g).connect(this.out);
+      src.connect(g).connect(bus);
       src.start(t0);
       if (buf.duration / src.playbackRate.value > max) {
         // Fade out over the last 0.3 s, then stop.
@@ -153,6 +162,7 @@ class SoundEngine {
     this.vol = { ...this.vol, [kind]: Math.max(0, Math.min(1, v)) };
     try { localStorage.setItem(STORE, JSON.stringify(this.vol)); } catch {}
     if (this.out) this.out.gain.value = this.vol.master * this.vol.sfx;
+    if (this.combatOut) this.combatOut.gain.value = this.vol.master * this.vol.combat;
     this.fade();
   }
 }

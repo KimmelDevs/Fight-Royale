@@ -44,14 +44,20 @@ export default function Settings({ onBack }: { onBack: () => void }) {
   return (
     <div className="menu">
       <div className="menu-card settings">
-        <h1 className="logo small">SOUND</h1>
+        <h1 className="logo small">AUDIO SETTINGS</h1>
+        {/* INDEPENDENT_AUDIO_UI_V1 */}
+        <p className="tag">Music changes only background tracks. Clashes, parries, blocks, and guard breaks have their own slider. Master changes everything.</p>
         <div className="volumes">
-          {([["master", "Master"], ["music", "Music"], ["sfx", "Effects"]] as const).map(([k, label]) => (
+          {([["music", "Music"], ["sfx", "Sound Effects"], ["combat", "Clashes & Parries"], ["master", "Master"]] as const).map(([k, label]) => (
             <label key={k} className="vol-row">
               <span className="act">{label}</span>
               <input type="range" min={0} max={100} value={Math.round(vol[k] * 100)}
+                aria-label={`${label} volume`}
                 onChange={(e) => { Sound.setVolume(k, +e.target.value / 100); setVol({ ...Sound.vol }); }}
-                onMouseUp={() => k === "sfx" && Sound.play("hit_blade", 0.8)} />
+                onPointerUp={() => {
+                  if (k === "sfx") Sound.play("hit_blade", 0.8);
+                  if (k === "combat") Sound.play("clash", 0.85, 0);
+                }} />
               <em>{Math.round(vol[k] * 100)}%</em>
             </label>
           ))}

@@ -157,9 +157,10 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
               <div className="nm"><Icon src={charIcon(me.id)} alt={me.name} size={44} />{me.name}</div>
               <Bar v={me.hp / me.maxHp} color="#7fd65b" />
               <div className="guard"><Bar v={me.guard / me.maxGuard} color={me.guard / me.maxGuard > 0.25 ? "#f2c94c" : "#ff7043"} /></div>
+              {/* ZAREK_WHITE_COUNTER_V1 */}
               {me.id === "zarek" && (
                 <div style={{ display: "flex", alignItems: "center", gap: 7,
-                  marginTop: 5, color: "#9ce8ff", fontSize: 11 }}>
+                  marginTop: 5, color: "#ffffff", textShadow: "0 1px 3px rgba(0, 0, 0, 0.95)", fontSize: 11 }}>
                   <Icon src="/icons/skills/glaive-passive.webp" alt="Clash Counter" size={25}
                     fallback={<span style={{ fontSize: 19 }}>⚡</span>} />
                   <div style={{ flex: 1 }}>
