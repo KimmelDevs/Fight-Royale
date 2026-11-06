@@ -180,6 +180,13 @@ export class Fighter implements Entity {
   private jumpPrev = false;
   private holding = false;
   private holdT = 0;
+  // NESA_MOMENTUM_V3: isolated charge state; does not alter anyone else's controls.
+  private nesaAirHolding = false;
+  private nesaAirChargeT = 0;
+  private nesaAirChargedSeconds = 0;
+  private nesaChargeSeconds = 0;
+  private nesaSpinYaw = 0;
+  private nesaSpinT = 0;
   private guardDelay = 0;
   /** Successful parry makes the NEXT shield raise 90% faster (0.10s to 0.01s). */
   shieldRaise = 0.10;
@@ -285,6 +292,12 @@ export class Fighter implements Entity {
   /** Super armor only while Rook is performing Meteor Fist (wind-up, leap, landing recovery). */
   private get meteorFistArmor(): boolean {
     return this.kit === "knuckles" && this.state === S.ATTACK && this.atk?.name === "Meteor Fist";
+  }
+
+  private get hammerWeightArmor(): boolean {
+    if (this.kit !== "hammer" || this.state !== S.ATTACK || !this.atk) return false;
+    const total = Math.max(0.01, this.atk.wind + this.atk.active + this.atk.recover);
+    return this.stateT >= Math.min(total * 0.60, this.atk.wind * 0.70);
   }
 
   private ground: Plat | null = null;
@@ -407,6 +420,14 @@ export class Fighter implements Entity {
     const horizontal = Math.hypot(delta.x, delta.z);
     if (horizontal > 3.0) return 0;
     return THREE.MathUtils.clamp(Math.atan2(delta.y, Math.max(0.45, horizontal)), -1.20, 0.90);
+  }
+
+  private nesaReleaseAirStrike() {
+    if (!this.nesaAirHolding || this.airSliceUsed || this.state === S.KO) return;
+    this.nesaAirHolding = false;
+    this.nesaAirChargedSeconds = Math.max(0.05, Math.min(this.nesaAirChargeT, 0.88));
+    this.nesaAirChargeT = 0;
+    this.tryAirSlice();
   }
 
   private tryAirSlice() {
@@ -592,7 +613,9 @@ export class Fighter implements Entity {
       case S.ATTACK: this.attackStep(); break;
       case S.CHARGE:
         if (it.block) { this.holding = false; this.setState(S.BLOCK); }
-        else if (this.stateT >= CHARGE_MAX) { this.holding = false; this.startAttack("heavy"); }
+        else if (this.stateT >= (this.kit === "hammer" ? 1.53 : CHARGE_MAX)) {
+          this.holding = false; this.startAttack("heavy");
+        }
         break;
       case S.BLOCK: if (!it.block) this.setState(S.IDLE); break;
       case S.HITSTUN:
@@ -626,7 +649,10 @@ export class Fighter implements Entity {
     this.model.setJudgment(this.kit === "knight" && this.look.element === "light" && this.judgmentT > 0);
     this.model.combat = [S.ATTACK, S.CHARGE, S.BLOCK, S.HITSTUN, S.STAGGER].includes(this.state);
     this.model.hurt = this.state === S.HITSTUN || this.state === S.STAGGER;
-    this.model.charge = this.state === S.CHARGE ? Math.min(this.stateT / CHARGE_MAX, 1) : Math.max(this.model.charge - dt * 4, 0);
+    this.model.charge = this.kit === "hammer" && this.nesaAirHolding
+      ? Math.min(1, this.nesaAirChargeT / 0.88)
+      : this.state === S.CHARGE ? Math.min(this.stateT / (this.kit === "hammer" ? 1.53 : CHARGE_MAX), 1)
+      : Math.max(this.model.charge - dt * 4, 0);
     // Iron Tempest: one full turn over the attack's active window.
     // Model-only rotation preserves the player-facing direction and collision tests.
     const tempestActive = this.kit === "greatsword" && this.state === S.ATTACK && this.atk?.style === "iron_tempest";
@@ -639,7 +665,7 @@ export class Fighter implements Entity {
     // One-handed Aster and two-handed Garrick lead sword strikes with their torsos.
     // No world-facing change: hit detection and shielding remain authoritative.
     const bladeActive = this.state === S.ATTACK && this.atk?.type === "melee" &&
-      ((this.kit === "greatsword") || (this.kit === "glaive") || (this.kit === "knight" && this.look.element === "light"));
+      ((this.kit === "greatsword") || (this.kit === "hammer") || (this.kit === "glaive") || (this.kit === "knight" && this.look.element === "light"));
     if (bladeActive) {
       const a = this.atk!;
       const progress = Math.max(0, Math.min(1, this.stateT / Math.max(a.wind + a.active, 0.01)));
@@ -647,9 +673,21 @@ export class Fighter implements Entity {
       const direction = this.atkId === "l2" ? -1 : 1;
       const recoveryT = Math.max(0, Math.min(1, (this.stateT - a.wind - a.active) / Math.max(0.01, a.recover)));
       const settle = 1 - recoveryT * recoveryT * (3 - 2 * recoveryT);
-      this.bladeSwingYaw = direction * (this.kit === "greatsword" ? 0.48 : this.kit === "glaive" ? (this.atkId === "l4" ? 0.44 : 0.29) : 0.27) * (1 - 2 * turn) * settle;
+      this.bladeSwingYaw = direction * ((this.kit === "greatsword" || this.kit === "hammer") ? 0.48 : this.kit === "glaive" ? (this.atkId === "l4" ? 0.44 : 0.29) : 0.27) * (1 - 2 * turn) * settle;
     } else this.bladeSwingYaw = 0;
-    this.model.rotation.y = this.viewBias + this.tempestSpin + + this.cycloneSpin + this.bladeSwingYaw;
+    if (this.kit === "hammer") {
+      const attack = this.state === S.ATTACK ? this.atk : null;
+      if (attack?.style === "nesa_spin" && this.stateT >= attack.wind &&
+          this.stateT <= attack.wind + attack.active) {
+        const t = Math.max(0, (this.stateT - attack.wind) / attack.active);
+        const turns = Math.max(1, Math.round(attack.active / 0.27));
+        this.nesaSpinYaw = t * turns * Math.PI * 2;
+      } else this.nesaSpinYaw = 0;
+      this.model.nesaHammerScale = attack?.style === "nesa_high_striker" &&
+        this.stateT >= attack.wind + 0.24 && this.stateT < attack.wind + attack.active + 0.12
+        ? 4 : 1;
+    } else this.nesaSpinYaw = 0;
+    this.model.rotation.y = this.viewBias + this.tempestSpin + this.cycloneSpin + this.bladeSwingYaw + this.nesaSpinYaw;
     this.computePose();
     this.model.bloodFestivalT = this.kit === "sickle" ? this.bloodFestivalT : 0;
     this.model.chainFuryT = this.kit === "chainblade" ? this.chainFuryT : 0;
@@ -713,10 +751,29 @@ export class Fighter implements Entity {
     const pressed = on && !this.atkPrev;
     const released = !on && this.atkPrev;
     this.atkPrev = on;
-    if ([S.HITSTUN, S.STAGGER, S.KO, S.WIN].includes(this.state)) { this.holding = false; return; }
+    if ([S.HITSTUN, S.STAGGER, S.KO, S.WIN].includes(this.state)) {
+      this.holding = false; this.nesaAirHolding = false; return;
+    }
     if (pressed && this.atkLock > 0) return;
+    // NESA_MOMENTUM_V3: charge a directional midair hammer strike instead of auto-slicing.
+    if (this.kit === "hammer" && !this.stage && !this.onGround &&
+        (this.state === S.IDLE || this.state === S.BLOCK || this.nesaAirHolding)) {
+      if (pressed && !this.airSliceUsed && !this.nesaAirHolding) {
+        this.nesaAirHolding = true; this.nesaAirChargeT = 0;
+        this.holding = false;
+      }
+      if (this.nesaAirHolding) {
+        if (on) this.nesaAirChargeT = Math.min(0.88, this.nesaAirChargeT + dt);
+        if (released || this.nesaAirChargeT >= 0.88) this.nesaReleaseAirStrike();
+        return;
+      }
+    }
     // Airborne left-click is an ordinary basic swing, even without Space held.
     // No launcher, no chain, no chase jump, and no ground smash.
+    if (this.kit === "hammer" && !this.stage && pressed && this.onGround && this.intent.jump) {
+      this.nesaAirHolding = true; this.nesaAirChargeT = 0;
+      this.holding = false; return;
+    }
     if (!this.stage && pressed && this.onGround && this.intent.jump &&
         (this.state === S.IDLE || this.state === S.BLOCK)) {
       this.airSliceQueued = true; this.holding = false; return;
@@ -751,7 +808,8 @@ export class Fighter implements Entity {
       this.airSliceUsed = false;
       if (this.state === S.BLOCK) this.setState(S.IDLE);
       // Space+Click on the same frame: jump, then swing (never anti-air launch).
-      if (this.airSliceQueued) this.tryAirSlice();
+      if (this.kit === "hammer" && this.nesaAirHolding) this.nesaAirChargeT = 0;
+      else if (this.airSliceQueued) this.tryAirSlice();
     } else if (pressed && !this.onGround && this.kit === "wind" && this.airJump < 1 && this.state === S.IDLE) {
       // Double jump: a second push of wind in mid-air.
       this.airJump++;
@@ -1002,12 +1060,35 @@ export class Fighter implements Entity {
     }
     if (this.kit === "sickle" && this.bloodFrenzyT > 0 && id.startsWith("l"))
       this.atk = { ...this.atk, wind: this.atk.wind * 0.88, recover: this.atk.recover * 0.88 };
+    if (this.kit === "hammer" && id === "heavy") {
+      // The spin persists for precisely the time earned by holding the charge.
+      const held = THREE.MathUtils.clamp(this.holdT, HOLD_T, 1.75);
+      const spin = 0.34 + (held - HOLD_T) * 0.77;
+      this.nesaChargeSeconds = held;
+      this.atk = { ...this.atk, active: spin, recover: 0.42,
+        dmg: 32 + Math.round(held * 8), reach: 2.58 + held * 0.06,
+        knock: 1.8 + held * 0.25, style: "nesa_spin", no_parry: true };
+    }
+    if (this.kit === "hammer" && id === "air_l1") {
+      // A single airborne hammer hit, scaling damage and knockback with hold seconds.
+      const ratio = THREE.MathUtils.clamp(this.nesaAirChargedSeconds / 0.88, 0, 1);
+      this.atk = { ...this.atk, type: "melee", wind: 0.11, active: 0.15,
+        recover: 0.30, dmg: 84 + 122 * ratio, knock: 3.8 + 5.0 * ratio,
+        guard: 23 + 25 * ratio, reach: 2.40, lunge: 0.5,
+        stun: 0.27 + ratio * 0.34, heavy: ratio >= 0.65,
+        no_parry: true, next: "" };
+      this.nesaAirChargedSeconds = 0;
+    }
     this.atkPhase = 0;
     this.buffered = false;
     this.comboDamageMult = 1;
     this.comboPauseT = 0;
     this.swingSerial++;
-    if (this.atk.self_jump > 0 && this.atk.mode !== "leap") { this.velY = this.atk.self_jump * (this.stage ? 1.35 : 1); this.onGround = false; this.ground = null; }
+    if (this.atk.self_jump > 0 && this.atk.mode !== "leap" &&
+        !(this.kit === "hammer" && id === "x")) {
+      this.velY = this.atk.self_jump * (this.stage ? 1.35 : 1);
+      this.onGround = false; this.ground = null;
+    }
     this.setState(S.ATTACK);
   }
 
@@ -1052,6 +1133,11 @@ export class Fighter implements Entity {
     }
     if (this.atkPhase === 0 && this.stateT >= w) {
       this.atkPhase = 1;
+      if (this.kit === "hammer" && this.atkId === "x") {
+        // The pole is braced before the kick launches, not after.
+        this.velY = Math.max(this.velY, a.self_jump);
+        this.onGround = false; this.ground = null;
+      }
       if (!this.stage && this.atkId === "air_l1") this.airSliceAngle = this.airAimAtOpponent();
       this.onSwing(this);
     } else if (this.atkPhase === 1 && this.stateT >= w + ac) {
@@ -1124,7 +1210,20 @@ export class Fighter implements Entity {
     let walking = false;
     // No brain yet = still in the READY countdown: stand still.
     if (this.state === S.IDLE && this.autoApproach && this.brain && o && !o.isDown() && dist > ENGAGE) { v = this.walkSpeed * (this.meteorFistArmor ? 1 : this.status.speedMult()); walking = true; }
-    if (this.state === S.ATTACK && this.atk && this.atkPhase <= 1 && dist > MIN_DIST + 0.15) v += this.atk.lunge;
+    if (this.state === S.ATTACK && this.atk && this.atkPhase <= 1 && dist > MIN_DIST + 0.15) {
+      if (this.kit === "hammer" && /^l[1-4]$/.test(this.atkId)) {
+        // The next swing shuffles after the knockback with deliberate weighted steps.
+        const gap = Math.max(0, dist - this.atk.reach * 0.74);
+        const max = this.atk.lunge + (this.atkId === "l1" ? 0 : 1.1);
+        v += Math.min(max, 0.85 + gap * 1.28) * (this.atkPhase === 0 ? 0.46 : 1.75);
+      } else if (this.kit === "hammer" && this.atkId === "x") {
+        // Plant during wind-up; use the fast active kick for the forward burst.
+        v += this.atkPhase === 0 ? 0 : Math.min(10.5, this.atk.lunge * 1.4);
+      } else if (this.kit === "hammer" && this.atkId === "heavy" && this.atk.style === "nesa_spin") {
+        // Each hammer revolution takes a short step toward a recoiling opponent.
+        v += this.atkPhase === 0 ? 0.35 : Math.min(5.5, 1.65 + Math.max(0, dist - 2.1) * 2.1);
+      } else v += this.atk.lunge;
+    }
     const recoilSpeed = this.knock;
     this.knock = Math.max(this.knock - 13 * dt, 0);
     if (dist < MIN_DIST && v > 0) v = 0;
@@ -1149,6 +1248,8 @@ export class Fighter implements Entity {
     if (this.onGround) return;
     this.velY -= GRAVITY * dt;
     this.root.position.y += this.velY * dt;
+    if (this.kit === "hammer" && this.nesaAirHolding && this.velY < 0 &&
+        this.root.position.y < 0.52) this.nesaReleaseAirStrike();
     if (this.root.position.y <= 0) {
       this.root.position.y = 0;
       this.velY = 0;
@@ -1249,12 +1350,18 @@ export class Fighter implements Entity {
       this.guardDelay = 1;
       if (this.guard <= 0) {
         this.guard = 0;
-        this.lastDamage = dmg * 0.4;
+        const hammerCrush = attacker instanceof Fighter && attacker.hammerWeightArmor &&
+          (a.type === "melee" || a.type === "strike");
+        // NESA_WEIGHT_PASSIVE_V1: late hammer swings still hurt through block and hit harder on guard break.
+        this.lastDamage = hammerCrush ? dmg * 0.50 : dmg * 0.4;
         this.lastCrit = false;
         this.hp = Math.max(this.hp - this.lastDamage, 0);
-        this.knock = 3.5;
+        this.knock = hammerCrush ? Math.max(4.1, a.knock * 0.62) : 3.5;
         if (this.hp <= 0) { this.ko(); return "ko"; }
-        if (this.bloodFestivalT <= 0) this.stagger(0.85);
+        if (hammerCrush && !this.stage && this.onGround && this.bloodFestivalT <= 0 &&
+            this.knockdownLockT <= 0 && !this.chainBoundBy && !this.chainBindTarget &&
+            (a.heavy || a.id === "z" || a.id === "c" || a.id === "v")) this.beginKnockdown();
+        else if (this.bloodFestivalT <= 0) this.stagger(0.85);
         this.model.flash("#ffd966", 0.18);
         return "guard_break";
       }
@@ -1264,6 +1371,24 @@ export class Fighter implements Entity {
         this.knock = Math.min(a.knock * 0.12, 0.5);
         this.model.recoil = 0.85;
         return "kaizen_guard_clash";
+      }
+      // NESA_WEIGHT_PASSIVE_V1: late hammer swings crush block into chip damage.
+      const hammerCrushBlock = attacker instanceof Fighter && attacker.hammerWeightArmor &&
+        (a.type === "melee" || a.type === "strike");
+      if (hammerCrushBlock) {
+        this.lastDamage = dmg * 0.50;
+        this.lastCrit = false;
+        this.hp = Math.max(0, this.hp - this.lastDamage);
+        this.knock = Math.max(this.knock, a.knock * 0.72);
+        if (this.hp <= 0) { this.ko(); return "ko"; }
+        if (!this.stage && this.onGround && this.knockdownLockT <= 0 &&
+            this.bloodFestivalT <= 0 && !this.chainBoundBy && !this.chainBindTarget &&
+            (a.heavy || a.id === "z" || a.id === "c" || a.id === "v"))
+          this.beginKnockdown();
+        else if (!this.stage && this.bloodFestivalT <= 0)
+          this.stagger(Math.max(0.20, Math.min(0.45, a.stun * 0.55)));
+        this.model.recoil = 0.95;
+        return "blocked";
       }
       this.knock = a.knock * 0.5;
       this.model.recoil = 0.7;
@@ -1282,6 +1407,13 @@ export class Fighter implements Entity {
     if (a.effect && !(this.bloodFestivalT > 0 && a.effect === "paralyze") &&
         !(this.meteorFistArmor && (a.effect === "paralyze" || a.effect === "slow")))
       this.status.apply(a.effect as StatusKind, a.effect_t, a.effect_p, attacker);
+    if (this.hammerWeightArmor) {
+      // NESA_WEIGHT_PASSIVE_V1: once her swing is committed, Nesa still takes damage,
+      // but the weight keeps the attack going instead of letting hitstun cancel it.
+      this.knock = Math.min(this.knock, 1.4);
+      this.model.recoil = Math.max(this.model.recoil, 0.36);
+      return this.lastCrit ? "crit" : "hit";
+    }
     // ASTER_EMBER_LATEST_20261106: no repetitive hitstun from passive ground fire.
     if (a.id === "ember_ground") return this.lastCrit ? "crit" : "hit";
     // A heavy physical hit may cause a recoverable floor knockdown. Skills that
@@ -1314,6 +1446,12 @@ export class Fighter implements Entity {
   stagger(d: number) { if (this.knockedDown() || this.bloodFestivalT > 0 || this.meteorFistArmor) return; this.stun = d; this.stunPose = "stagger"; this.holding = false; this.setState(S.STAGGER); }
 
   clashRecoil() {
+    if (this.hammerWeightArmor) {
+      // NESA_WEIGHT_PASSIVE_V1: late hammer swings power through clashes.
+      this.model.recoil = Math.max(this.model.recoil, 0.32);
+      this.knock = Math.max(this.knock, 1.4);
+      return;
+    }
     if (this.isContinuousComboActive()) {
       // Clash does not interrupt the remaining hits or pause their timeline.
       this.comboDamageMult = Math.max(0.35, this.comboDamageMult * 0.95);
@@ -1346,6 +1484,7 @@ export class Fighter implements Entity {
     this.chainBoundBy = null;
     this.airChaseT = 0; this.airChaseMoveT = 0; this.airRecoverUsed = false;
     this.airSliceUsed = false; this.airSliceQueued = false;
+    this.nesaAirHolding = false; this.nesaAirChargeT = 0; this.nesaSpinYaw = 0;
     this.hp = this.maxHp * frac;
     this.guard = this.maxGuard;
     this.chainFuryT = 0;
@@ -1368,6 +1507,7 @@ export class Fighter implements Entity {
     this.chainBoundBy = null;
     this.airChaseT = 0; this.airChaseMoveT = 0;
     this.airSliceUsed = false; this.airSliceQueued = false;
+    this.nesaAirHolding = false; this.nesaAirChargeT = 0; this.nesaSpinYaw = 0;
     this.clashMomentum = 0;
     this.bloodlust = 0; this.bloodFrenzyT = 0; this.bloodFeintT = 0; this.sickleOut = false; this.bloodFestivalT = 0;
     this.status.clear();
@@ -1563,12 +1703,26 @@ export class Fighter implements Entity {
       case S.IDLE:
         if (!this.onGround) {
           if (this.airJumpT > 0 && this.poses.wind_jump) { p = "wind_jump"; sp = 18; }
+          else if (this.kit === "hammer" && this.nesaAirHolding) { p = "charge"; sp = 10; }
           else { p = "jump"; sp = 12; }
         }
         break;
       case S.BLOCK: p = "block"; sp = 30; break;
       case S.CHARGE: p = this.attacks.heavy.pose_w; sp = 10; break;
       case S.ATTACK:
+        if (this.kit === "hammer" && a) {
+          if (a.style === "nesa_spin") {
+            p = this.atkPhase === 0 ? "charge" : (Math.floor(Math.max(0, this.stateT - a.wind) / 0.19) % 2 === 0 ? "l3_s" : "l2_s");
+            sp = this.atkPhase === 0 ? 10 : 72;
+          } else if (a.style === "nesa_high_striker") {
+            p = this.stateT < a.wind + 0.25 ? "charge" :
+              this.stateT < a.wind + 1.74 ? "l3_w" : "heavy_s";
+            sp = this.stateT < a.wind + 1.74 ? 12 : 65;
+          } else if (this.atkPhase === 0) { p = a.pose_w; sp = 9.5; }
+          else if (this.atkPhase === 1) { p = a.pose_s; sp = 65; }
+          else { p = a.pose_s; sp = 12; }
+          break;
+        }
         if (this.poseOverride) { p = this.poseOverride; sp = 40; break; }
         if (a?.mode === "leap" || a?.mode === "dive") {
           if (this.atkPhase === 0) { p = a.pose_w; sp = 16; }
@@ -1633,9 +1787,9 @@ export class Fighter implements Entity {
           else { p = "heavy_s"; sp = 36; }
           break;
         }
-        if (a?.type === "melee" && (this.kit === "greatsword" ||
+        if (a?.type === "melee" && ((this.kit === "greatsword" || this.kit === "hammer") ||
             (this.kit === "knight" && this.look.element === "light"))) {
-          const heavySword = this.kit === "greatsword";
+          const heavySword = this.kit === "greatsword" || this.kit === "hammer";
           if (this.atkPhase === 0) { p = a.pose_w; sp = heavySword ? 13 : 24; }
           else if (this.atkPhase === 1) { p = a.pose_s; sp = heavySword ? 28 : 46; }
           else if (this.stateT < a.wind + a.active + a.recover * 0.75) {
@@ -1674,7 +1828,8 @@ export class Fighter implements Entity {
       this.state, this.poseName, this.poseSpeed, Math.round(this.hp), Math.round(this.guard),
       +this.model.walk.toFixed(2), +this.model.charge.toFixed(2), this.trail.emitting ? 1 : 0,
       +this.model.recoil.toFixed(2), this.cooldowns.z, this.cooldowns.x, this.cooldowns.c, this.maxHp,
-      +this.pct.toFixed(1), this.stocks, this.out ? 1 : 0, +this.atkLock.toFixed(2), +this.dashCd.toFixed(2), this.status.mask, this.barrelOut ? 1 : 0, Math.round(this.bloodlust), +this.bloodFrenzyT.toFixed(2), this.sickleOut ? 1 : 0, +this.bloodFestivalT.toFixed(2), +this.tempestSpin.toFixed(3), +this.cycloneSpin.toFixed(3), +this.bladeSwingYaw.toFixed(3), +this.chainFuryT.toFixed(2), this.clashMomentum, this.chainBindTarget ? +this.chainBindTarget.chest().x.toFixed(2) : null, this.chainBindTarget ? +this.chainBindTarget.chest().y.toFixed(2) : null, this.chainBindTarget ? +this.chainBindTarget.chest().z.toFixed(2) : null, +this.chainBindT.toFixed(2), +this.judgmentT.toFixed(2), +this.comboDamageMult.toFixed(3), +this.comboPauseT.toFixed(2), +this.stateT.toFixed(3)];
+      +this.pct.toFixed(1), this.stocks, this.out ? 1 : 0, +this.atkLock.toFixed(2), +this.dashCd.toFixed(2), this.status.mask, this.barrelOut ? 1 : 0, Math.round(this.bloodlust), +this.bloodFrenzyT.toFixed(2), this.sickleOut ? 1 : 0, +this.bloodFestivalT.toFixed(2), +this.tempestSpin.toFixed(3), +this.cycloneSpin.toFixed(3), +this.bladeSwingYaw.toFixed(3), +this.chainFuryT.toFixed(2), this.clashMomentum, this.chainBindTarget ? +this.chainBindTarget.chest().x.toFixed(2) : null, this.chainBindTarget ? +this.chainBindTarget.chest().y.toFixed(2) : null, this.chainBindTarget ? +this.chainBindTarget.chest().z.toFixed(2) : null, +this.chainBindT.toFixed(2), +this.judgmentT.toFixed(2), +this.comboDamageMult.toFixed(3), +this.comboPauseT.toFixed(2), +this.stateT.toFixed(3),
+      +this.nesaSpinYaw.toFixed(3), +this.model.nesaHammerScale.toFixed(2)];
   }
 
   applySnapshot(s: any[]) {
@@ -1685,6 +1840,8 @@ export class Fighter implements Entity {
     this.poseName = s[6];
     this.poseSpeed = s[7];
     if (s.length > 41) this.stateT = s[41];
+    this.nesaSpinYaw = s.length > 42 ? s[42] : 0;
+    this.model.nesaHammerScale = s.length > 43 ? s[43] : 1;
     this.hp = s[8];
     this.guard = s[9];
     this.model.walk = s[10];
@@ -1724,7 +1881,7 @@ export class Fighter implements Entity {
     for (const key in this.cooldowns) this.cooldowns[key] = Math.max(this.cooldowns[key] - dt, 0);
     this.atkLock = Math.max(this.atkLock - dt, 0);
     this.dashCd = Math.max(this.dashCd - dt, 0);
-    if (this.state !== S.KO) this.model.rotation.y = this.viewBias + this.tempestSpin + this.cycloneSpin + this.bladeSwingYaw;
+    if (this.state !== S.KO) this.model.rotation.y = this.viewBias + this.tempestSpin + this.cycloneSpin + this.bladeSwingYaw + this.nesaSpinYaw;
     this.model.setBarrier(this.state === S.BLOCK && this.kit === "mage");
     this.model.setJudgment(this.kit === "knight" && this.look.element === "light" && this.judgmentT > 0);
     this.model.combat = [S.ATTACK, S.CHARGE, S.BLOCK, S.HITSTUN, S.STAGGER].includes(this.state);

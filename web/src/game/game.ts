@@ -1115,7 +1115,7 @@ export class Game implements MobHost {
     if (a.type === "melee") {
       if (f.kit === "knuckles" || f.kit === "kicks") this.snd(heavy ? "swing_heavy" : "whoosh_light", 0.7);
       else if (f.kit === "assassin") this.snd(heavy ? "swing2" : "dagger", 0.7);
-      else if (f.kit === "greatsword" || heavy) this.snd("swing_heavy", 0.8);
+      else if (f.kit === "greatsword" || f.kit === "hammer" || heavy) this.snd("swing_heavy", 0.8);
       else this.snd(Math.random() < 0.5 ? "swing" : "swing2", 0.7);
     } else if (a.type === "projectile") {
       if (a.style === "arrow") this.snd("arrow", 0.7);
@@ -1150,9 +1150,106 @@ export class Game implements MobHost {
     if (crit) this.snd("crit", 0.55);
   }
 
+  /** NESA_MOMENTUM_V3: held charge controls REAL spin length, not a cosmetic loop. */
+  private nesaMomentumSpin(f: Fighter, a: Attack) {
+    const total = Math.max(0.32, a.active);
+    const beats = Math.max(2, Math.ceil(total / 0.205));
+    const round = this.round;
+    const serial = f.swingSerial;
+    for (let i = 0; i < beats; i++) this.laterCombo(f, i * 0.205, () => {
+      if (round !== this.round || f.isDown() || f.state !== S.ATTACK ||
+          f.swingSerial !== serial || f.atk?.style !== "nesa_spin") return;
+      const last = i === beats - 1;
+      const strike: Attack = { ...a,
+        dmg: last ? a.dmg * 1.75 : a.dmg, guard: last ? 40 : 13,
+        knock: last ? 7.8 + beats * 0.30 : 1.15,
+        stun: last ? 0.67 : 0.18, heavy: last,
+        no_parry: true, reach: 2.65 };
+      const center = f.root.position.clone();
+      this.fxp("slashes", f.model.bladeTip.getWorldPosition(new THREE.Vector3()), "#ffadd3");
+      this.snd(last ? "swing_heavy" : "swing", last ? 0.88 : 0.52);
+      const radius = last ? 2.8 : 2.58;
+      for (const d of this.enemiesOf(f)) {
+        const offset = d.root.position.clone().sub(center);
+        const height = Math.abs(offset.y);
+        offset.y = 0;
+        if (offset.length() > radius + d.radius * 0.4 || height > 1.65) continue;
+        const dir = offset.lengthSq() > 0.0001 ? offset.normalize() :
+          new THREE.Vector3(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
+        this.applyHit(f, d, strike, f.atkPower, d.chest(), dir, false);
+      }
+    });
+  }
+
+  /** Nesa X: planted hammer acts as a lever before the forward horizontal kick lands. */
+  private nesaLeverKick(f: Fighter, a: Attack) {
+    const serial = f.swingSerial, round = this.round;
+    this.fxp("sparks", f.root.position.clone().add(new THREE.Vector3(0, 0.12, 0)), "#ffc0dd", 14, 4);
+    // Wait for the leg to EXTEND and fighter to traverse her real active distance.
+    this.laterCombo(f, 0.12, () => {
+      if (round !== this.round || f.isDown() || f.swingSerial !== serial ||
+          f.state !== S.ATTACK || f.atkId !== "x") return;
+      this.fxp("slashes", f.model.footR?.getWorldPosition(new THREE.Vector3()) ?? f.chest(), "#ffb7dc");
+      this.melee(f, a);
+    });
+  }
+
+  /** Carnival high striker: hit -> real 3s stun -> grow hammer 4x -> giant finishing blow. */
+  private nesaHighStriker(f: Fighter, a: Attack) {
+    const round = this.round, serial = f.swingSerial, power = f.atkPower;
+    const foes = this.enemiesOf(f);
+    const first: Attack = { ...a, type: "melee", dmg: 125, knock: 0.7,
+      stun: 0.30, heavy: false, no_parry: true, reach: 2.65 };
+    for (const d of foes) {
+      const diff = d.root.position.clone().sub(f.root.position).setY(0);
+      const distance = diff.length();
+      if (distance > 2.65 + d.radius * 0.3 || Math.abs(d.root.position.y - f.root.position.y) > 1.3) continue;
+      const facing = new THREE.Vector3(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
+      if (distance > 0.65 && diff.dot(facing) < distance * 0.20) continue;
+      const dir = distance > 0.001 ? diff.normalize() : facing;
+      const hit = this.applyHit(f, d, first, power, d.chest(), dir, false);
+      if (d instanceof Fighter && (hit === "hit" || hit === "crit")) {
+        d.stagger(3.0); // exactly 3 s from the first connected blow (not normal stun DR)
+        this.fxp("num", d.chest().add(new THREE.Vector3(0, 0.75, 0)), "STUN 3s", "#ffd1e5", 0.92);
+      }
+    }
+    // Visual growth uses the synced model.nesaHammerScale timeline in fighter.ts.
+    this.fxp("flash", f.chest(), "#ffb5df", 0.8, 0.22, 0.8);
+    this.laterCombo(f, 1.90, () => {
+      if (round !== this.round || f.isDown() || f.state !== S.ATTACK ||
+          f.swingSerial !== serial || f.atk?.style !== "nesa_high_striker") return;
+      const center = f.root.position.clone().setY(0);
+      this.fxp("rocks", center, 28, 1.5);
+      this.fxp("ring", center, "#ffb0db", 3.6, 0.35, 0.95);
+      this.fxp("flash", center.clone().setY(0.45), "#ffffff", 1.8, 0.23, 0.95);
+      this.snd("swing_heavy", 1.0);
+      this.add_trauma(0.7);
+      const finisher: Attack = { ...a, type: "strike", dmg: 365, guard: 105,
+        knock: 13.2, stun: 1.05, heavy: true, no_parry: true };
+      for (const d of this.enemiesOf(f)) {
+        const diff = d.root.position.clone().sub(center);
+        const height = Math.abs(diff.y);
+        diff.y = 0;
+        if (diff.length() > 3.6 + d.radius * 0.4 || height > 1.65) continue;
+        const dir = diff.length() > 0.04 ? diff.normalize() :
+          new THREE.Vector3(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
+        this.applyHit(f, d, finisher, power, d.chest(), dir, true);
+      }
+    });
+  }
+
   private onSwing(f: Fighter) {
     const a = f.atk!;
     this.swingSound(f, a);
+    if (f.kit === "hammer" && a.style === "nesa_spin") {
+      this.nesaMomentumSpin(f, a); return;
+    }
+    if (f.kit === "hammer" && a.style === "nesa_high_striker") {
+      this.nesaHighStriker(f, a); return;
+    }
+    if (f.kit === "hammer" && f.atkId === "x") {
+      this.nesaLeverKick(f, a); return;
+    }
     const el = f.look.element;
     const big = ["z", "x", "c", "v", "heavy", "l3"].includes(f.atkId);
     // Zarek leaves quick traces only on major glaive swings. Works for CPU and players.
@@ -2473,6 +2570,7 @@ export class Game implements MobHost {
         !(d instanceof Fighter && d.stage)) {
       switch (attacker.kit) {
         case "greatsword": knockFactor = 1.38; break; // Garrick: maximum shove
+        case "hammer": knockFactor = 1.37; break; // Nesa: extreme hammer shove
         case "knight": knockFactor = attacker.look.element === "light"
           ? (attacker.judgmentT > 0 ? 1.26 : 1.09) : 1.06; break;
         case "chainblade": knockFactor = 1.13; break;
@@ -2586,7 +2684,7 @@ export class Game implements MobHost {
         if (!ranged && a.type === "melee") this.fxp("clashBurst", shieldPos, "#ffd27a", 0.72);
         this.fxp("sparks", shieldPos, "#ffd27a", 16, 5, dir.clone().negate().add(new THREE.Vector3(0, 0.3, 0)));
         this.fxp("flash", shieldPos, "#ffd980", 0.35, 0.1, 0.6);
-        this.fxp("num", shieldPos.clone().add(new THREE.Vector3(0, 0.4, 0)), "BLOCK", "#c9d3e6", 0.7);
+        this.fxp("num", shieldPos.clone().add(new THREE.Vector3(0, 0.4, 0)), (attacker instanceof Fighter && attacker.kit === "hammer" && a.id === "z" ? "CRUSH BLOCK!" : "BLOCK"), "#c9d3e6", 0.7); // NESA_CRUSH_BLOCK_V2
         if (!ranged && attacker instanceof Fighter) attacker.model.recoil = 0.6;
         this.add_trauma(0.14);
         this.hitStop(0.04);

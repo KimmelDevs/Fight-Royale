@@ -137,6 +137,14 @@ export const CHARACTERS: Character[] = [
       hair: "#231f29", hair_shade: "#716570", iris_top: "#9d282a", iris_bottom: "#ff895c", eye_dark: "#2c0910",
       tunic: "#332831", band: "#6e3034", pants: "#221e25", boots: "#352b30", metal: "#adb2bd", trim: "#b88f7b",
       cape: "#4e242a", cape_bottom: "#8e3039", glow: "#ff5b63", shield: "#3b242b", emblem: "#ffa5a0" } },
+  // NESA_HAMMER_V1 - based on the provided pink/brown VRoid look.
+  { id: "nesa", title: "Hammer Princess", role: "Bruiser - Giant Hammer",
+    desc: "A deceptively cute hammer fighter who uses heavy momentum, launching kicks and crushing shockwaves to bully dodgers and blockers alike.",
+    stats: { power: 5, speed: 2, range: 3, defense: 4 },
+    look: { name: "Nesa", body: "f", vrm: "nesa", kit: "hammer", element: "force", outfit: "knight", style: "long", hat: "none",
+      hair: "#5a3427", hair_shade: "#b78368", iris_top: "#6f4a39", iris_bottom: "#b69072", eye_dark: "#2c1a15",
+      tunic: "#f1d0da", band: "#c17696", pants: "#6d4956", boots: "#5a3541", metal: "#d9d1dd", trim: "#ffb3d0",
+      cape: "#8e617b", cape_bottom: "#f5c3d7", glow: "#ffd5e5", shield: "#6f5361", emblem: "#ffd5ea" } },
 ];
 
 export function resolveEnemy(player: number, pick: number): number {

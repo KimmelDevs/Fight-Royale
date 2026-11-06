@@ -93,6 +93,9 @@ export class FighterModel extends THREE.Group {
   /** Two-handed weapons: the left hand is pulled onto this point of the grip every frame. */
   private gripL: THREE.Object3D | null = null;
   private glaivePivot: THREE.Group | null = null;
+  /** Nesa's heart hammer root, isolated so the carnival finisher can grow it 4x. */
+  private nesaHammerPivot: THREE.Group | null = null;
+  nesaHammerScale = 1;
   /** ASTER_EMBER_LATEST_20261106: extra sword forged from his shield. */
   private judgmentSword: THREE.Group | null = null;
   private judgmentOldSword: THREE.Object3D[] = [];
@@ -187,6 +190,7 @@ export class FighterModel extends THREE.Group {
       case "chainblade": this.buildChainblade(); break;
       case "assassin": this.buildDaggers(); break;
       case "greatsword": this.buildGreatsword(); break;
+      case "hammer": this.buildHammer(); break;
       case "katana": this.buildKatana(); break;
       case "bow": this.buildBow(); break;
       case "knuckles": this.buildKnuckles(); break;
@@ -319,7 +323,7 @@ export class FighterModel extends THREE.Group {
   private knightTorso() {
     const L = this.look;
     this.torso = pivot(this.hips, [0, 0.05, 0]);
-    const big = this.kit === "greatsword";
+    const big = this.kit === "greatsword" || this.kit === "hammer";
     mesh(this.torso, cyl(0.095, 0.11, 0.3), this.tn(L.tunic), [0, 0.14, 0]);
     mesh(this.torso, sphere(0.125, 24), this.metal(), [0, 0.17, 0.035], [0, 0, 0], [1, 0.95, 0.72]);
     mesh(this.torso, torus(0.1, 0.112), this.tn(L.trim, false), [0, 0.08, 0.03], [0.25, 0, 0], [1.05, 0.5, 0.9]);
@@ -1010,6 +1014,39 @@ export class FighterModel extends THREE.Group {
     this.castPoint = this.bladeTip;
   }
 
+  private buildHammer() {
+    const L = this.look;
+    const h = pivot(this.hand_r, [0, 0, 0], [PI / 2, 0, 0]);
+    this.nesaHammerPivot = h;
+    // Two-handed striped handle and soft pink heart-shaped forged head.
+    mesh(h, cyl(0.026, 0.029, 0.92, 10), this.tn("#f9b8d2"), [0, 0.31, 0]);
+    for (let i = 0; i < 7; i++)
+      mesh(h, cyl(0.03, 0.03, 0.035, 12), this.tn(i % 2 ? "#ffffff" : "#b57b95"), [0, -0.11 + i * 0.083, 0]);
+    mesh(h, sphere(0.045, 12), this.gem(), [0, -0.19, 0]);
+    mesh(h, cyl(0.066, 0.067, 0.12, 16), this.tn(L.trim), [0, 0.78, 0]);
+    const heart = new THREE.Shape();
+    heart.moveTo(0, -0.23);
+    heart.bezierCurveTo(-0.14, -0.14, -0.34, 0.025, -0.27, 0.17);
+    heart.bezierCurveTo(-0.19, 0.31, -0.045, 0.27, 0, 0.16);
+    heart.bezierCurveTo(0.045, 0.27, 0.19, 0.31, 0.27, 0.17);
+    heart.bezierCurveTo(0.34, 0.025, 0.14, -0.14, 0, -0.23);
+    const geo = new THREE.ExtrudeGeometry(heart, {
+      depth: 0.28, steps: 1, bevelEnabled: true,
+      bevelThickness: 0.04, bevelSize: 0.035, bevelSegments: 3, curveSegments: 16,
+    });
+    const head = mesh(h, geo, this.tn("#f39abd"), [0, 1.08, -0.14]);
+    head.castShadow = true;
+    const inset = mesh(h, geo.clone(), this.tn("#ffcee3", false), [0, 1.08, 0.153]);
+    inset.scale.set(0.78, 0.78, 0.07);
+    mesh(h, sphere(0.07, 14), this.gem(), [0, 1.05, 0.19], [0, 0, 0], [1.0, 0.8, 0.5]);
+    // Heart-shaped hammer has no star ornaments.
+    this.bladeBase = pivot(h, [0, 0.54, 0]);
+    this.bladeTip = pivot(h, [0, 1.34, 0]);
+    this.gripL = pivot(h, [0, 0.05, 0]);
+    this.shieldNode = pivot(h, [0, 0.76, 0]);
+    this.castPoint = this.bladeTip;
+  }
+
   private buildKatana() {
     const L = this.look;
     const s = pivot(this.hand_r, [0, 0, 0], [PI / 2, 0, 0]);
@@ -1293,6 +1330,11 @@ export class FighterModel extends THREE.Group {
   // --- posing ------------------------------------------------------------------------
   /** Exponentially blends joints toward `pose` and applies overlays (walk, breathing, cloth). */
   blend(pose: Pose, dt: number, speed: number) {
+    if (this.nesaHammerPivot) {
+      const value = THREE.MathUtils.clamp(this.nesaHammerScale, 1, 4);
+      const current = this.nesaHammerPivot.scale.x;
+      this.nesaHammerPivot.scale.setScalar(THREE.MathUtils.damp(current, value, value > current ? 8 : 13, dt));
+    }
     const k = 1 - Math.exp(-speed * dt);
     for (const j of JOINTS) {
       const t = (pose as any)[j] as number[];
@@ -1306,20 +1348,39 @@ export class FighterModel extends THREE.Group {
     // 0.64 = ordinary walking; 1 = full sprint; each kit uses its own gait rate.
     const running = THREE.MathUtils.clamp((this.walk - 0.66) / 0.34, 0, 1);
     const moving = Math.min(1, this.walk / 0.64);
-    this.walkPhase += dt * (this.kit === "greatsword" ? 8.5 : 11) * moving * (1 + 0.46 * running);
+    this.walkPhase += dt * ((this.kit === "greatsword" || this.kit === "hammer") ? 8.5 : 11) * moving * (1 + 0.46 * running);
     const s = Math.sin(this.walkPhase);
+    if (this.kit === "hammer") {
+      // Weight-specific walking is handled below by short steps and shoulder lag.
+      this.walkPhase += Math.sin(this.t * 1.1) * 0.0004 * moving;
+    }
     this.recoil = Math.max(this.recoil - dt * 5, 0);
     this.hips.position.y = HIP + this.hipsY + Math.abs(s) * 0.03 * this.walk + Math.sin(this.t * 2.4) * 0.005;
     for (const j of JOINTS) this.joints[j].rotation.set(this.cur[j].x, this.cur[j].y, this.cur[j].z);
     this.torso.rotation.x += -this.recoil * 0.3 + Math.sin(this.t * 2.4) * 0.012;
-    const stride = this.kit === "greatsword" ? 0.36 : 0.55;
+    const stride = (this.kit === "greatsword" || this.kit === "hammer") ? 0.36 : 0.55;
     this.leg_l.rotation.x += s * stride * moving * (1 + 0.34 * running);
     this.leg_r.rotation.x -= s * stride * moving * (1 + 0.34 * running);
     // Distinct full-body running pose for the procedural fallback body.
-    this.torso.rotation.x += running * (this.kit === "greatsword" ? 0.08 : 0.13);
+    this.torso.rotation.x += running * ((this.kit === "greatsword" || this.kit === "hammer") ? 0.08 : 0.13);
     this.arm_l.rotation.x -= s * 0.17 * running;
     this.arm_r.rotation.x += s * 0.14 * running;
     this.hips.position.y += Math.abs(s) * 0.018 * running;
+    if (this.kit === "hammer") {
+      // NESA_NO_FOOT_HEAVINESS_V1:
+      // keep the burden in her upper body, not in dragging heavy feet.
+      this.torso.rotation.x += 0.08 + 0.10 * moving;
+      this.torso.rotation.z += Math.sin(this.walkPhase * 0.5) * 0.04 * moving;
+      this.head.rotation.x -= 0.05;
+      this.hips.position.y -= 0.012 + moving * 0.004;
+      // Let the legs move more naturally; the struggle should read in shoulders / arms.
+      this.leg_l.rotation.x *= 0.95;
+      this.leg_r.rotation.x *= 0.95;
+      this.arm_l.rotation.x -= 0.06 + 0.03 * moving;
+      this.arm_r.rotation.x += 0.04 + 0.02 * moving;
+      this.arm_l.rotation.z -= 0.06;
+      this.arm_r.rotation.z += 0.04;
+    }
     // Veyr's low stalking posture also animates the procedural fallback (no VRM yet).
     if (this.kit === "sickle") {
       const stalking = this.walk;
@@ -1435,16 +1496,16 @@ export class FighterModel extends THREE.Group {
     this.vrmRig.followArm = this.kit === "chainblade" ? 0.14 : this.kit === "glaive" ? 0.24 : this.kit === "sickle" ? 0.18 : this.kit === "mage" ? 0.4 : this.kit === "bow" ? 0.5 : 0.3;
     this.vrmRig.staff = this.kit === "mage";
     this.vrmRig.glaive = this.kit === "glaive";
-    this.vrmRig.style = this.kit === "chainblade" ? "chainblade" : this.kit === "glaive" ? "storm" : this.kit === "sickle" ? "feral" : this.kit === "greatsword" ? "greatsword" : this.look.body === "m" ? "heavy" : "light";
+    this.vrmRig.style = this.kit === "chainblade" ? "chainblade" : this.kit === "glaive" ? "storm" : this.kit === "sickle" ? "feral" : (this.kit === "greatsword" || this.kit === "hammer") ? "greatsword" : this.look.body === "m" ? "heavy" : "light";
     if (this.kit === "knight") { this.buildHeaterShield(); this.vrmRig.shield = true; }
     if (this.gripL) { this.vrmRig.gripL = this.gripL; this.vrmRig.bladed = this.kit === "chainblade" ? 0.58 : this.kit === "glaive" ? 0.4 : 1; }
-    if (["knight", "greatsword", "katana"].includes(this.kit) && this.bladeBase.parent) {
+    if (["knight", "greatsword", "hammer", "katana"].includes(this.kit) && this.bladeBase.parent) {
       // A point off the blade's cutting edge (blades are wide along their local X).
       const bb = this.bladeBase.position;
       const edge = pivot(this.bladeBase.parent, [bb.x + 0.1, bb.y, bb.z]);
       this.vrmRig.blade = { base: this.bladeBase, tip: this.bladeTip, edge };
     }
-    if (this.kit === "greatsword") { this.vrmRig.restSword = true; this.vrmRig.grip.left = true; }
+    if (this.kit === "greatsword" || this.kit === "hammer") { this.vrmRig.restSword = true; this.vrmRig.grip.left = true; }
     if (this.kit === "knuckles") { this.vrmRig.boxer = true; this.vrmRig.bladed = 0.65; }
     // Kicker: relaxed, hands-free upper body; the legs do everything.
     // A longbow is about 85-90% of body height.

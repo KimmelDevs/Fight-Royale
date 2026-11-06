@@ -210,7 +210,7 @@ export class AiBrain implements Brain {
     const dx = o.root.position.x - p.x;
     const dy = o.root.position.y - p.y;
     const ranged = RANGED.has(f.kit);
-    const want = ranged ? 5 : f.kit === "greatsword" ? 1.6 : 1.25;
+    const want = ranged ? 5 : f.kit === "greatsword" ? 1.6 : f.kit === "hammer" ? 1.75 : 1.25;
     let mx = 0;
     if (Math.abs(dx) > want + 0.4) mx = Math.sign(dx);
     else if (ranged && Math.abs(dx) < 3) mx = -Math.sign(dx);
@@ -595,7 +595,7 @@ export class AiBrain implements Brain {
     }
     if (f.stage && Math.abs(o.root.position.y - f.root.position.y) > 1.4 && !RANGED.has(f.kit)) return;
     const ranged = RANGED.has(f.kit);
-    const reach = ranged ? 9 : f.kit === "assassin" || f.kit === "knuckles" || f.kit === "kicks" ? 1.7 : f.kit === "greatsword" ? 2.3 : f.kit === "glaive" ? 1.62 : 1.9;
+    const reach = ranged ? 9 : f.kit === "assassin" || f.kit === "knuckles" || f.kit === "kicks" ? 1.7 : f.kit === "greatsword" ? 2.3 : f.kit === "hammer" ? 2.45 : f.kit === "glaive" ? 1.62 : 1.9;
     this.skillCd -= dt;
     if (this.skillCd <= 0) {
       this.skillCd = rand(this.p.skill[0], this.p.skill[1]);
