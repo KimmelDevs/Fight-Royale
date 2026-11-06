@@ -169,7 +169,7 @@ function bonusSkill(kit: string, element: string): Attack {
     case "greatsword":
       return a({ name: "Berserk", desc: "Deal 20% more damage for 6 seconds.", cd: 14, type: "buff", mode: "rage", duration: 6, wind: 0.2, recover: 0.4, pose_w: "charge", pose_s: "win" });
     case "hammer":
-      return a({ name: "Heartbreaker High Striker", desc: "Carnival smash: a stunning bonk, 4x hammer growth, then a second overwhelming blow.", cd: 26, type: "strike", at: "self", wind: 0.66, active: 2.20, recover: 0.90, dmg: 145, guard: 85, knock: 12.5, stun: 3.0, heavy: true, radius: 3.50, style: "nesa_high_striker", pose_w: "charge", pose_s: "heavy_s" });
+      return a({ name: "Heartbreaker High Striker", desc: "Carnival strength-test double smash: first bonk, a 4x heart hammer, then an enormous second blow. No long stun.", cd: 26, type: "strike", at: "self", wind: 0.66, active: 2.20, recover: 0.90, dmg: 145, guard: 85, knock: 12.5, stun: 0.26, heavy: true, radius: 3.50, style: "nesa_high_striker", pose_w: "charge", pose_s: "heavy_s" });
     case "katana":
       return a({ name: "Iaido Flash", desc: "An instant cross-arena draw cut.", cd: 8, wind: 0.08, active: 0.16, recover: 0.45, dmg: 200, guard: 50, reach: 2.2, lunge: 18, knock: 5, stun: 0.7, heavy: true, pose_w: "charge", pose_s: "heavy_s" });
     case "bow":
@@ -823,15 +823,15 @@ const CHAINBLADE: Record<string, Pose> = {
 
 // NESA_HEART_HAMMER_V2: weapon-weight poses, distinct from Garrick.
 const NESA_SWINGS: Record<string, Pose> = {
-  // Hammer weight pulls Nesa's shoulders down; bent knees and a forward torso counterbalance it.
-  idle: K(P([0.30, -0.24, 0.06], [-0.16, 0.18, 0], [-1.12, -0.27, -0.18], [-0.10, 0, 0], [-1.14, 0.21, 0.18], [-0.10, 0, 0], [-0.47, 0, 0.12], [0.30, 0, -0.12], -0.21), 0.50, 0.42),
+  // NESA_V5_LOADOUT_AIR_SPIN_UPRIGHT: Nesa STANDS on straight, relaxed legs; the hammer weight pulls at her shoulders and wrists, not her knees.
+  idle: P([0.11, -0.20, 0.03], [-0.04, 0.13, 0], [-1.04, -0.29, -0.15], [-0.16, 0, 0], [-1.03, 0.21, 0.14], [-0.16, 0, 0], [-0.06, 0, 0.05], [0.06, 0, -0.05], 0.0),
   l1_w: P([0.18, -1.12, -0.08], [0.04, 0.55, 0], [-1.03, -1.0, -0.20], [0.72, 0, 0], [-1.06, -0.72, 0.12], [0.65, 0, 0], [-0.56, 0, 0.13], [0.4, 0, -0.1], -0.22),
   l1_s: P([0.34, 0.96, 0.1], [-0.08, -0.55, 0], [-1.7, 1.2, -0.1], [0.12, 0, 0], [-1.52, 1.12, 0.1], [0.1, 0, 0], [-0.65, 0, 0.12], [0.45, 0, -0.08], -0.22),
   l2_w: P([0.16, 0.9, 0.09], [0, -0.48, 0], [-1.4, 1.0, 0.1], [0.42, 0, 0], [-1.2, 0.8, 0.08], [0.43, 0, 0], [-0.47, 0, 0.11], [0.36, 0, -0.09], -0.20),
   l2_s: P([0.32, -1.1, -0.1], [-0.1, 0.65, 0], [-1.6, -1.15, -0.08], [0.16, 0, 0], [-1.46, -1.05, 0.12], [0.12, 0, 0], [-0.63, 0, 0.12], [0.46, 0, -0.1], -0.24),
   l3_w: P([-0.2, -0.66, 0.05], [0.03, 0.44, 0], [-2.4, -0.45, -0.1], [0.7, 0, 0], [-2.0, -0.4, 0.12], [0.5, 0, 0], [-0.56, 0, 0.12], [0.48, 0, -0.12], -0.22),
   l3_s: P([0.35, 1.12, -0.10], [-0.13, -0.76, 0], [-1.7, 1.22, 0], [0.15, 0, 0], [-1.55, 1.0, 0.12], [0.1, 0, 0], [-0.6, 0, 0.11], [0.44, 0, -0.11], -0.23),
-  charge: K(P([-0.24, -0.38, 0], [0.09, 0.28, 0], [-2.6, -0.35, -0.12], [0.7, 0, 0], [-2.44, -0.25, 0.12], [0.65, 0, 0], [-0.66, 0, 0.1], [0.54, 0, -0.1], -0.28), 0.6, 0.55),
+  charge: K(P([-0.13, -0.38, 0], [0.06, 0.28, 0], [-2.6, -0.35, -0.12], [0.7, 0, 0], [-2.44, -0.25, 0.12], [0.65, 0, 0], [-0.15, 0, 0.08], [0.14, 0, -0.08], -0.075), 0.12, 0.13),
   heavy_s: K(P([0.66, 0.18, 0], [-0.22, 0, 0], [-0.85, 0.36, 0], [0.14, 0, 0], [-0.88, -0.2, 0.1], [0.12, 0, 0], [-0.95, 0, 0.10], [0.60, 0, -0.1], -0.32), 0.85, 0.9),
   nx_w: P([0.24, 0.92, 0], [0, -0.4, 0], [-1.4, 0.98, 0], [0.4, 0, 0], [-1.36, 0.78, 0], [0.4, 0, 0], [-0.5, 0, 0.10], [0.44, 0, -0.08], -0.19),
   nx_s: P([0.36, -1.08, 0], [-0.06, 0.5, 0], [-1.45, -1.18, 0], [0.1, 0, 0], [-1.28, -1.10, 0], [0.12, 0, 0], [-0.64, 0, 0.14], [0.50, 0, -0.09], -0.22),

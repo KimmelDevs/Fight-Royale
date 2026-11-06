@@ -86,6 +86,11 @@ export const STYLES = {
   greatsword: { stance: D(10), toeOut: D(9), knee: D(11), drop: 0.035, lean: D(4), chin: D(3), shoulderUp: D(3), elbowOut: D(9),
     hipSway: 0.004, hipRoll: D(0.5), contra: D(0.5), relaxKnee: D(2), headTilt: D(0.4), headYaw: D(3),
     breath: 0.5, armSwing: D(7), walkRoll: D(0.8), walkYaw: D(2) },
+  // NESA_V5_LOADOUT_AIR_SPIN_UPRIGHT: straight legs and level hips; weighted upper body only.
+  nesa: { stance: D(3), toeOut: D(4), knee: D(1.5), drop: 0, lean: D(2), chin: 0,
+    shoulderUp: D(1), elbowOut: D(5), hipSway: 0.012, hipRoll: D(1), contra: D(1),
+    relaxKnee: D(2), headTilt: D(1), headYaw: D(4), breath: 0.85,
+    armSwing: D(9), walkRoll: D(1.4), walkYaw: D(3) },
   storm: { stance: D(7), toeOut: D(8), knee: D(10), drop: 0.025, lean: D(3), chin: D(1), shoulderUp: D(2), elbowOut: D(5),
     hipSway: 0.012, hipRoll: D(1.4), contra: D(1.5), relaxKnee: D(5), headTilt: D(0.8), headYaw: D(5),
     breath: 0.8, armSwing: D(12), walkRoll: D(1.6), walkYaw: D(3) },

@@ -1155,17 +1155,17 @@ export class Game implements MobHost {
   /** NESA_MOMENTUM_V3: held charge controls REAL spin length, not a cosmetic loop. */
   private nesaMomentumSpin(f: Fighter, a: Attack) {
     const total = Math.max(0.32, a.active);
-    const beats = Math.max(2, Math.ceil(total / 0.205));
+    const beats = Math.max(1, Math.ceil(total / 0.205)); // V5: 1:0.5 spin duration gives fewer REAL hits
     const round = this.round;
     const serial = f.swingSerial;
     for (let i = 0; i < beats; i++) this.laterCombo(f, i * 0.205, () => {
       if (round !== this.round || f.isDown() || f.state !== S.ATTACK ||
-          f.swingSerial !== serial || f.atk?.style !== "nesa_spin") return;
+          f.swingSerial !== serial || (f.atk?.style !== "nesa_spin" && f.atk?.style !== "nesa_air_spin")) return;
       const last = i === beats - 1;
       const strike: Attack = { ...a,
         dmg: last ? a.dmg * 1.75 : a.dmg, guard: last ? 40 : 13,
-        knock: last ? 7.8 + beats * 0.30 : 1.15,
-        stun: last ? 0.67 : 0.18, heavy: last,
+        knock: last ? (a.style === "nesa_air_spin" ? 5.5 + beats * 0.32 : 7.8 + beats * 0.30) : 1.15,
+        stun: last ? 0.54 : 0.16, heavy: last,
         no_parry: true, reach: 2.65 };
       const center = f.root.position.clone();
       this.fxp("slashes", f.model.bladeTip.getWorldPosition(new THREE.Vector3()), "#ffadd3");
@@ -1190,18 +1190,18 @@ export class Game implements MobHost {
     // Wait for the leg to EXTEND and fighter to traverse her real active distance.
     this.laterCombo(f, 0.12, () => {
       if (round !== this.round || f.isDown() || f.swingSerial !== serial ||
-          f.state !== S.ATTACK || f.atkId !== "x") return;
+          f.state !== S.ATTACK || f.atk?.name !== "Upsie Daisie") return;
       this.fxp("slashes", f.model.footR?.getWorldPosition(new THREE.Vector3()) ?? f.chest(), "#ffb7dc");
       this.melee(f, a);
     });
   }
 
-  /** Carnival high striker: hit -> real 3s stun -> grow hammer 4x -> giant finishing blow. */
+  /** Carnival high striker: opening bonk -> grow hammer 4x -> giant finishing blow; no long stun. */
   private nesaHighStriker(f: Fighter, a: Attack) {
     const round = this.round, serial = f.swingSerial, power = f.atkPower;
     const foes = this.enemiesOf(f);
     const first: Attack = { ...a, type: "melee", dmg: 125, knock: 0.7,
-      stun: 0.30, heavy: false, no_parry: true, reach: 2.65 };
+      stun: 0.18, heavy: false, no_parry: true, reach: 2.65 };
     for (const d of foes) {
       const diff = d.root.position.clone().sub(f.root.position).setY(0);
       const distance = diff.length();
@@ -1210,9 +1210,10 @@ export class Game implements MobHost {
       if (distance > 0.65 && diff.dot(facing) < distance * 0.20) continue;
       const dir = distance > 0.001 ? diff.normalize() : facing;
       const hit = this.applyHit(f, d, first, power, d.chest(), dir, false);
-      if (d instanceof Fighter && (hit === "hit" || hit === "crit")) {
-        d.stagger(3.0); // exactly 3 s from the first connected blow (not normal stun DR)
-        this.fxp("num", d.chest().add(new THREE.Vector3(0, 0.75, 0)), "STUN 3s", "#ffd1e5", 0.92);
+      if (hit === "hit" || hit === "crit") {
+        // NESA_V5_LOADOUT_AIR_SPIN_UPRIGHT: no 3-second stun on High Striker.
+        // Keep the ordinary short hit reaction and the 4x follow-up spectacle.
+        this.fxp("num", d.chest().add(new THREE.Vector3(0, 0.75, 0)), "BONK!", "#ffd1e5", 0.84);
       }
     }
     // Visual growth uses the synced model.nesaHammerScale timeline in fighter.ts.
@@ -1227,7 +1228,7 @@ export class Game implements MobHost {
       this.snd("swing_heavy", 1.0);
       this.add_trauma(0.7);
       const finisher: Attack = { ...a, type: "strike", dmg: 365, guard: 105,
-        knock: 13.2, stun: 1.05, heavy: true, no_parry: true };
+        knock: 13.2, stun: 0.18, heavy: true, no_parry: true };
       for (const d of this.enemiesOf(f)) {
         const diff = d.root.position.clone().sub(center);
         const height = Math.abs(diff.y);
@@ -1243,13 +1244,13 @@ export class Game implements MobHost {
   private onSwing(f: Fighter) {
     const a = f.atk!;
     this.swingSound(f, a);
-    if (f.kit === "hammer" && a.style === "nesa_spin") {
+    if (f.kit === "hammer" && (a.style === "nesa_spin" || a.style === "nesa_air_spin")) {
       this.nesaMomentumSpin(f, a); return;
     }
     if (f.kit === "hammer" && a.style === "nesa_high_striker") {
       this.nesaHighStriker(f, a); return;
     }
-    if (f.kit === "hammer" && f.atkId === "x") {
+    if (f.kit === "hammer" && a.name === "Upsie Daisie") {
       this.nesaLeverKick(f, a); return;
     }
     if (f.kit === "hammer") {
@@ -3337,7 +3338,7 @@ export class Game implements MobHost {
         // Powder keg out: the slot becomes its trigger.
         if (a.style === "bloodsickle" && me.sickleOut) return { key: k, id: a.id + "_redirect", name: "Redirect Sickle", cd: 0, max: 1 };
         if (a.type === "barrel" && me.barrelOut) return { key: k, id: a.id + "_trigger", name: "Detonate", cd: 0, max: 1 };
-        if (me.kit === "hammer" && k === "c") return {
+        if (me.kit === "hammer" && a.style === "nesa_heart_slam") return {
           key: k, id: a.id, name: `${a.name} ×${me.nesaCCharges}`,
           cd: me.nesaCCharges > 0 ? 0 : me.nesaCRechargeT,
           max: 7.5 * me.cdMult,

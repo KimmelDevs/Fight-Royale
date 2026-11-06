@@ -304,7 +304,7 @@ export class Fighter implements Entity {
     if (this.kit !== "hammer" || this.state !== S.ATTACK || !this.atk) return false;
     // Upsie Daisie: immune to stun/knockback from the FIRST frame of its cast.
     // Every other hammer attack is vulnerable during its entire wind-up.
-    return this.atkId === "x" || this.atkPhase >= 1;
+    return this.atk.name === "Upsie Daisie" || this.atkPhase >= 1;
   }
 
   private ground: Plat | null = null;
@@ -483,8 +483,11 @@ export class Fighter implements Entity {
           this.nesaCRechargeT = this.nesaCCharges < 3 ? 7.5 * this.cdMult : 0;
         }
       } else this.nesaCRechargeT = 0;
-      this.cooldowns.c = this.nesaCCharges > 0 ? 0 : this.nesaCRechargeT;
-      if (this.intent.skill !== "c") this.nesaCArmed = true;
+      // NESA_V5_LOADOUT_AIR_SPIN_UPRIGHT: charges belong to Pink Heart Smash,
+      // wherever the loadout equips it (Z / X / C), never to the C key itself.
+      const heartSlot = ["z", "x", "c"].find(k => this.attacks[k]?.style === "nesa_heart_slam");
+      if (heartSlot) this.cooldowns[heartSlot] = this.nesaCCharges > 0 ? 0 : this.nesaCRechargeT;
+      if (!this.intent.skill || this.attacks[this.intent.skill]?.style !== "nesa_heart_slam") this.nesaCArmed = true;
     }
 
     this.atkLock = Math.max(this.atkLock - dt, 0);
@@ -700,13 +703,13 @@ export class Fighter implements Entity {
     } else this.bladeSwingYaw = 0;
     if (this.kit === "hammer") {
       const attack = this.state === S.ATTACK ? this.atk : null;
-      if (attack?.style === "nesa_spin" && this.stateT >= attack.wind &&
+      if ((attack?.style === "nesa_spin" || attack?.style === "nesa_air_spin") && this.stateT >= attack.wind &&
           this.stateT <= attack.wind + attack.active) {
         const t = Math.max(0, (this.stateT - attack.wind) / attack.active);
         const turns = Math.max(1, Math.round(attack.active / 0.27));
         this.nesaSpinYaw = t * turns * Math.PI * 2;
       } else this.nesaSpinYaw = 0;
-      this.model.nesaSpinHorizontal = attack?.style === "nesa_spin" ?
+      this.model.nesaSpinHorizontal = (attack?.style === "nesa_spin" || attack?.style === "nesa_air_spin") ?
         THREE.MathUtils.clamp(this.stateT / Math.max(0.01, attack.wind), 0, 1) : 0;
       this.model.nesaHammerScale = attack?.style === "nesa_high_striker" &&
         this.stateT >= attack.wind + 0.24 && this.stateT < attack.wind + attack.active + 0.12
@@ -758,16 +761,16 @@ export class Fighter implements Entity {
     if (d.lengthSq() < 0.01 || this.dashCd > 0) return;
     if (![S.IDLE, S.BLOCK, S.CHARGE, S.ATTACK].includes(this.state)) return; // dash cancels attacks, not hitstun
     if (this.kit === "hammer" && this.state === S.ATTACK &&
-        (this.atkId === "x" || this.atkPhase !== 0 || !this.atk || this.stateT >= this.atk.wind)) return;
+        (this.atk?.name === "Upsie Daisie" || this.atkPhase !== 0 || !this.atk || this.stateT >= this.atk.wind)) return;
     const dir = d.clone().setY(0);
     if (this.stage) { if (Math.abs(dir.x) < 0.3) return; dir.set(Math.sign(dir.x), 0, 0); this.facing = dir.x; }
     dir.normalize();
     if (this.state !== S.IDLE) {
       if (this.state === S.ATTACK) {
-        if (this.kit === "hammer" && this.atkId === "c") {
+        if (this.kit === "hammer" && this.atk?.style === "nesa_heart_slam") {
           this.nesaCCharges = Math.min(3, this.nesaCCharges + 1);
           if (this.nesaCCharges === 3) this.nesaCRechargeT = 0;
-          this.cooldowns.c = 0;
+          this.cooldowns[this.atkId] = 0;
         }
         if (this.kit === "hammer") {
           this.atk = null; this.atkId = ""; this.comboNext = "l1"; this.comboTimer = 0;
@@ -998,7 +1001,7 @@ export class Fighter implements Entity {
       if (![S.HITSTUN, S.STAGGER, S.KO, S.WIN].includes(this.state)) this.onTrigger(this);
       return;
     }
-    if (this.kit === "hammer" && k === "c" &&
+    if (this.kit === "hammer" && this.attacks[k]?.style === "nesa_heart_slam" &&
         (!this.nesaCArmed || this.nesaCCharges <= 0)) return;
     if ((this.cooldowns[k] ?? 1) > 0) return;
     const free = [S.IDLE, S.BLOCK, S.CHARGE].includes(this.state) || (this.state === S.ATTACK && this.atkPhase === 2);
@@ -1006,11 +1009,11 @@ export class Fighter implements Entity {
     this.holding = false;
     if (this.kit === "chainblade") this.chainSkillDir = this.chainRelativeDirection();
     // The keg's cooldown starts when it explodes (the arena sets it).
-    if (this.kit === "hammer" && k === "c") {
+    if (this.kit === "hammer" && this.attacks[k]?.style === "nesa_heart_slam") {
       this.nesaCArmed = false;
       if (this.nesaCCharges === 3) this.nesaCRechargeT = 7.5 * this.cdMult;
       this.nesaCCharges--;
-      this.cooldowns.c = this.nesaCCharges > 0 ? 0 : this.nesaCRechargeT;
+      this.cooldowns[k] = this.nesaCCharges > 0 ? 0 : this.nesaCRechargeT;
     } else this.cooldowns[k] = this.attacks[k].type === "barrel" ? 0.6 : this.attacks[k].cd * this.cdMult;
     // Cast in the air, a skill with an air version uses it instead.
     this.startAttack(!this.onGround && this.attacks[k + "_air"] ? k + "_air" : k);
@@ -1110,7 +1113,7 @@ export class Fighter implements Entity {
     if (this.kit === "hammer" && id === "heavy") {
       // The spin persists for precisely the time earned by holding the charge.
       const held = THREE.MathUtils.clamp(this.holdT, HOLD_T, 1.75);
-      const spin = 0.34 + (held - HOLD_T) * 0.77;
+      const spin = (0.34 + (held - HOLD_T) * 0.77) * 0.75; // Nesa V6: hold:spin conversion 1:0.75
       this.nesaChargeSeconds = held;
       this.atk = { ...this.atk, active: spin, recover: 0.42,
         dmg: 32 + Math.round(held * 8), reach: 2.58 + held * 0.06,
@@ -1119,11 +1122,14 @@ export class Fighter implements Entity {
     if (this.kit === "hammer" && id === "air_l1") {
       // A single airborne hammer hit, scaling damage and knockback with hold seconds.
       const ratio = THREE.MathUtils.clamp(this.nesaAirChargedSeconds / 0.88, 0, 1);
-      this.atk = { ...this.atk, type: "melee", wind: 0.11, active: 0.15,
-        recover: 0.30, dmg: 84 + 122 * ratio, knock: 3.8 + 5.0 * ratio,
-        guard: 23 + 25 * ratio, reach: 2.40, lunge: 0.5,
-        stun: 0.27 + ratio * 0.34, heavy: ratio >= 0.65,
-        no_parry: true, next: "" };
+      // NESA V5: the jump release is a REAL horizontal weapon spin, not a slice.
+      // 1s earned spin becomes 0.75s, as on the ground; shorter hold = fewer revolutions.
+      const airSpin = (0.34 + ratio * 0.76) * 0.75;
+      this.atk = { ...this.atk, type: "melee", wind: 0.11, active: airSpin,
+        recover: 0.30, dmg: 44 + 9 * ratio, knock: 3.8 + 3.4 * ratio,
+        guard: 23 + 13 * ratio, reach: 2.55, lunge: 0.5,
+        stun: 0.20 + ratio * 0.22, heavy: false,
+        style: "nesa_air_spin", no_parry: true, next: "" };
       this.nesaAirChargedSeconds = 0;
     }
     this.atkPhase = 0;
@@ -1132,7 +1138,7 @@ export class Fighter implements Entity {
     this.comboPauseT = 0;
     this.swingSerial++;
     if (this.atk.self_jump > 0 && this.atk.mode !== "leap" &&
-        !(this.kit === "hammer" && id === "x")) {
+        !(this.kit === "hammer" && this.atk.name === "Upsie Daisie")) {
       this.velY = this.atk.self_jump * (this.stage ? 1.35 : 1);
       this.onGround = false; this.ground = null;
     }
@@ -1142,14 +1148,14 @@ export class Fighter implements Entity {
   private attackStep() {
     const a = this.atk!;
     const w = a.wind, ac = a.active, r = a.recover;
-    if (this.kit === "hammer" && this.atkId !== "x" && this.atkPhase === 0 &&
+    if (this.kit === "hammer" && a.name !== "Upsie Daisie" && this.atkPhase === 0 &&
         this.stateT < w && this.intent.block) {
       // Pre-swing cancel is intentional; this move did NOT deal any damage.
       // Refund a stored Heart Smash charge, but only before its impact window.
-      if (this.atkId === "c") {
+      if (a.style === "nesa_heart_slam") {
         this.nesaCCharges = Math.min(3, this.nesaCCharges + 1);
         if (this.nesaCCharges === 3) this.nesaCRechargeT = 0;
-        this.cooldowns.c = 0;
+        this.cooldowns[this.atkId] = 0;
       }
       this.atk = null; this.atkId = ""; this.buffered = false;
       this.holding = false; this.comboNext = "l1"; this.comboTimer = 0;
@@ -1194,7 +1200,7 @@ export class Fighter implements Entity {
     }
     if (this.atkPhase === 0 && this.stateT >= w) {
       this.atkPhase = 1;
-      if (this.kit === "hammer" && this.atkId === "x") {
+      if (this.kit === "hammer" && a.name === "Upsie Daisie") {
         // The pole is braced before the kick launches, not after.
         this.velY = Math.max(this.velY, a.self_jump);
         this.onGround = false; this.ground = null;
@@ -1277,7 +1283,7 @@ export class Fighter implements Entity {
         const gap = Math.max(0, dist - this.atk.reach * 0.74);
         const max = this.atk.lunge + (this.atkId === "l1" ? 0 : 1.1);
         v += Math.min(max, 0.85 + gap * 1.28) * (this.atkPhase === 0 ? 0.46 : 1.75);
-      } else if (this.kit === "hammer" && this.atkId === "x") {
+      } else if (this.kit === "hammer" && this.atk?.name === "Upsie Daisie") {
         // Plant during wind-up; use the fast active kick for the forward burst.
         v += this.atkPhase === 0 ? 0 : Math.min(10.5, this.atk.lunge * 1.4);
       } else if (this.kit === "hammer" && this.atkId === "heavy" && this.atk.style === "nesa_spin") {
@@ -1776,7 +1782,7 @@ export class Fighter implements Entity {
       case S.CHARGE: p = this.attacks.heavy.pose_w; sp = 10; break;
       case S.ATTACK:
         if (this.kit === "hammer" && a) {
-          if (a.style === "nesa_spin") {
+          if (a.style === "nesa_spin" || a.style === "nesa_air_spin") {
             p = this.atkPhase === 0 ? "charge" : (Math.floor(Math.max(0, this.stateT - a.wind) / 0.19) % 2 === 0 ? "l3_s" : "l2_s");
             sp = this.atkPhase === 0 ? 10 : 72;
           } else if (a.style === "nesa_high_striker") {

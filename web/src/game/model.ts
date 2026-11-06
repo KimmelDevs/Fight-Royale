@@ -1394,7 +1394,8 @@ export class FighterModel extends THREE.Group {
       this.torso.rotation.x += 0.08 + 0.10 * moving;
       this.torso.rotation.z += Math.sin(this.walkPhase * 0.5) * 0.04 * moving;
       this.head.rotation.x -= 0.05;
-      this.hips.position.y -= 0.012 + moving * 0.004;
+      // V5: feet and knees stay upright; weight reads only in arms and torso.
+      this.hips.position.y += 0;
       // Let the legs move more naturally; the struggle should read in shoulders / arms.
       this.leg_l.rotation.x *= 0.95;
       this.leg_r.rotation.x *= 0.95;
@@ -1518,7 +1519,7 @@ export class FighterModel extends THREE.Group {
     this.vrmRig.followArm = this.kit === "chainblade" ? 0.14 : this.kit === "glaive" ? 0.24 : this.kit === "sickle" ? 0.18 : this.kit === "mage" ? 0.4 : this.kit === "bow" ? 0.5 : 0.3;
     this.vrmRig.staff = this.kit === "mage";
     this.vrmRig.glaive = this.kit === "glaive";
-    this.vrmRig.style = this.kit === "chainblade" ? "chainblade" : this.kit === "glaive" ? "storm" : this.kit === "sickle" ? "feral" : (this.kit === "greatsword" || this.kit === "hammer") ? "greatsword" : this.look.body === "m" ? "heavy" : "light";
+    this.vrmRig.style = this.kit === "chainblade" ? "chainblade" : this.kit === "glaive" ? "storm" : this.kit === "sickle" ? "feral" : this.kit === "hammer" ? "nesa" : this.kit === "greatsword" ? "greatsword" : this.look.body === "m" ? "heavy" : "light";
     if (this.kit === "knight") { this.buildHeaterShield(); this.vrmRig.shield = true; }
     if (this.gripL) { this.vrmRig.gripL = this.gripL; this.vrmRig.bladed = this.kit === "chainblade" ? 0.58 : this.kit === "glaive" ? 0.4 : 1; }
     if (["knight", "greatsword", "hammer", "katana"].includes(this.kit) && this.bladeBase.parent) {
