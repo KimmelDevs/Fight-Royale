@@ -297,23 +297,24 @@ function bow(): Record<string, Attack> {
 // ZAREK_STORM_V1 — weapon clashes award Momentum; ability effects are host-controlled.
 // ZAREK_CYCLONE_V3 — clash-focused acrobatic double-blade choreography.
 function glaive(): Record<string, Attack> {
+  // ZAREK_WEAPON_RANGE_MATCH_V1_NOV06: visible blade and active combat reach are calibrated together.
   return {
-    l1: a({ name: "Cyclone Fang 1", wind: 0.11, active: 0.09, recover: 0.19, dmg: 58, guard: 16, reach: 2.25, lunge: 2.7, knock: 1.0, stun: 0.22, pose_w: "gl1_w", pose_s: "gl1_s", next: "l2" }),
-    l2: a({ name: "Cyclone Fang 2", wind: 0.12, active: 0.09, recover: 0.18, dmg: 64, guard: 17, reach: 2.30, lunge: 2.8, knock: 1.0, stun: 0.23, pose_w: "gl2_w", pose_s: "gl2_s", next: "l3" }),
-    l3: a({ name: "Cyclone Fang 3", wind: 0.10, active: 0.10, recover: 0.20, dmg: 69, guard: 18, reach: 2.28, lunge: 2.7, knock: 1.2, stun: 0.24, pose_w: "gl3_w", pose_s: "gl3_s", next: "l4" }),
-    l4: a({ name: "Cyclone Fang 4", wind: 0.17, active: 0.11, recover: 0.23, dmg: 74, guard: 20, reach: 2.35, lunge: 2.4, knock: 1.6, stun: 0.27, pose_w: "gl4_w", pose_s: "gl4_s", next: "l5" }),
+    l1: a({ name: "Cyclone Fang 1", wind: 0.11, active: 0.09, recover: 0.19, dmg: 58, guard: 16, reach: 2.05, lunge: 2.7, knock: 1.0, stun: 0.22, pose_w: "gl1_w", pose_s: "gl1_s", next: "l2" }),
+    l2: a({ name: "Cyclone Fang 2", wind: 0.12, active: 0.09, recover: 0.18, dmg: 64, guard: 17, reach: 2.1, lunge: 2.8, knock: 1.0, stun: 0.23, pose_w: "gl2_w", pose_s: "gl2_s", next: "l3" }),
+    l3: a({ name: "Cyclone Fang 3", wind: 0.10, active: 0.10, recover: 0.20, dmg: 69, guard: 18, reach: 2.08, lunge: 2.7, knock: 1.2, stun: 0.24, pose_w: "gl3_w", pose_s: "gl3_s", next: "l4" }),
+    l4: a({ name: "Cyclone Fang 4", wind: 0.17, active: 0.11, recover: 0.23, dmg: 74, guard: 20, reach: 2.12, lunge: 2.4, knock: 1.6, stun: 0.27, pose_w: "gl4_w", pose_s: "gl4_s", next: "l5" }),
     l5: a({ name: "Cyclone Fang Finisher", desc: "Overhead turning slash. Hold the fifth attack to extend it into three more rotations.",
-      wind: 0.17, active: 0.56, recover: 0.33, dmg: 104, guard: 29, reach: 2.4, lunge: 1.7, knock: 3.5, stun: 0.38,
+      wind: 0.17, active: 0.56, recover: 0.33, dmg: 104, guard: 29, reach: 2.18, lunge: 1.7, knock: 3.5, stun: 0.38,
       style: "glaive_cyclone", pose_w: "gl5_w", pose_s: "gl5_s" }),
-    heavy: a({ name: "Split Current", wind: 0.35, active: 0.14, recover: 0.55, dmg: 165, guard: 48, reach: 2.6, lunge: 2.5, knock: 5, stun: 0.52, heavy: true, pose_w: "glh_w", pose_s: "glh_s" }),
+    heavy: a({ name: "Split Current", wind: 0.35, active: 0.14, recover: 0.55, dmg: 165, guard: 48, reach: 2.34, lunge: 2.5, knock: 5, stun: 0.52, heavy: true, pose_w: "glh_w", pose_s: "glh_s" }),
     z: a({ name: "Serpent Wheel", desc: "Five revolving blade passes while stepping forward. Cannot be parried, but can be blocked or clashed. Dash-cancel or Space+Attack launcher-cancel.",
-      cd: 8, wind: 0.14, active: 1.08, recover: 0.40, dmg: 33, guard: 11, reach: 2.15, lunge: 3.1, knock: 0.5, stun: 0.12,
+      cd: 8, wind: 0.14, active: 1.08, recover: 0.40, dmg: 33, guard: 11, reach: 2.06, lunge: 3.1, knock: 0.5, stun: 0.12,
       no_parry: true, style: "glaive_serpent", pose_w: "glz_w", pose_s: "glz_s" }),
     x: a({ name: "Phantom Spiral", desc: "Slide through the target, cutting once on approach and once after a 180-degree reverse strike. Can be blocked, parried and clashed.",
-      cd: 9, wind: 0.13, active: 0.43, recover: 0.39, dmg: 85, guard: 24, reach: 2.4, lunge: 1.4, knock: 2.0, stun: 0.27,
+      cd: 9, wind: 0.13, active: 0.43, recover: 0.39, dmg: 85, guard: 24, reach: 2.18, lunge: 1.4, knock: 2.0, stun: 0.27,
       style: "glaive_phantom", pose_w: "glx_w", pose_s: "glx_turn" }),
     c: a({ name: "Infinite Crescent", desc: "Seven accelerating crescent cuts, an upward launcher, then an aerial cross-slash. A confirmed finisher hit triggers cinematic sparks and brief hit-stop. Cannot be parried; blocking and clashes still work.",
-      cd: 20, wind: 0.30, active: 1.78, recover: 0.70, dmg: 44, guard: 15, reach: 2.35, lunge: 1.2,
+      cd: 20, wind: 0.30, active: 1.78, recover: 0.70, dmg: 44, guard: 15, reach: 2.18, lunge: 1.2,
       knock: 0.6, stun: 0.21, heavy: false, no_parry: true, style: "glaive_infinite", pose_w: "glc_w", pose_s: "glc_s" }),
   };
 }

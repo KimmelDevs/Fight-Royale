@@ -1,3 +1,4 @@
+// CONTINUOUS_PARRY_AI_V4_NOV06
 // CONTINUOUS_COMBAT_ASTER_EMBER_V3_NOV06
 // Playable fighter. A brain (local input, AI, or a remote player's inputs) fills `intent`
 // every frame:
@@ -163,7 +164,7 @@ export class Fighter implements Entity {
   private holding = false;
   private holdT = 0;
   private guardDelay = 0;
-  /** Normal shield takes 0.10s to rise; the first re-raise after a successful parry is 0.05s. */
+  /** Successful parry makes the NEXT shield raise 90% faster (0.10s to 0.01s). */
   shieldRaise = 0.10;
   nextShieldFast = false;
   /** Only ongoing multi-hit specials accumulate these parry/clash penalties. */
@@ -944,7 +945,7 @@ export class Fighter implements Entity {
 
   private setState(s: S) {
     if (s === S.BLOCK && this.state !== S.BLOCK) {
-      this.shieldRaise = this.nextShieldFast ? 0.05 : 0.10;
+      this.shieldRaise = this.nextShieldFast ? 0.01 : 0.10;
       this.nextShieldFast = false;
     }
     this.state = s; this.stateT = 0; this.poseOverride = "";
@@ -1079,8 +1080,13 @@ export class Fighter implements Entity {
     const festivalUnparryable = attacker instanceof Fighter && attacker.kit === "sickle" &&
       attacker.bloodFestivalT > 0 && a.type === "melee";
     // Guard is not instantly active while the shield is still being raised.
+    // Extended combos can be parried to soften their following strikes, even
+    // if the move was once flagged no_parry. Blood Festival's dedicated immunity
+    // remains intact; unrelated single-hit no_parry moves stay unparryable.
+    const parryableContinuous = attacker instanceof Fighter && attacker.isContinuousComboActive();
     if (this.state === S.BLOCK && this.stateT >= this.shieldRaise) {
-      if (this.stateT - this.shieldRaise <= this.parryWindow && !a.no_parry && !festivalUnparryable) {
+      if (this.stateT - this.shieldRaise <= this.parryWindow &&
+          (!a.no_parry || parryableContinuous) && !festivalUnparryable) {
         this.guard = Math.min(this.guard + 20, this.maxGuard);
         this.model.flash("#99e6ff", 0.15);
         // Reward applies to the NEXT shield raise, once only; never stack it.

@@ -1,3 +1,5 @@
+// EMBER_GROUND_HAZARD_AI_V1_NOV06
+// CONTINUOUS_PARRY_AI_V4_NOV06
 // CONTINUOUS_COMBAT_ASTER_EMBER_V3_NOV06
 // Duel CPU. Presses the same virtual buttons a player would, with human-ish reaction times:
 // reacts once per enemy swing / projectile / ground marker (block, parry, jump, sidestep),
@@ -16,6 +18,10 @@ const PRESETS = [
 export interface Threats {
   projectiles(): { target: any; pos: THREE.Vector3; vel: THREE.Vector3; id: number }[];
   strikes(): { target: any; land: number; id: number }[];
+  /** Authoritative scheduled hit timestamps for an active continuous combo. */
+  comboHits(attacker: Fighter): number[];
+  /** Live enemy Ember fire patches; friendly flames are filtered out by Game. */
+  firePatches(f: Fighter): { pos: THREE.Vector3; radius: number }[];
   now(): number;
 }
 
@@ -43,8 +49,16 @@ export class AiBrain implements Brain {
   private seen = new Set<number>();
   // KAIZEN_PREDATOR_HOOK_V9: use the second X press instead of waiting for WASD.
   private chainDecisionT = 0;
+  // EMBER_GROUND_HAZARD_AI_V1_NOV06: bias the detour to one side until clear.
+  private fireAvoidSide = 1;
+  private fireAvoidKey = "";
   // CONTINUOUS_COMBAT_ASTER_EMBER_V3_NOV06: track the active enemy combo through all beats.
   private comboThreatSerial = -1;
+  // CONTINUOUS_PARRY_AI_V4_NOV06: a planned parry attempt is tied to a real combo beat.
+  private comboParrySerial = -1;
+  private comboParryTarget = -1;
+  private comboParryExamined = -1;
+  private comboParryReleased = false;
 
   constructor(private threats: Threats, level: number) {
     this.p = PRESETS[Math.max(0, Math.min(level, PRESETS.length - 1))];
@@ -76,6 +90,8 @@ export class AiBrain implements Brain {
     this.react(f, o);
     this.defendLongCombo(f, o);
     if (!f.stage) { this.dodge(f); this.position(f, o, dt); }
+    // Run after normal chase/strafe choices, so fire can veto a dangerous route.
+    this.avoidFireGround(f);
     this.antiAirCd = Math.max(0, this.antiAirCd - dt);
     this.aiAirTap = false;
     if (f.state === S.IDLE && f.onGround && !RANGED.has(f.kit) &&
@@ -102,6 +118,9 @@ export class AiBrain implements Brain {
       if (k && Math.random() < dt * 6) f.intent.skill = k;
     }
     if (this.jumpWait >= 0) { this.jumpWait -= dt; if (this.jumpWait < 0) { this.jumpPulse = !this.jumpPulse; f.intent.jump = true; } }
+    // A parry requires a *new* shield raise. Simply holding through the whole
+    // combo results in blocks because the parry window expires after the first hit.
+    if (this.retimeComboParry(f, o)) return;
     if (this.blockWait >= 0) { this.blockWait -= dt; if (this.blockWait < 0) this.blockHold = this.blockDur; }
     if (this.blockHold > 0) {
       this.blockHold -= dt;
@@ -224,15 +243,15 @@ export class AiBrain implements Brain {
         this.queue = [[0, 0.06]]; this.hold = 0;
         return;
       }
-      if (festival || o.atk?.no_parry) {
+      if (festival || (o.atk?.no_parry && !o.isContinuousComboActive())) {
         // Perfect parry cannot stop Veyr's festival melee. Block EARLY (regular guard),
         // or evade when guard cannot sustain a block. Clashes remain valid.
         if (!guardLow && f.onGround) this.schedule(0, Math.max(tth + 0.42, 0.48));
         else if (!canClash) { this.sideT = 0.30; this.sideSign = Math.random() < 0.5 ? -1 : 1; }
         return;
       }
-      // Shield needs real raise time; after a parry, the next raise is twice as fast.
-      const raise = f.nextShieldFast ? 0.05 : 0.10;
+      // Shield must finish rising before contact; successful parry makes the next 90% faster.
+      const raise = f.nextShieldFast ? 0.01 : 0.10;
       if (r < this.p.parry) this.schedule(Math.max(tth - raise - 0.03, 0),
         o.isContinuousComboActive() ? Math.max(0.35, o.atk.wind + o.atk.active + o.atk.recover) : 0.3);
       else if (r < this.p.parry + bc) this.schedule(rand(this.p.react[0], this.p.react[1]) * 0.45,
@@ -246,24 +265,90 @@ export class AiBrain implements Brain {
     } else if (!charging) this.seenCharge = false;
   }
 
-  /** CPUs no longer assume that a parry or clash ends a multi-hit special. */
+  /** A continuous combo does not stop at the first successful parry or block. */
   private defendLongCombo(f: Fighter, o: Fighter) {
     if (!o.isContinuousComboActive()) { this.comboThreatSerial = -1; return; }
+    if (this.comboThreatSerial === o.swingSerial) return;
+    this.comboThreatSerial = o.swingSerial;
     const a = o.atk!;
-    const remaining = Math.max(0.15, a.wind + a.active + a.recover - o.stateT + o.comboPauseT);
-    const close = f.root.position.distanceTo(o.root.position) <= Math.max(3.0, a.reach + 0.7);
-    if (!close || f.state === S.KO) return;
-    // A successful first parry only softens later hits. Keep the shield raised.
-    if (this.blockWait >= 0) this.blockDur = Math.max(this.blockDur, remaining + 0.15);
-    if (this.blockHold > 0) this.blockHold = Math.max(this.blockHold, remaining + 0.10);
-    if (this.comboThreatSerial !== o.swingSerial) {
-      this.comboThreatSerial = o.swingSerial;
-      // If missed the first telegraph, higher-level CPUs can still prepare for later beats.
-      if (this.blockWait < 0 && this.blockHold <= 0 && f.state === S.IDLE &&
-          Math.random() < this.p.block * 0.70) {
-        this.schedule(0, Math.min(1.95, remaining + 0.10));
+    const distance = f.root.position.distanceTo(o.root.position);
+    if (distance > Math.max(3.1, a.reach + 0.75) || f.state !== S.IDLE) return;
+    // Fall back to a conventional block if parrying is unavailable or the CPU
+    // is not skilled enough to risk timed deflections. Do not lock guard forever.
+    const festival = o.kit === "sickle" && o.bloodFestivalT > 0;
+    if ((festival || this.p.parry === 0) && this.blockWait < 0 && this.blockHold <= 0)
+      this.schedule(0, Math.min(1.8, Math.max(0.3, a.wind + a.active + a.recover)));
+  }
+
+  /** Re-raise the shield just before *each real scheduled combo hit*.
+   * Normal raise 100ms; the single-use parry reward shortens that to 10ms.
+   * This is a true input-timing choice: Fighter.receiveHit still determines
+   * whether contact parries, blocks, misses, or breaks guard. */
+  private retimeComboParry(f: Fighter, o: Fighter): boolean {
+    const active = o.isContinuousComboActive();
+    const festival = o.kit === "sickle" && o.bloodFestivalT > 0;
+    if (!active || festival || this.p.parry <= 0 || f.isDown()) {
+      this.comboParrySerial = -1;
+      this.comboParryTarget = -1;
+      this.comboParryExamined = -1;
+      this.comboParryReleased = false;
+      return false;
+    }
+    const a = o.atk!;
+    if (f.root.position.distanceTo(o.root.position) > Math.max(3.1, a.reach + 0.75)) return false;
+    if (f.state !== S.IDLE && f.state !== S.BLOCK) return false;
+    if (o.swingSerial !== this.comboParrySerial) {
+      this.comboParrySerial = o.swingSerial;
+      this.comboParryTarget = -1;
+      this.comboParryExamined = -1;
+      this.comboParryReleased = false;
+    }
+    const now = this.threats.now();
+    if (this.comboParryTarget >= 0 && now > this.comboParryTarget + 0.04) {
+      this.comboParryTarget = -1;
+      this.comboParryReleased = false;
+    }
+    const raise = f.nextShieldFast ? 0.01 : 0.10;
+    if (this.comboParryTarget < 0) {
+      // Give Hard/Master a meaningful chance on *every new hit beat*.
+      // Easy still blocks; Normal tries occasionally without perfect reaction.
+      const chance = Math.min(0.88, 0.20 + this.p.parry * 2.2);
+      for (const beat of this.threats.comboHits(o)) {
+        if (beat > now + 0.9) break;
+        if (beat <= this.comboParryExamined + 0.035) continue;
+        if (beat < now + raise + 0.075) continue;
+        this.comboParryExamined = beat;
+        if (Math.random() < chance) {
+          this.comboParryTarget = beat;
+          this.comboParryReleased = false;
+          break;
+        }
       }
     }
+    if (this.comboParryTarget < 0) return false;
+    const eta = this.comboParryTarget - now;
+    const desired = raise + 0.033; // shield reaches parry state just before the blade hits
+    if (eta > desired + 0.073) return false;
+    // Stop old block schedules. They made the shield stay raised, so late combo
+    // contacts could only be blocked rather than parried.
+    this.blockWait = -1; this.blockDur = 0; this.blockHold = 0;
+    this.queue = []; this.hold = 0;
+    if (f.state === S.BLOCK && !this.comboParryReleased) {
+      // One frame with no shield input is necessary to reset the parry window.
+      this.comboParryReleased = true;
+      f.intent.block = false;
+      return true;
+    }
+    if (eta <= desired + 0.020 && (f.state === S.IDLE || f.state === S.BLOCK)) {
+      f.intent.block = true;
+      // Mark the new shield raise as started; otherwise on the next frame the
+      // AI would mistake its own newly-raised shield for an old held block and
+      // release again, losing the parry window before the strike arrives.
+      this.comboParryReleased = true;
+      return true;
+    }
+    f.intent.block = false;
+    return true;
   }
 
   private dodge(f: Fighter) {
@@ -301,6 +386,112 @@ export class AiBrain implements Brain {
     }
   }
 
+  /** Navigate around enemy ground fire without teleporting or dodging through it.
+   * Samples candidate movement directions so the CPU avoids both entering a
+   * burning circle and stepping into a second circle while escaping the first.
+   * If already burning, it attempts to leave by the shortest safe path.
+   * Does not touch shield/parry/skill input or any character damage numbers. */
+  private avoidFireGround(f: Fighter) {
+    if (f.isDown() || !f.onGround || (f.state !== S.IDLE && f.state !== S.BLOCK)) return;
+    const patches = this.threats.firePatches(f).filter(p =>
+      Math.abs(p.pos.y - f.root.position.y) < 1.55);
+    if (!patches.length) { this.fireAvoidKey = ""; return; }
+
+    const at = f.root.position.clone().setY(0);
+    const desired = f.intent.move.clone().setY(0);
+    const hasMove = desired.lengthSq() > 0.01;
+    if (hasMove) desired.normalize();
+    const look = Math.min(1.85, Math.max(0.9, f.moveSpeed * 0.36));
+
+    // Find the hazard that is being stood in or intersects the next movement.
+    // A small margin keeps the CPU's body just outside the damage boundary.
+    let dangerous: { pos: THREE.Vector3; radius: number } | null = null;
+    let dangerScore = -Infinity;
+    for (const p of patches) {
+      const dx = p.pos.x - at.x, dz = p.pos.z - at.z;
+      const safe = p.radius + f.radius * 0.30 + 0.22;
+      const along = hasMove ? THREE.MathUtils.clamp(dx * desired.x + dz * desired.z, 0, look) : 0;
+      const close = Math.hypot(dx - desired.x * along, dz - desired.z * along);
+      const here = Math.hypot(dx, dz);
+      const inFire = here < safe;
+      // Never hijack an existing move if it heads cleanly OUT of a fire patch.
+      const escaping = inFire && hasMove && (dx * desired.x + dz * desired.z) < -0.60 * here;
+      if ((!hasMove && !inFire) || (escaping && close >= here - 0.12)) continue;
+      if (inFire || (hasMove && close < safe)) {
+        const score = (inFire ? 3 : 1) + (safe - Math.min(close, here));
+        if (score > dangerScore) { dangerScore = score; dangerous = p; }
+      }
+    }
+    if (!dangerous) { this.fireAvoidKey = ""; return; }
+
+    const away = new THREE.Vector3(at.x - dangerous.pos.x, 0, at.z - dangerous.pos.z);
+    if (away.lengthSq() < 0.0001) {
+      if (hasMove) away.copy(desired).negate();
+      else away.set(f.id % 2 ? 1 : -1, 0, 0);
+    }
+    away.normalize();
+    const tangent = new THREE.Vector3(-away.z, 0, away.x);
+    const key = `${dangerous.pos.x.toFixed(2)}:${dangerous.pos.z.toFixed(2)}`;
+    if (this.fireAvoidKey !== key) {
+      this.fireAvoidKey = key;
+      const preference = hasMove ? desired.dot(tangent) : 0;
+      this.fireAvoidSide = Math.abs(preference) > 0.1 ? Math.sign(preference) : (f.id % 2 ? 1 : -1);
+    }
+
+    if (f.stage) {
+      // Platform arenas are effectively one-dimensional: don't step off-stage
+      // merely to dodge a ground patch, and never use z (down/drop-through).
+      const main = f.stage.plats[0];
+      const choices = [this.fireAvoidSide, -this.fireAvoidSide];
+      let best = 0, bestScore = -Infinity;
+      for (const sign of choices) {
+        const x = at.x + sign * look;
+        if (x < main.x0 + 0.55 || x > main.x1 - 0.55) continue;
+        let score = sign * desired.x * 0.7;
+        for (const p of patches) {
+          const gap = Math.hypot(x - p.pos.x, at.z - p.pos.z);
+          const safe = p.radius + f.radius * 0.3 + 0.22;
+          if (gap < safe) score -= 10 * (safe - gap + 0.15);
+        }
+        if (score > bestScore) { bestScore = score; best = sign; }
+      }
+      if (best !== 0) f.intent.move.set(best, 0, 0);
+      return;
+    }
+
+    // Prefer keeping the original path, but strongly penalize any candidate
+    // that intersects fire at successive lookahead points.
+    const flank = tangent.clone().multiplyScalar(this.fireAvoidSide);
+    const candidates = [
+      ...(hasMove ? [desired.clone()] : []),
+      away.clone(), flank.clone(),
+      away.clone().multiplyScalar(0.5).add(flank).normalize(),
+      away.clone().addScaledVector(flank, 0.45).normalize(),
+      away.clone().addScaledVector(flank, -0.45).normalize(),
+      flank.clone().negate(),
+      ...(hasMove ? [desired.clone().add(flank).normalize(), desired.clone().sub(flank).normalize()] : []),
+    ];
+    let best = candidates[0], bestScore = -Infinity;
+    for (const dir of candidates) {
+      let score = hasMove ? dir.dot(desired) * 1.1 : 0;
+      score += dir.dot(flank) * 0.10; // stable clockwise/counterclockwise detour
+      for (const distance of [0.35, 0.75, 1.25, look]) {
+        const x = at.x + dir.x * distance;
+        const z = at.z + dir.z * distance;
+        const arenaEdge = Math.hypot(x, z) - (f.arenaRadius - 0.35);
+        if (arenaEdge > 0) score -= 25 * arenaEdge;
+        for (const p of patches) {
+          const gap = Math.hypot(x - p.pos.x, z - p.pos.z);
+          const safe = p.radius + f.radius * 0.30 + 0.22;
+          if (gap < safe) score -= 7 * (safe - gap + 0.18);
+          else if (gap < safe + 0.25) score -= 0.8 * (safe + 0.25 - gap);
+        }
+      }
+      if (score > bestScore) { bestScore = score; best = dir; }
+    }
+    f.intent.move.copy(best);
+  }
+
   private trySkill(f: Fighter, key: string, force = false) {
     if (f.cooldowns[key] > 0) return false;
     if (!force && Math.random() > 0.5) return false;
@@ -309,7 +500,8 @@ export class AiBrain implements Brain {
   }
 
   private offense(f: Fighter, o: Fighter, dt: number) {
-    if (f.state !== S.IDLE || this.queue.length || this.hold > 0 || this.blockHold > 0) return;
+    if (f.state !== S.IDLE || this.queue.length || this.hold > 0 || this.blockHold > 0 ||
+        this.comboParryTarget > this.threats.now()) return;
     const dist = f.root.position.distanceTo(o.root.position);
     if (f.guard <= f.maxGuard * 0.32 && f.onGround && f.attacks.l1?.type === "melee" &&
       o.state === S.ATTACK && o.atk?.type === "melee" && o.atkPhase === 0 &&

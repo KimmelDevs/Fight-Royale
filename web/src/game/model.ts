@@ -1421,7 +1421,9 @@ export class FighterModel extends THREE.Group {
     // Kicker: relaxed, hands-free upper body; the legs do everything.
     // A longbow is about 85-90% of body height.
     if (this.kit === "bow") { this.vrmRig.archer = true; this.vrmRig.followArm = 0; this.bowPivot?.scale.setScalar(1.45); }
-    for (const h of [this.hand_l, this.hand_r]) h.scale.multiplyScalar(VRM_WEAPON_SCALE);
+    // ZAREK_WEAPON_RANGE_MATCH_V1_NOV06: keep Zarek's long double-ended blade visible on VRM bodies.
+    const weaponScale = this.kit === "glaive" ? 0.95 : VRM_WEAPON_SCALE;
+    for (const h of [this.hand_l, this.hand_r]) h.scale.multiplyScalar(weaponScale);
     JN.forEach((n, i) => this.joints[n].quaternion.copy(save[i]));
     this.hips.position.copy(hipsPos);
     this.quaternion.copy(rootQ);

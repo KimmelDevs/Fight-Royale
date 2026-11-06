@@ -1,3 +1,5 @@
+// EMBER_GROUND_HAZARD_AI_V1_NOV06
+// CONTINUOUS_PARRY_AI_V4_NOV06
 // CONTINUOUS_COMBAT_ASTER_EMBER_V3_NOV06
 // The running match. Owns the renderer, scene, entities and rules for all modes:
 //   duel     - 1v1 in the 3D arena, vs CPU (offline) or vs a friend (online)
@@ -919,6 +921,20 @@ export class Game implements MobHost {
   private threats: Threats = {
     projectiles: () => this.projectiles.filter((p) => !p.visualOnly).map((p) => ({ target: p.target, pos: p.pos, vel: p.vel, id: p.id })),
     strikes: () => this.strikeMarks,
+    // Give the CPU real upcoming per-hit timestamps (not just a single combo telegraph).
+    // The animation is still authoritative: no hit/parry outcomes are fabricated.
+    comboHits: (attacker: Fighter) => this.timers
+      .filter(t => t.owner === attacker && t.serial === attacker.swingSerial && t.t > this.time)
+      .map(t => t.t).sort((a, b) => a - b),
+    // Enemy burning ground is a navigational hazard for CPUs, not a blockable hit.
+    // Same authoritative data drives fire damage, visuals, and AI avoidance.
+    firePatches: (f: Fighter) => this.emberPatches
+      .filter(p => {
+        const owner = this.entities.get(p.ownerId);
+        return owner instanceof Fighter && !owner.isDown() &&
+          owner.team !== f.team && p.ttl > 0.15;
+      })
+      .map(p => ({ pos: p.pos, radius: p.radius })),
     now: () => this.time,
   };
 
@@ -1203,7 +1219,8 @@ export class Game implements MobHost {
             guard: final ? 46 : launch ? 25 : 13,
             knock: final ? 5.0 : launch ? 0.7 : 0.35,
             stun: final ? .55 : launch ? .4 : .17,
-            reach: final ? 2.65 : 2.4,
+            // ZAREK_WEAPON_RANGE_MATCH_V1_NOV06: use the same visible-length calibration as the glaive.
+            reach: final ? 2.34 : 2.18,
             style: final ? "glaive_crescent_final" : launch ? "glaive_crescent_launch" : "glaive_infinite" };
           if (final && !connected) return; // no cinematic finish on missed/blocked starter
           if (launch && f.opponent && !f.opponent.isDown()) {
@@ -1370,7 +1387,7 @@ export class Game implements MobHost {
       const dist = to.length();
       const dir = to.clone().divideScalar(Math.max(dist, 0.001));
       if (d instanceof Fighter && this.isDuel() && d.state === S.ATTACK && d.atk?.type === "melee" &&
-        (d.atkPhase === 1 || (d.atkPhase === 0 && d.atk.wind - d.stateT <= 0.08)) && dist <= a.reach + 0.3 &&
+        (d.atkPhase === 1 || (d.atkPhase === 0 && d.atk.wind - d.stateT <= 0.08)) && dist <= a.reach + (f.kit === "glaive" ? 0.12 : 0.3) &&
         dy < (antiAir || airCombo || d.atkId === "anti_air" || d.atkId.startsWith("air_l") ? 1.65 : 0.8)) {
         this.clash(f, d, f.root.position.clone().addScaledVector(dir, Math.min(dist * 0.5, 0.8)).add(new THREE.Vector3(0, 1.15, 0)));
         return false;
@@ -1783,7 +1800,8 @@ export class Game implements MobHost {
         this.impactFx(a, at, color, a.radius);
         if (f.look.element === "fire" && f.kit === "mage" &&
             (a.id === "heavy" || a.id === "c") && i === 0) {
-          this.spawnEmberPatch(f, at, a.id === "c" ? 2.1 : 1.45);
+          // EMBER_GROUND_HAZARD_AI_V1_NOV06: smaller persistent fire circles (Meteor / charged heavy).
+          this.spawnEmberPatch(f, at, a.id === "c" ? 1.25 : 0.9);
         }
         for (const d of this.enemiesOf(f)) {
           const to = d.root.position.clone().sub(at);
@@ -2315,7 +2333,10 @@ export class Game implements MobHost {
         this.fxp("ring", shieldPos, "#b3f2ff", 1.6, 0.35, 0.9);
         this.fxp("num", shieldPos.clone().add(new THREE.Vector3(0, 0.5, 0)), "PARRY!", "#8fe6ff", 1.4);
         this.add_trauma(0.4);
-        this.hitStop(0.35, 0.3);
+        // Keep the classic dramatic PARRY slow motion, slightly stronger for
+        // continuing combos. Stun never replaces the +0.20s combo continuation.
+        this.hitStop(attacker instanceof Fighter && attacker.isContinuousComboActive() ? 0.46 : 0.35,
+          attacker instanceof Fighter && attacker.isContinuousComboActive() ? 0.17 : 0.30);
         break;
       case "counter": {
         const df = d as Fighter;
