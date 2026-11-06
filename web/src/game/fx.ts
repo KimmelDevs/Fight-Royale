@@ -1,3 +1,4 @@
+// FIGHT_ROYALE_PERFECT_DODGE_V1_NOV07
 // FIGHT_ROYALE_SMALLER_COMBAT_RINGS_ZAREK_WEAPON_CLASH_V1
 // FIGHT_ROYALE_IMPACT_CLASH_OVERHAUL_V1
 // Combat VFX: sparks, droplets, flashes, rings, water effects, lightning, meteors, ground
@@ -130,6 +131,41 @@ export class Fx {
       }
       inst.instanceMatrix.needsUpdate = true;
       return t < life;
+    });
+  }
+
+  /** PERFECT_DODGE_V1: compact translucent anime silhouette (not a large ring).
+   * Three ghosts follow a dash; meshes self-expire after 0.27s. */
+  dodgeGhost(pos: THREE.Vector3, color: string, yaw = 0) {
+    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.32,
+      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+    const ghost = new THREE.Group();
+    ghost.position.copy(pos);
+    ghost.rotation.y = yaw;
+    const oval = (x: number, y: number, z: number, sx: number, sy: number, sz: number, lean = 0) => {
+      const mesh = new THREE.Mesh(SPH, mat);
+      mesh.position.set(x, y, z);
+      mesh.scale.set(sx, sy, sz);
+      mesh.rotation.z = lean;
+      ghost.add(mesh);
+      return mesh;
+    };
+    // A human-sized, softly glowing outline; kept narrower than the fighter.
+    const chest = oval(0, 1.09, 0, 0.25, 0.51, 0.18);
+    (chest as any).ownsMat = true; // shared ghost material disposed just once
+    oval(0, 1.78, 0, 0.21, 0.23, 0.19);
+    oval(-0.33, 1.13, 0, 0.11, 0.39, 0.11, -0.18);
+    oval(0.33, 1.13, 0, 0.11, 0.39, 0.11, 0.18);
+    oval(-0.14, 0.43, 0, 0.13, 0.43, 0.13, -0.08);
+    oval(0.14, 0.43, 0, 0.13, 0.43, 0.13, 0.08);
+    const duration = 0.27;
+    let elapsed = 0;
+    this.add(ghost, (dt) => {
+      elapsed += dt;
+      const f = Math.min(1, elapsed / duration);
+      mat.opacity = 0.32 * (1 - f) * (1 - f);
+      ghost.position.y = pos.y + 0.12 * f;
+      return elapsed < duration;
     });
   }
 

@@ -1,3 +1,4 @@
+// FIGHT_ROYALE_PERFECT_DODGE_V1_NOV07
 // ASTER_TANK_ONLY_V2_20261107
 // MELEE_PROJECTILE_SPRINT_V1_NOV06
 // CONTINUOUS_PARRY_AI_V4_NOV06
@@ -121,6 +122,11 @@ export class Fighter implements Entity {
   wardT = 0;
   counterT = 0;
   invulnT = 0;
+  // PERFECT_DODGE_V1: a real incoming hit must land during the first 0.13s
+  // of a dash, not merely while other invulnerability is active.
+  perfectDodgeT = 0;
+  perfectDodgeUsed = false;
+  perfectDodgeCounterT = 0; // one successful melee riposte, expires after 0.95s
 
   // Survival perks.
   dmgMult = 1;
@@ -345,6 +351,8 @@ export class Fighter implements Entity {
       this.bloodlust = Math.min(100, Math.max(0, 100 * this.bloodFrenzyT / 5));
     this.bloodFestivalT = Math.max(this.bloodFestivalT - dt, 0);
     this.invulnT = Math.max(this.invulnT - dt, 0);
+    this.perfectDodgeT = Math.max(0, this.perfectDodgeT - dt);
+    this.perfectDodgeCounterT = Math.max(0, this.perfectDodgeCounterT - dt);
     this.airJumpT = Math.max(this.airJumpT - dt, 0);
     this.airChaseT = Math.max(this.airChaseT - dt, 0);
     this.airChaseMoveT = Math.max(this.airChaseMoveT - dt, 0);
@@ -547,7 +555,9 @@ export class Fighter implements Entity {
     this.dashDir.copy(dir);
     this.dashT = DASH_T;
     this.dashCd = DASH_CD;
-    this.invulnT = Math.max(this.invulnT, 0.15); // brief dodge window at the start of the dash
+    this.invulnT = Math.max(this.invulnT, 0.15); // existing dash i-frames
+    this.perfectDodgeT = 0.13; // strict timing; not the full dash duration
+    this.perfectDodgeUsed = false;
     this.onDash(this);
   }
   dashing() { return this.dashT > 0; }
@@ -1079,7 +1089,16 @@ export class Fighter implements Entity {
   /** Returns "miss", "warded", "counter", "parry", "blocked", "guard_break", "hit", "crit" or "ko". */
   receiveHit(attacker: Entity | null, a: Attack, power: number): string {
     if (this.state === S.KO) return "none";
-    if (this.invulnT > 0) return "miss";
+    if (this.invulnT > 0) {
+      if (this.perfectDodgeT > 0 && !this.perfectDodgeUsed && this.dashing() &&
+          attacker && attacker.team !== this.team && a.dmg > 0) {
+        this.perfectDodgeUsed = true; // one trigger even during multi-hit attacks
+        this.perfectDodgeT = 0;
+        this.perfectDodgeCounterT = 0.95;
+        return "perfect_dodge";
+      }
+      return "miss";
+    }
     if (this.wardT > 0) { this.model.recoil = 0.4; return "warded"; }
     if (this.counterT > 0 && !a.no_parry) { this.counterT = 0; return "counter"; }
     let dmg = a.dmg * power;

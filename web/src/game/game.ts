@@ -1,3 +1,4 @@
+// FIGHT_ROYALE_PERFECT_DODGE_V1_NOV07
 // FIGHT_ROYALE_SMALLER_COMBAT_RINGS_ZAREK_WEAPON_CLASH_V1
 // FIGHT_ROYALE_IMPACT_CLASH_OVERHAUL_V1
 // ZAREK_PROJECTILE_DESTROY_ONLY_V2_NOV07
@@ -757,6 +758,16 @@ export class Game implements MobHost {
       this.snd("dash", 0.6);
       this.fxp("smoke", x.root.position.clone(), x.look.glow);
       this.fxp("ring", x.root.position.clone().add(new THREE.Vector3(0, 0.1, 0)), x.look.glow, 1.2, 0.2, 0.7);
+      // PERFECT_DODGE_V1: trail the *real* moving fighter with three modest ghosts.
+      // Timed host-side and replicated through the normal FX event stream.
+      const r = this.round;
+      const ghost = () => {
+        if (r === this.round && !x.isDown() && x.dashing())
+          this.fxp("dodgeGhost", x.root.position.clone(), x.look.glow, x.root.rotation.y);
+      };
+      ghost();
+      this.later(0.07, ghost);
+      this.later(0.14, ghost);
     };
     this.scene.add(f.root, f.trail.mesh);
     this.fighters.push(f);
@@ -990,6 +1001,7 @@ export class Game implements MobHost {
       case "orb": fx.bigOrb(v3(a[0]), a[1]); break;
       case "slashes": fx.slashes(v3(a[0]), a[1]); break;
       case "clashBurst": fx.clashBurst(v3(a[0]), a[1], a[2]); break;
+      case "dodgeGhost": fx.dodgeGhost(v3(a[0]), a[1], a[2] ?? 0); break;
       case "impactBurst": fx.impactBurst(v3(a[0]), a[1], a[2], a[3]); break;
       case "impactFrame":
         fx.screenImpact(a[0], a[1], a[2]);
@@ -2357,7 +2369,16 @@ export class Game implements MobHost {
     const scaledAttack = attacker instanceof Fighter && attacker.isContinuousComboActive() &&
       !ranged && attacker.comboDamageMult < 1
       ? { ...a, dmg: a.dmg * attacker.comboDamageMult } : a;
-    const result = d.receiveHit(attacker, scaledAttack, power);
+    // A successful perfect dodge grants ONE +15% melee hit during the next 0.95s.
+    // Misses, blocks and parries don't consume the riposte; projectiles cannot use it.
+    const riposte = attacker instanceof Fighter && attacker.perfectDodgeCounterT > 0 &&
+      !ranged && a.type === "melee" && a.dmg > 0;
+    const result = d.receiveHit(attacker, scaledAttack, riposte ? power * 1.15 : power);
+    if (riposte && attacker instanceof Fighter && ["hit", "crit", "ko"].includes(result)) {
+      attacker.perfectDodgeCounterT = 0;
+      this.fxp("num", attacker.chest().add(new THREE.Vector3(0, 0.72, 0)),
+        "RIPOSTE +15%", "#aeffff", 0.85);
+    }
     const glow = attacker instanceof Fighter ? attacker.look.glow : attacker instanceof Mob ? attacker.def.color : "#ffffff";
     const heavy = a.heavy || a.id === "l3";
     const shieldPos = d instanceof Fighter ? d.model.shieldNode.getWorldPosition(new THREE.Vector3()) : hitPos;
@@ -2506,6 +2527,22 @@ export class Game implements MobHost {
         this.fxp("num", hitPos.clone().add(new THREE.Vector3(0, 0.5, 0)), "ABSORBED", "#8fe6ff", 0.8);
         this.snd("ward", 0.6);
         break;
+      case "perfect_dodge": {
+        const defender = d as Fighter;
+        // No extra i-frames or damage immunity: this was already a legitimate
+        // dash-invulnerable hit, with exactly one Perfect Dodge per dash.
+        this.fxp("dodgeGhost", defender.root.position.clone(), "#aeffff", defender.root.rotation.y);
+        this.fxp("flash", defender.chest(), "#b8faff", 0.18, 0.12, 0.65);
+        this.fxp("sparks", defender.chest(), "#b8faff", 8, 2.5);
+        this.fxp("num", defender.chest().add(new THREE.Vector3(0, 0.55, 0)),
+          "PERFECT DODGE!", "#aef7ff", 1.12);
+        this.fxp("num", defender.chest().add(new THREE.Vector3(0, 1.0, 0)),
+          "COUNTER READY", "#fff0b3", 0.72);
+        this.snd("parry", 0.38);
+        this.add_trauma(0.10);
+        this.hitStop(0.18, 0.27); // 180 ms of cinematic slow motion
+        break;
+      }
       case "miss":
         this.fxp("num", hitPos.clone().add(new THREE.Vector3(0, 0.5, 0)), "MISS", "#c9d3e6", 0.8);
         break;
