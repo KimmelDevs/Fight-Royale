@@ -1,3 +1,4 @@
+// FIGHT_ROYALE_GROUNDED_AIR_SLICES_V1
 // FIGHT_ROYALE_ZAREK_EFFECTIVE_RANGE_NERF_V1
 // EMBER_IGNITION_GUARD_AI_V1_NOV07
 // ENEMY_PROJECTILE_CLASH_AI_V1_NOV06
@@ -49,6 +50,7 @@ export class AiBrain implements Brain {
   // AIR_COMBAT_V1: CPUs also learn to contest the air and chase successful launches.
   private antiAirCd = 0;
   private aiAirTap = false;
+  private airSliceCd = 0;
   private skillCd = 2;
   private seenSwing = -1;
   private seenCharge = false;
@@ -100,25 +102,27 @@ export class AiBrain implements Brain {
     // Run after normal chase/strafe choices, so fire can veto a dangerous route.
     this.avoidFireGround(f);
     this.antiAirCd = Math.max(0, this.antiAirCd - dt);
+    this.airSliceCd = Math.max(0, this.airSliceCd - dt);
     this.aiAirTap = false;
-    if (f.state === S.IDLE && f.onGround && !RANGED.has(f.kit) &&
-        o.root.position.y - f.root.position.y > 0.65 &&
-        o.root.position.y - f.root.position.y < 3.25 &&
-        f.root.position.clone().setY(0).distanceTo(o.root.position.clone().setY(0)) < f.attacks.anti_air.reach + 0.25 &&
-        this.antiAirCd <= 0) {
-      // Space + attack on the same simulation tick, avoiding normal jump.
+    // A cautious jump-in occasionally replaces the old automatic uppercut launcher.
+    // Airborne CPUs swing toward an opponent's current elevation, just like players.
+    const flatGap = f.root.position.clone().setY(0)
+      .distanceTo(o.root.position.clone().setY(0));
+    if (!f.stage && f.onGround && f.state === S.IDLE && !RANGED.has(f.kit) &&
+        this.antiAirCd <= 0 && flatGap > 0.65 && flatGap < 2.3 &&
+        Math.random() < dt * 0.24) {
+      f.intent.jump = true;
+      this.antiAirCd = rand(2.2, 3.8);
+    }
+    if (!f.stage && !f.onGround && f.state === S.IDLE && !f.airSliceUsed &&
+        flatGap < f.attacks.air_l1.reach + 0.20 &&
+        Math.abs(o.chest().y - f.chest().y) < 2.1 && this.airSliceCd <= 0 &&
+        Math.random() < dt * 7.0) {
       this.aiAirTap = true;
-      this.antiAirCd = rand(1.0, 1.8);
+      this.airSliceCd = rand(0.55, 0.85);
       this.queue = [];
       this.hold = 0;
-    } else if (!f.onGround && f.state === S.IDLE &&
-        f.root.position.distanceTo(o.root.position) < 2.3 && this.antiAirCd <= 0 &&
-        !RANGED.has(f.kit)) {
-      this.aiAirTap = true;
-      this.antiAirCd = rand(0.24, 0.45);
     }
-    // Guard the telegraphed beam before committing to an attack that cannot cancel.
-    if (this.defendIgnition(f)) return;
     if (!this.aiAirTap) this.offense(f, o, dt);
     if (f.kit === "wind" && !f.stage) this.airDive(f, o, dt);
     // Sprint to close long gaps. A direction aimed at retreat/evade is not sprinted.
@@ -146,16 +150,8 @@ export class AiBrain implements Brain {
       return;
     }
     if (this.aiAirTap) {
-      f.intent.jump = true;
+      f.intent.jump = false; // an air slash is just left-click, not Space+Click
       f.intent.attack = true;
-      return;
-    }
-    if (f.airChaseT > 0 && f.state === S.IDLE && !RANGED.has(f.kit)) {
-      // Follow up with a pure Space press, never another grounded anti-air chord.
-      this.queue = [];
-      this.hold = 0;
-      f.intent.attack = false;
-      f.intent.jump = true;
       return;
     }
     if (this.hold > 0) {

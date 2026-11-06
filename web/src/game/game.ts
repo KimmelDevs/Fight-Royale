@@ -1,3 +1,5 @@
+// FIGHT_ROYALE_GROUNDED_AIR_SLICES_V1
+// FIGHT_ROYALE_WEIGHTED_KNOCKDOWN_WAKEUP_V1
 // FIGHT_ROYALE_ZAREK_EFFECTIVE_RANGE_NERF_V1
 // FIGHT_ROYALE_ARENA_REACTIONS_V1
 // FIGHT_ROYALE_VICTORY_HIGHLIGHTS_V1
@@ -1487,19 +1489,38 @@ export class Game implements MobHost {
     const fwd = new THREE.Vector3(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
     const antiAir = f.atkId === "anti_air";
     const airCombo = f.atkId.startsWith("air_l");
+    const directionalAir = !f.stage && f.atkId === "air_l1";
     for (const d of this.enemiesOf(f)) {
       const to = d.root.position.clone().sub(f.root.position);
       const dy = Math.abs(to.y);
       to.y = 0;
       const dist = to.length();
       const dir = to.clone().divideScalar(Math.max(dist, 0.001));
+      // Don't allow a blade clash outside the aiming direction of an air slice.
+      if (directionalAir) {
+        const v = d.chest().y - f.chest().y;
+        const angle = Math.atan2(v, Math.max(0.45, dist));
+        if (Math.hypot(Math.max(0, dist - d.radius * 0.45), v) > a.reach + 0.22 ||
+            Math.abs(v) > 2.15 || Math.abs(angle - f.airSliceAngle) > 0.48 ||
+            (dist > 0.6 && dir.dot(fwd) < 0.12)) continue;
+      }
       if (d instanceof Fighter && this.isDuel() && d.state === S.ATTACK && d.atk?.type === "melee" &&
         (d.atkPhase === 1 || (d.atkPhase === 0 && d.atk.wind - d.stateT <= 0.08)) && dist <= a.reach + (f.kit === "glaive" ? 0.12 : 0.3) &&
-        dy < (antiAir || airCombo || d.atkId === "anti_air" || d.atkId.startsWith("air_l") ? 1.65 : 0.8)) {
+        dy < (directionalAir || d.atkId === "air_l1" ? 2.1 :
+          antiAir || airCombo || d.atkId === "anti_air" || d.atkId.startsWith("air_l") ? 1.65 : 0.8)) {
         this.clash(f, d, f.root.position.clone().addScaledVector(dir, Math.min(dist * 0.5, 0.8)).add(new THREE.Vector3(0, 1.15, 0)));
         return false;
       }
-      if (dist - d.radius + 0.35 > a.reach ||
+      if (directionalAir) {
+        // A blade cuts along a real inclined swing path, not a huge vertical cylinder.
+        // From above a target the swing angles DOWN; from below it angles UP.
+        const deltaY = d.chest().y - f.chest().y;
+        const aimToTarget = Math.atan2(deltaY, Math.max(0.45, dist));
+        const trueDistance = Math.hypot(Math.max(0, dist - d.radius * 0.45), deltaY);
+        if (trueDistance > a.reach + 0.22 || Math.abs(deltaY) > 2.15 ||
+            Math.abs(aimToTarget - f.airSliceAngle) > 0.48 ||
+            (dist > 0.6 && dir.dot(fwd) < 0.12)) continue;
+      } else if (dist - d.radius + 0.35 > a.reach ||
           dy > (antiAir ? 3.25 : airCombo ? 1.8 : 1.3) ||
           (dist > 0.6 && dir.dot(fwd) < (antiAir ? -0.08 : 0.15))) continue;
       const hitPos = d.chest().addScaledVector(dir, -0.15);
@@ -1537,8 +1558,8 @@ export class Game implements MobHost {
           this.fxp("sparks", d.chest(), "#ff7885", 22, 5);
         }
       }
-      if (antiAir && d instanceof Fighter && (result === "hit" || result === "crit")) {
-        // Launcher happens only after an HP hit, never through blocks/parries/clashes.
+      if (antiAir && f.stage && d instanceof Fighter && (result === "hit" || result === "crit")) {
+        // Platform mode retains its legacy anti-air. 3D arena no longer uses launchers.
         const wasGrounded = d.onGround;
         d.velY = Math.max(d.velY, f.stage ? 7.2 : 6.6);
         d.onGround = false;
@@ -1778,6 +1799,13 @@ export class Game implements MobHost {
     for (let i = 0; i <= 5; i++) {
       const sample = from.clone().lerp(to, i / 5).sub(center);
       const vertical = Math.abs(sample.y);
+      // Only intercept a projectile if it is inside the visible air-slash arc.
+      if (!f.stage && f.atkId === "air_l1") {
+        const flat = Math.hypot(sample.x, sample.z);
+        const pitch = Math.atan2(sample.y, Math.max(0.45, flat));
+        if (Math.abs(pitch - f.airSliceAngle) > 0.48 ||
+            Math.hypot(flat, sample.y) > reach + horizontalRoom) continue;
+      }
       if (vertical > (f.atkId === "anti_air" || f.atkId.startsWith("air_l") ? 1.9 : 0.94) + horizontalRoom) continue;
       sample.y = 0;
       const dist = sample.length();
@@ -2438,7 +2466,30 @@ export class Game implements MobHost {
     // Misses, blocks and parries don't consume the riposte; projectiles cannot use it.
     const riposte = attacker instanceof Fighter && attacker.perfectDodgeCounterT > 0 &&
       !ranged && a.type === "melee" && a.dmg > 0;
-    const result = d.receiveHit(attacker, scaledAttack, riposte ? power * 1.15 : power);
+    // WEIGHTED_KNOCKDOWN: use weapon mass for melee pushback only.
+    // Attack damage, combo scaling, block/parry handling and skills stay untouched.
+    let knockFactor = 1;
+    if (attacker instanceof Fighter && !ranged && a.type === "melee" &&
+        !(d instanceof Fighter && d.stage)) {
+      switch (attacker.kit) {
+        case "greatsword": knockFactor = 1.38; break; // Garrick: maximum shove
+        case "knight": knockFactor = attacker.look.element === "light"
+          ? (attacker.judgmentT > 0 ? 1.26 : 1.09) : 1.06; break;
+        case "chainblade": knockFactor = 1.13; break;
+        case "knuckles": knockFactor = 1.12; break;
+        case "kicks": knockFactor = 1.08; break;
+        case "katana": knockFactor = 1.06; break;
+        case "glaive": knockFactor = 1.0; break;
+        case "wind": knockFactor = 0.94; break;
+        case "sickle": knockFactor = 0.87; break;
+        case "assassin": knockFactor = 0.81; break;
+        default: knockFactor = 1; break;
+      }
+    }
+    const weightedAttack = knockFactor === 1 ? scaledAttack :
+      { ...scaledAttack, knock: Math.min(9.5, scaledAttack.knock * knockFactor) };
+    if (d instanceof Fighter && attacker) d.setImpactSource(attacker.root.position);
+    const result = d.receiveHit(attacker, weightedAttack, riposte ? power * 1.15 : power);
     if (riposte && attacker instanceof Fighter && ["hit", "crit", "ko"].includes(result)) {
       attacker.perfectDodgeCounterT = 0;
       this.fxp("num", attacker.chest().add(new THREE.Vector3(0, 0.72, 0)),
@@ -2473,6 +2524,13 @@ export class Game implements MobHost {
       case "hit": case "crit": case "ko": {
         if (attacker instanceof Fighter) this.highlightHit(attacker, a, d.lastDamage, result === "ko");
         const crit = d.lastCrit;
+        // A real floor knockdown is different from KO, and remains cosmetic
+        // beyond its short, automatic recovery state.
+        if (d instanceof Fighter && d.state === S.KNOCKDOWN && d.stateT < 0.10) {
+          this.fxp("num", d.chest().add(new THREE.Vector3(0, 0.60, 0)),
+            "KNOCKDOWN!", "#ffd18f", 0.95);
+          this.fxp("smoke", d.root.position.clone(), "#c7b5a6");
+        }
         this.hitSound(attacker, a, crit);
         // Full-screen finish only for duel fighters and bosses, not every survival mob.
         const cinematicKo = result === "ko" && (d instanceof Fighter || (d instanceof Mob && d.def.boss));
@@ -2659,8 +2717,21 @@ export class Game implements MobHost {
       this.fxp("sparks", pos, "#ffa4bb", 22, 7);
       this.fxp("flash", pos, "#ff6088", 0.45, 0.16, 0.85);
     }
+    a.setImpactSource(b.root.position);
+    b.setImpactSource(a.root.position);
     a.clashRecoil();
     b.clashRecoil();
+    // A heavy blade pushes a lighter opponent away more dramatically on a
+    // genuine weapon clash, but clash never deals HP damage or causes knockdown.
+    const clashWeight = (f: Fighter) => f.kit === "greatsword" ? 1.38
+      : f.kit === "knight" && f.look.element === "light"
+        ? (f.judgmentT > 0 ? 1.26 : 1.09)
+      : f.kit === "chainblade" ? 1.12
+      : f.kit === "assassin" ? 0.82
+      : f.kit === "sickle" ? 0.87
+      : f.kit === "knuckles" ? 1.12 : 1;
+    a.weightedClashPush(4.0 * clashWeight(b));
+    b.weightedClashPush(4.0 * clashWeight(a));
     this.fxp("clashBurst", pos, "#ffe9ae", 1.55);
     this.fxp("sparks", pos, "#fff2c0", 50, 10);
     this.fxp("sparks", pos, a.look.glow, 16, 7);
