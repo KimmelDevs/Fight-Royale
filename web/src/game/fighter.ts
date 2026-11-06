@@ -1036,7 +1036,7 @@ export class Fighter implements Entity {
       // HP damage, clashes, and normal blocks otherwise behave as before.
       const festivalGuardTriple = attacker instanceof Fighter && attacker.kit === "sickle" &&
         attacker.bloodFestivalT > 0 && a.type === "melee" && /^l\d+$/.test(attacker.atkId);
-      this.guard -= a.guard * power * (festivalGuardTriple ? 3 / 1.35 : 1);
+      this.guard -= a.guard * power * (festivalGuardTriple ? 2 / 1.35 : 1);
       this.guardDelay = 1;
       if (this.guard <= 0) {
         this.guard = 0;

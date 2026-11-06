@@ -163,7 +163,12 @@ class Account {
   }
 
   // --- ownership ---------------------------------------------------------------------
-  owns(charId: string) { return this.profile.characters.includes(charId); }
+  owns(charId: string) {
+    // Guest Mode: all current and future roster characters are playable.
+    if (!this.signedIn) return true;
+    // Signed-in accounts still use their purchased/unlocked characters.
+    return this.profile.characters.includes(charId);
+  }
   ownsSkill(charId: string) { return this.profile.skills.includes(charId); }
   emblemLevel(id: string) { return this.profile.emblems[id] ?? 1; }
   loadout(charId: string) { return this.profile.loadouts[charId] ?? ["z", "x", "c"]; }
