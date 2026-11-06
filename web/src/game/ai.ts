@@ -68,6 +68,19 @@ export class AiBrain implements Brain {
   private comboParryExamined = -1;
   private comboParryReleased = false;
   private ignitionChoices = new Map<number, boolean>();
+  // NESA_DODGE_KIRA_AIR_3_V1: dodge Nesa's dangerous hammer swings rather than merely guarding them.
+  private nesaThreatSerial = -1;
+  private nesaEvadeChosen = false;
+  private nesaEvadeUsed = false;
+  private nesaEvadeTrigger = 0;
+  private nesaRetreatT = 0;
+  private nesaDodgeSide = 1;
+  private nesaRetreatDir = new THREE.Vector3();
+  // NESA_AI_EDGE_GIANT_KIRA_AIR_MOVE_V2: independently plan the later giant smash.
+  private nesaGiantEvadeUsed = false;
+  private nesaGiantEvadeChosen = false;
+
+
 
   constructor(private threats: Threats, level: number) {
     this.p = PRESETS[Math.max(0, Math.min(level, PRESETS.length - 1))];
@@ -99,8 +112,23 @@ export class AiBrain implements Brain {
     this.react(f, o);
     this.defendLongCombo(f, o);
     if (!f.stage) { this.dodge(f); this.position(f, o, dt); }
+    // NESA_AI_EDGE_GIANT_KIRA_AIR_MOVE_V2: Kira can reposition between air kicks.
+    // Use the same directional input and capped movement available to the player.
+    if (!f.stage && f.kit === "kicks" && !f.onGround && f.state === S.ATTACK &&
+        /^air_l[1-3]$/.test(f.atkId)) {
+      const toward = o.root.position.clone().sub(f.root.position).setY(0);
+      const distance = toward.length();
+      if (distance > 1.1) f.intent.move.copy(toward.divideScalar(distance));
+      else if (distance > 0.01) {
+        const around = new THREE.Vector3(-toward.z, 0, toward.x).normalize();
+        f.intent.move.copy(around).multiplyScalar(0.55);
+      }
+    }
     // Run after normal chase/strafe choices, so fire can veto a dangerous route.
     this.avoidFireGround(f);
+    // NESA_DODGE_KIRA_AIR_3_V1: opponent dodges Nesa's real wind-up; leave
+    // Nesa's own AI and every fighter's damage, guard and parry rules untouched.
+    if (!f.stage && this.evadeNesa(f, o, dt)) return;
     this.antiAirCd = Math.max(0, this.antiAirCd - dt);
     this.airSliceCd = Math.max(0, this.airSliceCd - dt);
     this.aiAirTap = false;
@@ -114,12 +142,14 @@ export class AiBrain implements Brain {
       f.intent.jump = true;
       this.antiAirCd = rand(2.2, 3.8);
     }
-    if (!f.stage && !f.onGround && f.state === S.IDLE && !f.airSliceUsed &&
+    if (!f.stage && !f.onGround &&
+        (f.state === S.IDLE || (f.kit === "kicks" && f.state === S.ATTACK && /^air_l[1-3]$/.test(f.atkId))) &&
+        !f.airSliceUsed &&
         flatGap < f.attacks.air_l1.reach + 0.20 &&
         Math.abs(o.chest().y - f.chest().y) < 2.1 && this.airSliceCd <= 0 &&
         Math.random() < dt * 7.0) {
       this.aiAirTap = true;
-      this.airSliceCd = rand(0.55, 0.85);
+      this.airSliceCd = f.kit === "kicks" ? rand(0.17, 0.24) : rand(0.55, 0.85);
       this.queue = [];
       this.hold = 0;
     }
@@ -161,6 +191,155 @@ export class AiBrain implements Brain {
       this.queue[0][0] -= dt;
       if (this.queue[0][0] <= 0) { this.hold = this.queue[0][1]; this.queue.shift(); f.intent.attack = true; }
     }
+  }
+
+  /** NESA_AI_EDGE_GIANT_KIRA_AIR_MOVE_V2: choose an escape that remains inside
+   * the real arena. A blocked radial retreat loses to a viable tangential route.
+   * Test projected destination, not just angle to the hammer wielder.
+   */
+  private nesaSafeEscape(f: Fighter, o: Fighter, radial: boolean, allowDash: boolean): { dir: THREE.Vector3; gain: number } {
+    const at = f.root.position.clone().setY(0);
+    const from = o.root.position.clone().setY(0);
+    const away = at.clone().sub(from);
+    const originalDist = away.length();
+    if (originalDist > 0.001) away.divideScalar(originalDist);
+    else away.set(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
+    const side = new THREE.Vector3(-away.z, 0, away.x);
+    const towardCenter = at.clone().negate().setY(0);
+    if (towardCenter.lengthSq() > 0.001) towardCenter.normalize();
+    const dirs = [
+      away, side.clone(), side.clone().negate(),
+      away.clone().addScaledVector(side, 0.95),
+      away.clone().addScaledVector(side, -0.95),
+      side.clone().addScaledVector(towardCenter, 0.85),
+      side.clone().negate().addScaledVector(towardCenter, 0.85),
+      towardCenter,
+    ];
+    const cap = Math.max(1.5, f.arenaRadius - f.radius - 0.20);
+    const dashAvailable = allowDash && f.dashCd <= 0 && f.onGround;
+    const lookAhead = dashAvailable ? 3.65 : Math.max(1.10, f.moveSpeed * 0.48);
+    const facing = new THREE.Vector3(Math.sin(o.root.rotation.y), 0, Math.cos(o.root.rotation.y));
+    const fire = this.threats.firePatches(f);
+    let bestScore = -1e10;
+    let best = away.clone();
+    let gain = -1;
+    for (const candidate of dirs) {
+      if (candidate.lengthSq() < 0.0001) continue;
+      const dir = candidate.normalize();
+      const projected = at.clone().addScaledVector(dir, lookAhead);
+      const radialDistance = projected.length();
+      if (radialDistance > cap) projected.multiplyScalar(cap / radialDistance);
+      const actualMove = projected.distanceTo(at);
+      const resultingDistance = projected.distanceTo(from);
+      const actualGain = resultingDistance - originalDist;
+      const delta = projected.clone().sub(from);
+      const lateral = Math.abs(delta.x * facing.z - delta.z * facing.x);
+      // Radial AoE needs maximum distance; ordinary strikes can also escape their arc.
+      let score = resultingDistance + (radial ? 0 : lateral * 0.20) + actualMove * 0.18;
+      if (actualGain < 0) score += actualGain * 2.8;
+      // Wall clipping makes a direction ineffective even if it points away.
+      if (actualMove < lookAhead * 0.30) score -= 2.5;
+      if (projected.length() > cap - 0.08) score -= 0.14;
+      // Avoid accidentally escaping a hammer into Ember's persistent floor flames.
+      for (const patch of fire) {
+        if (Math.abs(patch.pos.y - f.root.position.y) > 1.55) continue;
+        const dist = Math.hypot(projected.x - patch.pos.x, projected.z - patch.pos.z);
+        if (dist < patch.radius + f.radius * 0.3 + 0.12)
+          score -= 4 + (patch.radius - dist) * 2;
+      }
+      if (score > bestScore) { bestScore = score; best.copy(dir); gain = actualGain; }
+    }
+    return { dir: best, gain };
+  }
+
+  /** NESA_AI_EDGE_GIANT_KIRA_AIR_MOVE_V2: use visible wind-ups and real hit radii.
+   * Heartbreaker's first bonk and giant follow-up are different threats, so a
+   * dodge of the little hammer does NOT consume the dodge for the giant hammer.
+   */
+  private evadeNesa(f: Fighter, o: Fighter, dt: number): boolean {
+    const a = o.atk;
+    const active = o.kit === "hammer" && o.state === S.ATTACK && !!a && !f.isDown();
+    if (!active) { this.nesaRetreatT = 0; return false; }
+    // Do not override moves that the fighter cannot cancel into a real dash.
+    const available = f.state === S.IDLE || f.state === S.BLOCK || f.state === S.CHARGE;
+    if (!available) { this.nesaRetreatT = 0; return false; }
+    const giant = a!.style === "nesa_high_striker";
+    const spin = a!.style === "nesa_spin" || a!.style === "nesa_air_spin";
+    const heart = a!.style === "nesa_heart_slam";
+    const area = giant || spin || heart || a!.type === "strike";
+    const gap = f.root.position.clone().setY(0).distanceTo(o.root.position.clone().setY(0));
+    // Actual source hitboxes: first high-striker bonk reaches 2.65, giant 3.6.
+    // Normal hammer attacks may advance during the telegraphed wind-up.
+    const firstRadius = giant ? 2.65 + f.radius * 0.45 + 0.22 :
+      spin ? 2.80 + f.radius * 0.5 + 0.70 :
+      area ? Math.max(2.4, a!.radius) + f.radius * 0.45 + 0.45 :
+      a!.reach + f.radius * 0.5 + Math.min(1.25, a!.lunge * 0.33) + 0.32;
+    const bigRadius = 3.60 + f.radius * 0.4 + 0.55;
+
+    if (this.nesaThreatSerial !== o.swingSerial) {
+      this.nesaThreatSerial = o.swingSerial;
+      this.nesaEvadeUsed = false;
+      this.nesaGiantEvadeUsed = false;
+      // Keep difficulty scaling: easy is less consistent, master more alert.
+      this.nesaEvadeChosen = Math.random() < Math.min(0.94, 0.13 + this.p.block * 1.18);
+      this.nesaGiantEvadeChosen = Math.random() < Math.min(0.97, 0.38 + this.p.block * 0.88);
+      const lead = 0.105 + this.p.react[1] * 0.28 + Math.random() * 0.025;
+      this.nesaEvadeTrigger = Math.max(0.04, a!.wind - lead);
+      this.nesaRetreatT = 0;
+    }
+    const t = o.stateT;
+    const giantImpact = a!.wind + 1.90; // actual scheduled giant-smash callback
+    const giantDue = giant && !this.nesaGiantEvadeUsed && this.nesaGiantEvadeChosen &&
+      gap < bigRadius + 0.65 &&
+      t >= giantImpact - (0.44 + this.p.react[1] * 0.15) &&
+      t < giantImpact + 0.08;
+    const firstDue = !this.nesaEvadeUsed && this.nesaEvadeChosen &&
+      gap < firstRadius + 0.65 && t >= this.nesaEvadeTrigger &&
+      t < a!.wind + (spin ? Math.max(0.26, a!.active - 0.08) : 0.18);
+
+    if (giantDue || firstDue) {
+      if (giantDue) this.nesaGiantEvadeUsed = true;
+      else this.nesaEvadeUsed = true;
+      const radial = giantDue || area;
+      // Heartbreaker has a giant second hit: conserve the 6-second dash for it.
+      const useDash = f.dashCd <= 0 && f.onGround && (!giant || giantDue);
+      const plan = this.nesaSafeEscape(f, o, radial, useDash);
+      this.nesaRetreatDir.copy(plan.dir);
+      // Leave the danger in one burst; do not blindly walk backwards at the wall.
+      this.nesaRetreatT = giantDue ? 0.48 : radial ? 0.42 : 0.33;
+      // Remove an earlier planned shield/parry, not the target's real combat rules.
+      this.blockWait = -1; this.blockDur = 0; this.blockHold = 0;
+      this.queue = []; this.hold = 0;
+      f.intent.attack = false;
+      f.intent.skill = "";
+      f.intent.block = false;
+      f.intent.move.copy(plan.dir);
+      // A genuine dash is only available when its real cooldown allows it.
+      if (useDash) f.intent.dash.copy(plan.dir);
+      else if (plan.gain < 0.30 && (giantDue || area) && f.onGround) {
+        // If trapped against the boundary, guarding is better than stuck retreat.
+        f.intent.block = true;
+      }
+      return true;
+    }
+
+    if (this.nesaRetreatT > 0 &&
+        ((giant && t < giantImpact + 0.15 && gap < bigRadius + 1.0) ||
+         (t < a!.wind + (spin ? a!.active : 0.30) && gap < firstRadius + 0.85))) {
+      this.nesaRetreatT = Math.max(0, this.nesaRetreatT - dt);
+      // Replan every frame, so changing position / boundary never pins the CPU.
+      const radial = area;
+      const allowDash = !giant || t >= giantImpact - 0.55;
+      const plan = this.nesaSafeEscape(f, o, radial, allowDash);
+      this.nesaRetreatDir.copy(plan.dir);
+      f.intent.move.copy(plan.dir);
+      f.intent.block = false;
+      f.intent.attack = false;
+      f.intent.skill = "";
+      return true;
+    }
+    this.nesaRetreatT = 0;
+    return false;
   }
 
   private jumpPulse = false;

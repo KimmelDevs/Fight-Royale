@@ -175,6 +175,10 @@ export class Fighter implements Entity {
   // GROUNDED_AIR_SLICES_V1: one normal attack per jump. No aerial combo or slam.
   airSliceUsed = false;
   airSliceAngle = 0; // signed pitch toward the actual target, radians
+  // NESA_DODGE_KIRA_AIR_3_V1: Kira may deliver three separately timed air kicks per jump.
+  private kiraAirKicks = 0;
+  private kiraAirBuffered = false;
+
   private airSliceQueued = false;
   // Space then Click within 0.22s still counts as a grounded anti-air chord.
   private airStartT = 99;
@@ -361,6 +365,18 @@ export class Fighter implements Entity {
     this.attacks.air_l1 = { ...this.attacks.air_l1, next: "", lunge: 0,
       knock: Math.min(this.attacks.air_l1.knock, 0.8),
       heavy: false, stagger: false, recover: Math.max(this.attacks.air_l1.recover, 0.30) };
+    // NESA_DODGE_KIRA_AIR_3_V1: Kira's three aerial kicks are standard melee hits:
+    // the shield blocks them and overlapping attacks clash; perfect parry does not.
+    if (this.kit === "kicks") {
+      for (let i = 1; i <= 3; i++) {
+        const key = `air_l${i}`;
+        const original = this.attacks[key];
+        this.attacks[key] = { ...original, type: "melee", no_parry: true,
+          wind: 0.075, active: 0.085, recover: i === 3 ? 0.18 : 0.105,
+          reach: 2.0 + 0.08 * (i - 1), lunge: 0,
+          knock: i === 3 ? 2.1 : 0.8, heavy: false, stagger: false, next: "" };
+      }
+    }
     this.root.rotation.order = "YXZ";
     this.model = new FighterModel(look);
     this.root.add(this.model);
@@ -418,6 +434,24 @@ export class Fighter implements Entity {
       a.leg_l[0] -= 0.20; a.leg_r[0] += 0.25;
       this.poses[`air_slice_${direction}_w`] = w;
       this.poses[`air_slice_${direction}_s`] = a;
+      if (this.kit === "kicks") {
+        // Three recognizable aerial kick beats (right, left, turning heel).
+        for (let n = 1; n <= 3; n++) {
+          const kw = copy(w), ks = copy(a);
+          if (n === 2) {
+            // Opposite leg initiates the second kick, with slight waist counterturn.
+            const t0 = kw.leg_r; kw.leg_r = kw.leg_l; kw.leg_l = t0;
+            const t1 = ks.leg_r; ks.leg_r = ks.leg_l; ks.leg_l = t1;
+            kw.torso[1] -= 0.22; ks.torso[1] += 0.24;
+          } else if (n === 3) {
+            kw.torso[1] += 0.35; ks.torso[1] -= 0.42;
+            kw.leg_r[0] -= 0.38; ks.leg_r[0] -= 0.55;
+            kw.leg_l[0] += 0.30; ks.leg_l[0] += 0.25;
+          }
+          this.poses[`kira_air_${n}_${direction}_w`] = kw;
+          this.poses[`kira_air_${n}_${direction}_s`] = ks;
+        }
+      }
     }
   }
 
@@ -442,11 +476,14 @@ export class Fighter implements Entity {
   private tryAirSlice() {
     if (this.onGround || this.airSliceUsed || this.atkLock > 0 ||
         (this.state !== S.IDLE && this.state !== S.BLOCK)) return;
-    this.airSliceUsed = true;
+    // NESA_DODGE_KIRA_AIR_3_V1: 3 taps / connected kicks for Kira, one for others.
+    if (this.kit === "kicks") this.kiraAirKicks = Math.min(3, this.kiraAirKicks + 1);
+    this.airSliceUsed = this.kit !== "kicks" || this.kiraAirKicks >= 3;
+    this.kiraAirBuffered = false;
     this.airSliceQueued = false;
     this.airSliceAngle = this.airAimAtOpponent();
     this.holding = false;
-    this.startAttack("air_l1");
+    this.startAttack(this.kit === "kicks" ? `air_l${this.kiraAirKicks}` : "air_l1");
   }
 
   isDown() { return this.state === S.KO; }
@@ -823,7 +860,11 @@ export class Fighter implements Entity {
     }
     if (!this.stage && pressed && !this.onGround) {
       this.holding = false;
-      this.tryAirSlice();
+      if (this.kit === "kicks" && this.state === S.ATTACK &&
+          /^air_l[1-3]$/.test(this.atkId) && this.kiraAirKicks < 3) {
+        // Queue the next click during a kick; fire it when the active contact ends.
+        this.kiraAirBuffered = true;
+      } else this.tryAirSlice();
       return;
     }
     if (pressed && this.kit === "glaive" && this.state === S.ATTACK &&
@@ -848,7 +889,7 @@ export class Fighter implements Entity {
     if (pressed && this.onGround && (this.state === S.IDLE || this.state === S.BLOCK)) {
       this.velY = this.jumpV;
       this.onGround = false;
-      this.airSliceUsed = false;
+      this.airSliceUsed = false; this.kiraAirKicks = 0; this.kiraAirBuffered = false;
       if (this.state === S.BLOCK) this.setState(S.IDLE);
       // Space+Click on the same frame: jump, then swing (never anti-air launch).
       if (this.kit === "hammer" && this.nesaAirHolding) this.nesaAirChargeT = 0;
@@ -1148,6 +1189,19 @@ export class Fighter implements Entity {
   private attackStep() {
     const a = this.atk!;
     const w = a.wind, ac = a.active, r = a.recover;
+    // NESA_DODGE_KIRA_AIR_3_V1: click-buffered second/third kicks during one jump.
+    // Each starts a new real attack with its own collision and clash checks.
+    if (this.kit === "kicks" && this.kiraAirBuffered && !this.onGround &&
+        /^air_l[1-3]$/.test(this.atkId) && this.kiraAirKicks < 3 &&
+        this.stateT >= w + ac) {
+      this.kiraAirBuffered = false;
+      this.kiraAirKicks++;
+      this.airSliceUsed = this.kiraAirKicks >= 3;
+      this.airSliceAngle = this.airAimAtOpponent();
+      this.startAttack(`air_l${this.kiraAirKicks}`);
+      return;
+    }
+
     if (this.kit === "hammer" && a.name !== "Upsie Daisie" && this.atkPhase === 0 &&
         this.stateT < w && this.intent.block) {
       // Pre-swing cancel is intentional; this move did NOT deal any damage.
@@ -1297,7 +1351,12 @@ export class Fighter implements Entity {
     pos.addScaledVector(dir, v * dt);
     // Directional collision impulse. Gravity and regular forward movement still work.
     if (recoilSpeed > 0) pos.addScaledVector(this.knockAway, recoilSpeed * dt);
-    const steer = this.state === S.IDLE ? 1 : this.state === S.BLOCK ? 0.5 : this.state === S.CHARGE ? 0.4 : 0;
+    // NESA_AI_EDGE_GIANT_KIRA_AIR_MOVE_V2: steer Kira during all three airborne kicks.
+    // No extra i-frames, dash, or sprint: movement uses her ordinary moveSpeed.
+    const kiraAirSteer = this.kit === "kicks" && !this.onGround && this.state === S.ATTACK &&
+      /^air_l[1-3]$/.test(this.atkId);
+    const steer = this.state === S.IDLE ? 1 : this.state === S.BLOCK ? 0.5 :
+      this.state === S.CHARGE ? 0.4 : kiraAirSteer ? 0.92 : 0;
     if (steer > 0 && this.intent.move.lengthSq() > 0.0001) {
       const step = this.intent.move.clone().normalize().multiplyScalar(this.moveSpeed * (this.bloodFrenzyT > 0 ? 1.15 : 1) * (this.meteorFistArmor ? 1 : this.status.speedMult()) * (this.intent.sprint && this.state === S.IDLE && this.onGround ? 1.42 : 1) * steer * dt);
       if (dist < MIN_DIST && step.dot(dir) > 0) step.addScaledVector(dir, -step.dot(dir));
@@ -1321,7 +1380,7 @@ export class Fighter implements Entity {
       this.root.position.y = 0;
       this.velY = 0;
       this.onGround = true;
-      this.airSliceUsed = false;
+      this.airSliceUsed = false; this.kiraAirKicks = 0; this.kiraAirBuffered = false;
       this.airSliceQueued = false;
       this.airJump = 0;
       this.airRecoverUsed = false;
@@ -1550,7 +1609,7 @@ export class Fighter implements Entity {
     if (this.chainBoundBy) this.chainBoundBy.releaseChainBind();
     this.chainBoundBy = null;
     this.airChaseT = 0; this.airChaseMoveT = 0; this.airRecoverUsed = false;
-    this.airSliceUsed = false; this.airSliceQueued = false;
+    this.airSliceUsed = false; this.kiraAirKicks = 0; this.kiraAirBuffered = false; this.airSliceQueued = false;
     this.nesaAirHolding = false; this.nesaAirChargeT = 0; this.nesaSpinYaw = 0;
     this.nesaCCharges = 3; this.nesaCRechargeT = 0; this.nesaCArmed = true;
     this.model.nesaSpinHorizontal = 0;
@@ -1575,7 +1634,7 @@ export class Fighter implements Entity {
     if (this.chainBoundBy) this.chainBoundBy.releaseChainBind();
     this.chainBoundBy = null;
     this.airChaseT = 0; this.airChaseMoveT = 0;
-    this.airSliceUsed = false; this.airSliceQueued = false;
+    this.airSliceUsed = false; this.kiraAirKicks = 0; this.kiraAirBuffered = false; this.airSliceQueued = false;
     this.nesaAirHolding = false; this.nesaAirChargeT = 0; this.nesaSpinYaw = 0;
     this.nesaCCharges = 3; this.nesaCRechargeT = 0; this.nesaCArmed = true;
     this.model.nesaSpinHorizontal = 0;
@@ -1715,7 +1774,7 @@ export class Fighter implements Entity {
         pos.y = p.y;
         this.velY = 0;
         this.onGround = true;
-        this.airSliceUsed = false;
+        this.airSliceUsed = false; this.kiraAirKicks = 0; this.kiraAirBuffered = false;
         this.airSliceQueued = false;
         this.ground = p;
         this.airJumps = 1;
@@ -1881,11 +1940,14 @@ export class Fighter implements Entity {
       case S.WIN: p = "win"; sp = 6; break;
     }
     // Directional air swings use real distinct poses, including for remote VRM models.
-    if (!this.stage && this.state === S.ATTACK && this.atkId === "air_l1") {
+    if (!this.stage && this.state === S.ATTACK && (this.atkId === "air_l1" || (this.kit === "kicks" && /^air_l[2-3]$/.test(this.atkId)))) {
       const direction = this.airSliceAngle < -0.28 ? "down" :
         this.airSliceAngle > 0.28 ? "up" : "level";
-      p = `air_slice_${direction}_${this.atkPhase === 0 ? "w" : "s"}`;
-      sp = this.atkPhase === 0 ? 20 : 44;
+      if (this.kit === "kicks") {
+        const number = Math.max(1, Math.min(3, Number(this.atkId.slice(-1)) || 1));
+        p = `kira_air_${number}_${direction}_${this.atkPhase === 0 ? "w" : "s"}`;
+      } else p = `air_slice_${direction}_${this.atkPhase === 0 ? "w" : "s"}`;
+      sp = this.atkPhase === 0 ? 24 : 56;
     }
     this.poseName = p;
     this.poseSpeed = sp;
