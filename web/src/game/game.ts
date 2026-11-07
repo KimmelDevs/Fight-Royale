@@ -1,3 +1,4 @@
+// MARINA_RAVEN_ZAREK_BOB_ABILITIES_20261107_V1
 // FIGHT_ROYALE_BULLET_SWORDPLAY_GARRICK_RESOLVE_V1
 // KAIZEN_PARRY_SPIN_SLOW_REVERSE_V10
 // KAIZEN_SPIN_HIT_RELIABILITY_V9
@@ -173,6 +174,8 @@ class Projectile {
   finalBlade = false;
   /** Downward pull (m/s^2) for thrown bombs; 0 = straight flight. */
   gravity = 0;
+  /** Actual landing-warning marker for Bob's cluster canister. */
+  clusterMarkId: number | null = null;
   constructor(id: number, public shooter: Entity | null, public team: number, public atk: Attack | null,
     public power: number, pos: THREE.Vector3, vel: THREE.Vector3, public style: string, element: string,
     public size: number, public color: string, public pierce: boolean, public visualOnly: boolean, public target: Entity | null) {
@@ -231,6 +234,47 @@ function makeBloodFestivalVisual(radius: number): { visual: THREE.Group; blades:
   return { visual, blades };
 }
 
+
+/** MARINA_RAVEN_ZAREK_BOB_ABILITIES_20261107_V1: visible persistent support / control circles. */
+interface MagicPool {
+  id: number; kind: "healing_water" | "static_field"; owner: Fighter | null;
+  team: number; center: THREE.Vector3; radius: number;
+  time: number; age: number; nextPulse: number; visual: THREE.Group;
+}
+
+function makeMagicPoolVisual(kind: MagicPool["kind"], radius: number): THREE.Group {
+  const g = new THREE.Group();
+  const electric = kind === "static_field";
+  const main = electric ? "#9368ff" : "#4ad9ff";
+  const edge = electric ? "#e5c4ff" : "#c8fbff";
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(radius, 64),
+    new THREE.MeshBasicMaterial({ color: main, transparent: true, opacity: electric ? 0.15 : 0.21,
+      depthWrite: false, side: THREE.DoubleSide }));
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.y = 0.025;
+  g.add(floor);
+  for (const [r, thickness, y, tint] of [
+    [radius, 0.055, 0.08, main],
+    [radius * 0.80, 0.026, 0.095, edge],
+    [radius * 0.47, 0.020, 0.105, main]
+  ] as [number, number, number, string][]) {
+    const circle = new THREE.Mesh(new THREE.TorusGeometry(r, thickness, 6, 64),
+      new THREE.MeshBasicMaterial({ color: tint, transparent: true, opacity: 0.84, depthWrite: false }));
+    circle.rotation.x = Math.PI / 2; circle.position.y = y; g.add(circle);
+  }
+  for (let i = 0; i < 12; i++) {
+    const angle = i * Math.PI * 2 / 12;
+    const r = radius * (electric ? 0.91 : 0.72);
+    const sparkle = new THREE.Mesh(electric
+      ? new THREE.OctahedronGeometry(0.065, 0)
+      : new THREE.SphereGeometry(0.07, 7, 5),
+      new THREE.MeshBasicMaterial({ color: i % 3 ? main : edge, transparent: true, opacity: 0.95 }));
+    sparkle.position.set(Math.cos(angle) * r, electric ? 0.18 : 0.13, Math.sin(angle) * r);
+    sparkle.name = "poolSpark"; g.add(sparkle);
+  }
+  return g;
+}
+
 const BOMB_GRAVITY = 16;
 
 /** A mine or powder keg on the field. */
@@ -284,6 +328,33 @@ function animateTrap(t: Trap, dt: number) {
 
 function buildProjectile(g: THREE.Group, style: string, element: string, size: number, color: string) {
   const glow = new THREE.MeshBasicMaterial({ color });
+  if (style === "clusterbomb") {
+    // Bright segmented four-pod canister, intentionally NOT the round black bomb.
+    const shell = new THREE.MeshLambertMaterial({ color: "#f3a72f", emissive: "#6b2500", emissiveIntensity: 0.24 });
+    const dark = new THREE.MeshLambertMaterial({ color: "#32313a" });
+    const stripe = new THREE.MeshBasicMaterial({ color: "#ffed75" });
+    const core = new THREE.Mesh(new THREE.CylinderGeometry(0.17 * size, 0.17 * size, 0.34 * size, 8), shell);
+    core.rotation.x = Math.PI / 2;
+    g.add(core);
+    for (const z of [-0.13, 0.13]) {
+      const band = new THREE.Mesh(new THREE.CylinderGeometry(0.175 * size, 0.175 * size, 0.05 * size, 8), dark);
+      band.rotation.x = Math.PI / 2; band.position.z = z * size; g.add(band);
+    }
+    for (let i = 0; i < 4; i++) {
+      const angle = i * Math.PI / 2;
+      const pod = new THREE.Mesh(new THREE.SphereGeometry(0.103 * size, 9, 7), i % 2 ? dark : shell);
+      pod.position.set(Math.cos(angle) * 0.225 * size, Math.sin(angle) * 0.225 * size, 0);
+      g.add(pod);
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.04 * size, 8, 5), stripe);
+      eye.position.copy(pod.position).multiplyScalar(1.35);
+      g.add(eye);
+    }
+    const beacon = new THREE.Mesh(new THREE.OctahedronGeometry(0.085 * size, 0), glow);
+    beacon.position.z = 0.23 * size;
+    beacon.name = "clusterBeacon";
+    g.add(beacon);
+    return;
+  }
   if (style === "bomb") {
     const body = new THREE.Mesh(new THREE.SphereGeometry(0.11 * size, 12, 8), new THREE.MeshBasicMaterial({ color: "#2a2a32" }));
     g.add(body);
@@ -397,6 +468,7 @@ export class Game implements MobHost {
   traps: Trap[] = [];
   /** Blood Festival arenas. Created on host and replicated as visual events on clients. */
   private bloodFestivals: BloodFestival[] = [];
+  private magicPools: MagicPool[] = [];
   private kaizenGuardContacts = new WeakMap<Fighter, WeakMap<Entity, number>>();
   // ASTER_EMBER_LATEST_20261106: persistent Ember ground-fire visual + host damage timer.
   private emberPatches: { ownerId: number; pos: THREE.Vector3; radius: number; ttl: number;
@@ -618,6 +690,8 @@ export class Game implements MobHost {
     this.traps = [];
     for (const festival of this.bloodFestivals) this.scene.remove(festival.visual);
     this.bloodFestivals = [];
+    for (const pool of this.magicPools) this.scene.remove(pool.visual);
+    this.magicPools = [];
     for (const p of this.emberPatches) this.scene.remove(p.visual);
     this.emberPatches = [];
     for (const b of this.emberBeams) this.scene.remove(b.visual);
@@ -932,6 +1006,7 @@ export class Game implements MobHost {
     this.updateProjectiles(dt);
     this.updateTraps(dt);
     this.updateBloodFestivals(dt);
+    this.updateMagicPools(dt);
     this.updateEmberFire(dt);
     if (this.cfg.role !== "client") {
       this.drainDots();
@@ -1056,6 +1131,8 @@ export class Game implements MobHost {
   private threats: Threats = {
     projectiles: () => this.projectiles.filter((p) => !p.visualOnly).map((p) => ({ target: p.target, pos: p.pos, vel: p.vel, id: p.id })),
     strikes: () => this.strikeMarks,
+    fields: (f: Fighter) => this.magicPools.filter(p => p.kind === "static_field" && p.team !== f.team && p.time > 0)
+      .map(p => ({ id: p.id, center: p.center, radius: p.radius })),
     ignitions: (f: Fighter) => this.emberIgnitions
       .filter(i => i.round === this.round && i.land > this.time &&
         i.caster.team !== f.team && !i.caster.isDown())
@@ -1352,6 +1429,10 @@ export class Game implements MobHost {
       this.carrionSweep(f, a);
       return;
     }
+    if (f.kit === "glaive" && a.style === "glaive_thunderflash") {
+      this.zarekThunderflash(f, a);
+      return;
+    }
     if (f.kit === "glaive" && ["glaive_cyclone", "glaive_serpent", "glaive_phantom", "glaive_infinite"].includes(a.style)) {
       this.stormGlaiveSwing(f, a);
       return;
@@ -1398,6 +1479,31 @@ export class Game implements MobHost {
       case "mine": this.plantMine(f, a); break;
       case "barrel": this.placeBarrel(f, a); break;
       default: this.melee(f, a);
+    }
+  }
+
+  /** Zarek's fast straight-line thunder draw: real fighter motion, one timed blade hit. */
+  private zarekThunderflash(f: Fighter, a: Attack) {
+    const serial = f.swingSerial, round = this.round;
+    const color = "#67dfff";
+    const start = f.root.position.clone();
+    this.fxp("flash", f.chest(), "#e8ffff", 0.92, 0.15, 0.96);
+    this.fxp("ring", start, color, 1.12, 0.23, 0.86);
+    this.fxp("sparks", f.model.bladeTip.getWorldPosition(new THREE.Vector3()), color, 35, 8);
+    this.snd("zap", 0.84);
+    for (const t of [0.045, 0.09, 0.145, 0.185]) {
+      this.laterCombo(f, t, () => {
+        if (round !== this.round || f.isDown() || f.swingSerial !== serial ||
+            f.state !== S.ATTACK || f.atk?.style !== "glaive_thunderflash") return;
+        const spot = f.root.position.clone();
+        this.fxp("slashes", spot.clone().add(new THREE.Vector3(0, 0.8, 0)), color);
+        this.fxp("sparks", spot.clone().add(new THREE.Vector3(0, 0.65, 0)), "#a9f5ff", 13, 7);
+        if (t === 0.185) {
+          this.fxp("flash", f.model.bladeTip.getWorldPosition(new THREE.Vector3()), "#ffffff", 0.85, 0.12, 0.95);
+          this.melee(f, a); // Standard block/parry/clash hit confirmation.
+          this.snd("swing_heavy", 0.78);
+        }
+      });
     }
   }
 
@@ -1877,7 +1983,17 @@ export class Game implements MobHost {
       const to = aim.clone().sub(origin).setY(0).applyAxisAngle(new THREE.Vector3(0, 1, 0), off);
       const land = origin.clone().setY(0).add(to);
       const vel = new THREE.Vector3((land.x - origin.x) / T, (0.08 - origin.y + 0.5 * g * T * T) / T, (land.z - origin.z) / T);
-      const p = this.spawnProjectile(f, f.team, a, f.atkPower, origin, vel, "bomb", a.element, a.size, f.look.glow, false, o);
+      const cluster = a.style === "clusterbomb";
+      const p = this.spawnProjectile(f, f.team, a, f.atkPower, origin.clone(), vel, cluster ? "clusterbomb" : "bomb", a.element, a.size, f.look.glow, false, o);
+      if (cluster) {
+        const warning = { target: o, land: this.time + T, id: this.nextId++,
+          center: land.clone(), radius: a.radius * 1.85 + 0.22, caster: f,
+          followsCaster: false, style: "clusterbomb" };
+        this.strikeMarks.push(warning);
+        p.clusterMarkId = warning.id;
+        this.fxp("tele", land.clone(), "#ff8a26", warning.radius, T);
+        this.fxp("ring", land.clone(), "#ffd173", warning.radius * 0.85, 0.35, 0.74);
+      }
       p.gravity = g;
       p.life = T + 1;
     }
@@ -2202,6 +2318,11 @@ export class Game implements MobHost {
         }
       }
       if (p.style === "bloodsickle" || p.style === "bloodcrescent") p.spin.rotation.z += dt * 19;
+      else if (p.style === "clusterbomb") {
+        p.spin.rotation.z += dt * 6;
+        const beacon = p.spin.getObjectByName("clusterBeacon");
+        if (beacon) beacon.scale.setScalar(0.8 + 0.25 * Math.sin(p.age * 24));
+      }
       else if (p.style === "shuriken") p.spin.rotation.y += dt * 30;
       else if (p.style === "bolt") p.spin.rotation.z += dt * 12;
       if (!p.visualOnly && p.atk) {
@@ -2230,6 +2351,8 @@ export class Game implements MobHost {
       }
     }
     for (const p of this.projectiles) if (p.done) {
+      if (p.clusterMarkId !== null)
+        this.strikeMarks = this.strikeMarks.filter(m => m.id !== p.clusterMarkId);
       this.scene.remove(p.group);
       if (p.shooter instanceof Fighter && p.style === "bloodsickle") p.shooter.sickleOut = false;
       if (!p.visualOnly) this.emit(["projEnd", p.id]);
@@ -2574,13 +2697,83 @@ export class Game implements MobHost {
     }
   }
 
+  /** Real host-owned fields. Visual and end events are mirrored to online guests. */
+  private spawnMagicPool(f: Fighter, a: Attack) {
+    const kind = a.mode as MagicPool["kind"];
+    const center = f.root.position.clone();
+    if (!this.plat) center.y = 0;
+    const radius = a.radius;
+    const id = this.nextId++;
+    const visual = makeMagicPoolVisual(kind, radius);
+    visual.position.copy(center);
+    this.scene.add(visual);
+    this.magicPools.push({ id, kind, owner: f, team: f.team, center, radius,
+      time: a.duration, age: 0, nextPulse: 0.6, visual });
+    this.emit(["magicPool", id, kind, center.toArray(), radius, a.duration, f.id, f.team]);
+    const el = kind === "static_field";
+    this.fxp("ring", center, el ? "#ac84ff" : "#65dcff", radius, 0.38, 0.82);
+    this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.8, 0)),
+      el ? "STATIC FIELD" : "HEALING WATER", el ? "#d4a8ff" : "#7beaff", 0.88);
+    this.snd(el ? "zap" : "heal", 0.7);
+  }
+
+  private updateMagicPools(dt: number) {
+    for (const pool of [...this.magicPools]) {
+      pool.time -= dt;
+      pool.age += dt;
+      pool.visual.rotation.y += dt * (pool.kind === "static_field" ? 0.42 : -0.21);
+      pool.visual.scale.setScalar(1 + Math.sin(pool.age * (pool.kind === "static_field" ? 5.4 : 2.8)) * 0.012);
+      for (let i = 0; i < pool.visual.children.length; i++) {
+        const spark = pool.visual.children[i];
+        if (spark.name !== "poolSpark") continue;
+        spark.position.y = 0.14 + 0.09 * Math.sin(pool.age * 4 + i * 0.9);
+      }
+      if (this.cfg.role !== "client" && pool.owner && !pool.owner.isDown()) {
+        pool.nextPulse -= dt;
+        if (pool.nextPulse <= 0) {
+          const water = pool.kind === "healing_water";
+          pool.nextPulse += water ? 0.6 : 0.4;
+          for (const e of this.entities.values()) {
+            if (e.isDown() || (water ? e.team !== pool.team : e.team === pool.team)) continue;
+            const dx = e.root.position.x - pool.center.x;
+            const dz = this.plat ? 0 : e.root.position.z - pool.center.z;
+            if (Math.hypot(dx, dz) > pool.radius + e.radius * 0.28 ||
+                Math.abs(e.root.position.y - pool.center.y) > 1.6) continue;
+            if (water) {
+              if (!(e instanceof Fighter) || e.hp >= e.maxHp) continue;
+              const amount = Math.min(e.maxHp - e.hp, e.maxHp * 0.035);
+              e.heal(amount);
+              this.fxp("splash", e.chest(), 5, 0.45, "#77e9ff");
+              this.fxp("num", e.chest().add(new THREE.Vector3(0, 0.55, 0)),
+                `+${Math.round(amount)}`, "#b6faff", 0.56);
+            } else if (e instanceof Fighter || e instanceof Mob) {
+              // Real paralysis while standing inside. Status's normal jolt timing
+              // still applies; leaving the circle frees the target in <=0.75s.
+              e.status.apply("paralyze", 0.75, 0, pool.owner);
+              this.fxp("sparks", e.chest(), "#cda2ff", 6, 2.4);
+            }
+          }
+        }
+      }
+      if (pool.time <= 0 || (this.cfg.role !== "client" && (!pool.owner || pool.owner.isDown()))) {
+        this.scene.remove(pool.visual);
+        this.magicPools = this.magicPools.filter(p => p !== pool);
+        if (this.cfg.role !== "client") this.emit(["magicPoolEnd", pool.id]);
+      }
+    }
+  }
+
   private applyBuff(f: Fighter, a: Attack) {
     // PvP versions of defensive magic are weaker than in survival.
     const pvp = this.cfg.mode !== "survival";
     this.snd(a.mode === "heal" ? "heal" : a.mode === "rage" ? "rage"
       : a.mode === "judgment" ? "cast" : a.mode === "ember_ignition" ? "fireball" : "ward", 0.7);
-    if (a.mode === "ward") {
-      const dur = pvp ? Math.min(a.duration, 2) : a.duration;
+    if (a.mode === "healing_water" || a.mode === "static_field") {
+      this.spawnMagicPool(f, a);
+    } else if (a.mode === "ward") {
+      // Marina Z is intentionally the full eight-second ward, even in PvP.
+      const dur = f.kit === "mage" && f.look.element === "water" ? a.duration
+        : (pvp ? Math.min(a.duration, 2) : a.duration);
       f.wardT = dur;
       this.fxp("bubble", f.id, dur);
       this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.9, 0)), "WARD", "#8fe6ff", 0.9);
@@ -3490,7 +3683,7 @@ export class Game implements MobHost {
       case "fx": this.runFx(ev[1], ev[2]); break;
       case "proj": {
         const p = new Projectile(ev[1], null, 0, null, 0, v3(ev[6]), v3(ev[7]), ev[2], ev[3], ev[4], ev[5], true, true, null);
-        if (ev[2] === "bomb") { p.gravity = BOMB_GRAVITY; p.life = 3; }
+        if (ev[2] === "bomb" || ev[2] === "clusterbomb") { p.gravity = BOMB_GRAVITY; p.life = 3; }
         this.scene.add(p.group);
         this.projectiles.push(p);
         break;
@@ -3498,6 +3691,21 @@ export class Game implements MobHost {
       case "projHunt": {
         const p = this.projectiles.find((x) => x.id === ev[1]);
         if (p) { p.target = this.entities.get(ev[2]) ?? null; p.steering = true; p.finalBlade = ev[3] === 1; p.age = ev[4] ?? p.age; }
+        break;
+      }
+      case "magicPool": {
+        const kind = ev[2] as MagicPool["kind"];
+        const center = v3(ev[3]);
+        const visual = makeMagicPoolVisual(kind, ev[4]);
+        visual.position.copy(center);
+        this.scene.add(visual);
+        this.magicPools.push({ id: ev[1], kind, center, radius: ev[4],
+          time: ev[5], age: 0, nextPulse: 0, visual, owner: null, team: ev[7] });
+        break;
+      }
+      case "magicPoolEnd": {
+        const p = this.magicPools.find(x => x.id === ev[1]);
+        if (p) { this.scene.remove(p.visual); this.magicPools = this.magicPools.filter(x => x !== p); }
         break;
       }
       case "bloodFestival": {

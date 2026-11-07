@@ -1,3 +1,4 @@
+// MARINA_RAVEN_ZAREK_BOB_ABILITIES_20261107_V1
 // FIGHT_ROYALE_BULLET_SWORDPLAY_GARRICK_RESOLVE_V1
 // KAIZEN_SPIN_HIT_RELIABILITY_V9
 // FIGHT_ROYALE_KAIZEN_MOBILE_SPIN_V8
@@ -32,6 +33,7 @@ const PRESETS = [
 export interface Threats {
   projectiles(): { target: any; pos: THREE.Vector3; vel: THREE.Vector3; id: number }[];
   /** Real telegraphed damage circles, not guessed from enemy animation. */
+  fields(f: Fighter): { id: number; center: THREE.Vector3; radius: number }[];
   strikes(): {
     target: any; land: number; id: number;
     center?: THREE.Vector3; radius?: number; caster?: Fighter;
@@ -99,6 +101,7 @@ export class AiBrain implements Brain {
   private seen = new Set<number>();
   // SKILL_ZONE_DODGES_V1: one human-timed choice per real ground warning.
   private strikeDecisions = new Map<number, { reactAt: number; evade: boolean; side: number }>();
+  private staticFieldChoices = new Map<number, { reactAt: number; evade: boolean }>();
   // KAIZEN_PREDATOR_HOOK_V9: use the second X press instead of waiting for WASD.
   private chainDecisionT = 0;
   // EMBER_GROUND_HAZARD_AI_V1_NOV06: bias the detour to one side until clear.
@@ -1047,6 +1050,7 @@ export class AiBrain implements Brain {
     if (!o || o.isDown()) return;
     // Marked ground impacts outrank defensive guard plans and ordinary offense.
     if (this.evadeGroundStrikes(f)) return;
+    if (this.evadeStaticField(f)) return;
     if (this.avoidKaizenSpinGuard(f, o, dt)) return;
     if (this.dodgeUnsafeContinuous(f, o, dt)) return;
     if (this.evadeUnsafeHeavy(f, o, dt)) return;
@@ -1685,6 +1689,49 @@ export class AiBrain implements Brain {
     return true;
   }
 
+  /** Do not stand in Raven's hostile persistent paralysis ring.
+   * Reaction is sampled once on entering range; skill and dash cooldowns are real.
+   */
+  private evadeStaticField(f: Fighter): boolean {
+    const pools = this.threats.fields(f);
+    const live = new Set(pools.map(p => p.id));
+    for (const id of this.staticFieldChoices.keys()) if (!live.has(id)) this.staticFieldChoices.delete(id);
+    if (f.isDown() || !f.onGround || f.dashing() || (f.state !== S.IDLE && f.state !== S.BLOCK)) return false;
+    const now = this.threats.now();
+    const here = f.root.position.clone().setY(0);
+    const threat = pools.find(p => {
+      if (Math.abs(p.center.y - f.root.position.y) > 1.6) return false;
+      return here.distanceTo(p.center.clone().setY(0)) < p.radius + f.radius * 0.25;
+    });
+    if (!threat) return false;
+    let decision = this.staticFieldChoices.get(threat.id);
+    if (!decision) {
+      decision = { reactAt: now + rand(this.p.react[0], this.p.react[1]),
+        evade: Math.random() < Math.min(0.95, 0.43 + this.p.block * 0.70) };
+      this.staticFieldChoices.set(threat.id, decision);
+    }
+    if (!decision.evade || now < decision.reactAt) return false;
+    const away = here.sub(threat.center.clone().setY(0));
+    if (away.lengthSq() < 0.005) away.set(f.id % 2 ? 1 : -1, 0, 0);
+    away.normalize();
+    if (f.stage) away.set(Math.sign(away.x) || (f.id % 2 ? 1 : -1), 0, 0);
+    else {
+      const r = f.arenaRadius - 0.5;
+      const end = f.root.position.clone().setY(0).addScaledVector(away, 3);
+      if (end.length() >= r) away.set(-away.z, 0, away.x);
+    }
+    this.queue = [];
+    this.blockWait = -1;
+    this.blockHold = 0;
+    f.intent.block = false;
+    f.intent.attack = false;
+    f.intent.skill = "";
+    f.intent.move.copy(away);
+    if (f.dashCd <= 0 && f.root.position.distanceTo(threat.center) < threat.radius * 0.82)
+      f.intent.dash.copy(away);
+    return true;
+  }
+
   /** Evade REAL telegraphed strike areas (Ocean Requiem, Thunderstorm,
    * Meteor, Tidal Ring, Arrow Rain, ground slams and other strike skills).
    * A choice is made once per actual warning and respects difficulty, reaction
@@ -1720,7 +1767,7 @@ export class AiBrain implements Brain {
       let decision = this.strikeDecisions.get(m.id);
       if (!decision) {
         const major = m.style === "requiem" || m.style === "lightning" ||
-          m.style === "meteor" || m.style === "arrows";
+          m.style === "meteor" || m.style === "arrows" || m.style === "clusterbomb";
         const chance = this.p.block < 0.3 ? (major ? 0.33 : 0.22) :
           this.p.block < 0.45 ? (major ? 0.60 : 0.45) :
           this.p.block < 0.6 ? (major ? 0.78 : 0.64) :
@@ -2143,6 +2190,7 @@ private personalizedSkill(f: Fighter, o: Fighter, distance: number): string | nu
         if (name === "Bubble Ward" && attackComing) points += 3.0;
         if (name === "Tidal Ring" && close) points += 2.0;
         if (name === "Ocean Requiem" && punish) points += 1.2;
+        if (name === "Healing Water") points += f.hp < f.maxHp * 0.68 ? 3.2 : f.hp < f.maxHp * 0.86 ? 1.4 : -2.5;
         break;
       case "nyx":
         if (name === "Smoke Step" && (blocking || attackComing)) points += 2.1;
@@ -2171,6 +2219,7 @@ private personalizedSkill(f: Fighter, o: Fighter, distance: number): string | nu
         if (name === "Blink") points += close || attackComing ? 3.1 : -0.8;
         if (name === "Chain Lightning") points += distance > 2.0 && distance < 9.0 ? 1.7 : 0;
         if (name === "Thunderstorm") points += punish ? 2.0 : 0.35;
+        if (name === "Static Field") points += close && (attackComing || punish) ? 3.0 : close ? 1.4 : -1;
         break;
       case "ash":
         if (name === "Leap Back") points += close || attackComing ? 3.0 : -0.4;
@@ -2183,6 +2232,7 @@ private personalizedSkill(f: Fighter, o: Fighter, distance: number): string | nu
         if (name === "Crimson Execution") points += distance > 2.3 ? 1.45 : 0.2;
         break;
       case "zarek":
+        if (name === "Thunderclap Flash") points += distance > 2.4 && distance < 9.5 ? 2.6 : -0.9;
         if (name === "Serpent Wheel") points += blocking || close ? 1.7 : 0;
         if (name === "Phantom Spiral") points += punish ? 2.5 : 0.5;
         if (name === "Infinite Crescent") points += punish || f.clashMomentum >= 3 ? 2.6 : 0.25;

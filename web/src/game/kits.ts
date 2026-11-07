@@ -1,3 +1,4 @@
+// MARINA_RAVEN_ZAREK_BOB_ABILITIES_20261107_V1
 // FIGHT_ROYALE_BULLET_SWORDPLAY_GARRICK_RESOLVE_V1
 // FIGHT_ROYALE_KAIZEN_MOBILE_SPIN_V8
 // FIGHT_ROYALE_GARRICK_BOB_KAIZEN_ROOK_V7
@@ -312,8 +313,8 @@ function bonusSkill(kit: string, element: string): Attack {
         desc: "Condense nearby fire patches and active burns into a white-hot beam. Each consumed patch and burn amplifies the damage.",
         cd: 16, type: "buff", mode: "ember_ignition", wind: 0.50, active: 0.06,
         recover: 0.80, pose_w: "ember_ignite_w", pose_s: "ember_ignite_s" });
-      if (element === "electric") return a({ name: "Static Field", desc: "Three lightning bolts strike all around you.", cd: 10, type: "strike", at: "self", wind: 0.12, recover: 0.5, dmg: 75, guard: 22, knock: 2, stun: 0.5, delay: 0.15, radius: 2.2, repeat: 3, interval: 0.25, style: "lightning", pose_w: "mh_w", pose_s: "m3_s" });
-      return a({ name: "Healing Rain", desc: "Restore 16% of your HP (25% in survival).", cd: 14, type: "buff", mode: "heal", duration: 0.25, wind: 0.2, recover: 0.4, pose_w: "mh_w", pose_s: "m3_s" });
+      if (element === "electric") return a({ name: "Static Field", desc: "Create a medium-sized electric circle for 5s. Enemies inside are continuously slowed and periodically jolted by paralysis; allies are unaffected.", cd: 13, type: "buff", mode: "static_field", duration: 5, radius: 3.0, wind: 0.22, recover: 0.45, pose_w: "mh_w", pose_s: "m3_s" });
+      return a({ name: "Healing Water", desc: "Create a 5s healing water pool. You and allies standing inside recover 3.5% max HP every 0.6s (up to 28% per cast).", cd: 15, type: "buff", mode: "healing_water", duration: 5, radius: 2.6, wind: 0.24, recover: 0.45, pose_w: "mh_w", pose_s: "m3_s" });
     case "assassin":
       return a({ name: "Venom Fan", desc: "A wide spray of five poisoned blades.", cd: 7, type: "projectile", wind: 0.12, recover: 0.3, dmg: 42, guard: 12, knock: 1.2, stun: 0.3, speed: 24, count: 5, spread: 0.5, style: "shuriken", pose_w: "as1_w", pose_s: "as1_s" });
     case "chainblade":
@@ -329,9 +330,9 @@ function bonusSkill(kit: string, element: string): Attack {
     case "bow":
       return a({ name: "Piercing Volley", desc: "Five arrows that fly through every enemy in line.", cd: 9, type: "projectile", wind: 0.2, recover: 0.4, dmg: 55, guard: 14, knock: 2, stun: 0.3, speed: 32, count: 5, spread: 0.25, style: "arrow", pierce: true, pose_w: "bow_w", pose_s: "bow_s" });
     case "glaive":
-      return a({ name: "Arc Flash", desc: "An electrified reverse-end sweep. Gains more stagger pressure than a normal light strike.", cd: 9,
-        type: "melee", wind: 0.17, active: 0.12, recover: 0.40, dmg: 115, guard: 32, reach: 2.35,
-        knock: 3.4, stun: 0.37, style: "glaive_arc", pose_w: "gl4_w", pose_s: "gl4_s" });
+      return a({ name: "Thunderclap Flash", desc: "A lightning-fast straight-line glaive draw dash, inspired by an anime thunder swordsman. Travels during the active window and cuts at the end; can be blocked, parried or clashed.", cd: 12,
+        type: "melee", wind: 0.13, active: 0.21, recover: 0.48, dmg: 190, guard: 49, reach: 2.35, lunge: 38,
+        knock: 5.2, stun: 0.60, heavy: true, style: "glaive_thunderflash", pose_w: "glx_w", pose_s: "glx_turn" });
     case "sickle":
       // VEYR_BLOODLUST_CARRION_V7: five separate sickle strikes; REAL melee collisions may clash.
       return a({ name: "Carrion Sweep", desc: "Five rapid alternating sickle cuts with a vicious crosscut finisher. Each cut can clash, be blocked, or be parried; no automatic clash is forced.",
@@ -339,7 +340,7 @@ function bonusSkill(kit: string, element: string): Attack {
         dmg: 18, guard: 5, reach: 1.94, lunge: 2.2, knock: 0.25, stun: 0.10,
         style: "sickle_carrion", pose_w: "vrv_w", pose_s: "vrv1_s" });
     case "bomb":
-      return a({ name: "Cluster Bomb", desc: "A big bomb that bursts into four blasts around where it lands.", cd: 10, type: "lob", wind: 0.2, recover: 0.4, dmg: 80, guard: 22, knock: 4, stun: 0.45, delay: 0.75, radius: 1.5, repeat: 4, interval: 0.12, style: "bomb", size: 1.6, pose_w: "throw_w", pose_s: "throw_s" });
+      return a({ name: "Cluster Bomb", desc: "Throw a striped four-pod cluster canister. Its orange warning circle marks the full spread before the four blasts land.", cd: 10, type: "lob", wind: 0.2, recover: 0.4, dmg: 80, guard: 22, knock: 4, stun: 0.45, delay: 0.85, radius: 1.5, repeat: 4, interval: 0.12, style: "clusterbomb", size: 1.65, pose_w: "throw_w", pose_s: "throw_s" });
     case "wind":
       return a({ name: "Gust Barrage", desc: "Three wind blades fly out in a fan.", cd: 7, parry_stun: 1.5, type: "projectile", wind: 0.14, recover: 0.35, dmg: 60, guard: 16, knock: 2, stun: 0.35, speed: 22, count: 3, spread: 0.25, size: 1.2, style: "wave", pierce: true, pose_w: "w2_w", pose_s: "w2_s" });
     case "knuckles":
@@ -396,7 +397,7 @@ function mage(element: string): Record<string, Attack> {
     t.c = a({ name: "Thunderstorm", desc: "Three lightning strikes hunt the enemy.", cd: 12, type: "strike", wind: 0.3, recover: 0.6, dmg: 110, guard: 35, knock: 3, stun: 0.6, heavy: true, delay: 0.45, radius: 1.25, repeat: 3, interval: 0.35, style: "lightning", pose_w: "mh_w", pose_s: "mh_s" });
   } else {
     t.heavy = a({ type: "projectile", wind: 0.15, active: 0.05, recover: 0.55, dmg: 190, guard: 60, knock: 7, stun: 0.7, heavy: true, speed: 9, size: 2.4, pierce: true, pose_w: "mh_w", pose_s: "mh_s" });
-    t.z = a({ name: "Bubble Ward", desc: "A bubble that absorbs every hit for 2 seconds (4 in survival).", cd: 10, type: "buff", mode: "ward", duration: 4, wind: 0.1, recover: 0.25, pose_w: "mh_w", pose_s: "m3_s" });
+    t.z = a({ name: "Bubble Ward", desc: "A protective water bubble lasting 8 seconds in all modes.", cd: 13, type: "buff", mode: "ward", duration: 8, wind: 0.1, recover: 0.25, pose_w: "mh_w", pose_s: "m3_s" });
     t.x = a({ name: "Tidal Ring", desc: "A ring of geysers bursts up around you.", cd: 7, type: "strike", at: "self", wind: 0.14, recover: 0.45, dmg: 105, guard: 35, knock: 7, stun: 0.5, delay: 0.1, radius: 2.7, style: "tide", pose_w: "mh_w", pose_s: "m3_s" });
     t.c = a({ name: "Ocean Requiem", desc: "Slam a colossal sphere of water onto the enemy.", cd: 12, type: "strike", wind: 0.35, recover: 0.6, dmg: 270, guard: 80, knock: 8, stun: 0.9, heavy: true, delay: 0.8, radius: 2.4, style: "requiem", pose_w: "mh_w", pose_s: "mh_s" });
   }

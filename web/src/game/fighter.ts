@@ -1,3 +1,4 @@
+// MARINA_RAVEN_ZAREK_BOB_ABILITIES_20261107_V1
 // FIGHT_ROYALE_BULLET_SWORDPLAY_GARRICK_RESOLVE_V1
 // KAIZEN_PARRY_SPIN_SLOW_REVERSE_V10
 // FIGHT_ROYALE_KAIZEN_MOBILE_SPIN_V8
@@ -1653,6 +1654,10 @@ export class Fighter implements Entity {
       } else if (this.kit === "hammer" && this.atkId === "heavy" && this.atk.style === "nesa_spin") {
         // Each hammer revolution takes a short step toward a recoiling opponent.
         v += this.atkPhase === 0 ? 0.35 : Math.min(5.5, 1.65 + Math.max(0, dist - 2.1) * 2.1);
+      } else if (this.kit === "glaive" && this.atk.style === "glaive_thunderflash") {
+        // Zenitsu-like real straight-line flash: no movement during preparation.
+        // 38 m/s applies only to the short active window, stops at melee contact.
+        v += this.atkPhase === 1 ? this.atk.lunge : 0;
       } else v += this.atk.lunge;
     }
     // Garrick Iron Tempest: genuine travel across three consecutive hit windows.
@@ -2081,7 +2086,9 @@ export class Fighter implements Entity {
       if (this.state === S.ATTACK && this.atk && this.atkPhase <= 1) {
         const o = this.opponent;
         const near = o && !o.isDown() && Math.abs(o.root.position.x - pos.x) < MIN_DIST && Math.abs(o.root.position.y - pos.y) < 1;
-        target = near ? 0 : this.facing * this.atk.lunge;
+        target = near ? 0 : this.facing *
+          (this.kit === "glaive" && this.atk.style === "glaive_thunderflash" && this.atkPhase !== 1
+            ? 0 : this.atk.lunge);
         // Arena/platform mode: obey actual left/right input during the spin.
         // Don't grant Kaizen any new lunge or attack speed.
         if (this.kaizenCanWalkWhileSpinning()) {
@@ -2285,6 +2292,11 @@ export class Fighter implements Entity {
           const elapsed = this.stateT - a.wind;
           if (elapsed < 0) { p = "glz_w"; sp = 27; }
           else { p = ["glz_s", "gl3_s", "gl2_s", "gl4_s", "glz_s"][Math.min(4, Math.floor(elapsed / 0.21))]; sp = 43; }
+          break;
+        }
+        if (this.kit === "glaive" && a?.style === "glaive_thunderflash") {
+          p = this.stateT < a.wind ? "glx_w" : this.stateT < a.wind + a.active ? "glx_turn" : "gl4_s";
+          sp = this.stateT < a.wind ? 28 : 72;
           break;
         }
         if (this.kit === "glaive" && a?.style === "glaive_phantom") {
