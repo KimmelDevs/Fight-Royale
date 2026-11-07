@@ -134,6 +134,7 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
   }, []);
 
   const rematch = () => { setOver(null); setHighlights(null); setWinnerChar(null); setPerks(null); setRankChange(null); rankDone.current = false; game.current?.restart(); };
+  // FIGHT_ROYALE_CPU_VS_CPU_SPECTATOR_V1: CPU vs CPU uses a two-sided HUD without local input controls.
   const me = hud?.me;
   const other = hud?.other;
 
@@ -151,11 +152,11 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
               background: "rgba(10, 19, 36, 0.82)", border: "1px solid rgba(255,255,255,0.25)",
               zIndex: 5, pointerEvents: "none", whiteSpace: "nowrap", textShadow: "0 1px 2px #000",
             }}>
-              <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.16em", color: "#ffdf8d" }}>{hud.roundLabel} · FIRST TO 2</span>
+              <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.16em", color: "#ffdf8d" }}>{cfg.spectator ? "CPU VS CPU · " : ""}{hud.roundLabel} · FIRST TO 2</span>
               <div style={{ display: "flex", alignItems: "center", gap: 14, fontWeight: 800 }}>
-                <span style={{ fontSize: 10, color: "#8ccfff" }}>{hud.mode === "team" ? "BLUE" : "P1"}</span>
+                <span style={{ fontSize: 10, color: "#8ccfff" }}>{cfg.spectator ? "CPU 1" : hud.mode === "team" ? "BLUE" : "P1"}</span>
                 <span style={{ fontSize: 21, fontVariantNumeric: "tabular-nums" }}>{hud.matchWins[0]} - {hud.matchWins[1]}</span>
-                <span style={{ fontSize: 10, color: "#ff9a9a" }}>{hud.mode === "team" ? "RED" : "P2"}</span>
+                <span style={{ fontSize: 10, color: "#ff9a9a" }}>{cfg.spectator ? "CPU 2" : hud.mode === "team" ? "RED" : "P2"}</span>
               </div>
             </div>
           )}
@@ -257,7 +258,7 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
               )}
             </>
           )}
-          <div className="skills">
+          {!cfg.spectator && <div className="skills">
             {hud.dash && (
               <div className={"sk atk" + (hud.dash.t > 0.05 ? " locked" : "")}>
                 <div className="icon" style={{ borderColor: me?.glow }}>
@@ -294,11 +295,11 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
                 <span>{s.name}</span>
               </div>
             ))}
-          </div>
+          </div>}
           {/* AIR_COMBAT_V1: show both keyboard chords without changing keybindings. */}
-          <div className="hint">{hud?.plat
+          {!cfg.spectator && <div className="hint">{hud?.plat
             ? `${label("left")}/${label("right")} move - ${label("up")} or ${label("jump")} jump (twice to double jump) - ${label("down")} drop / fast fall - ${label("attack")} attack (hold = charged) - ${label("block")} shield - ${label("skill1")} ${label("skill2")} ${label("skill3")} skills - Space+${label("attack")} anti-air / air combo - tap ${label("jump")} after launcher to chase - hold air attack for heavy - air ${label("block")} block/recover - Esc pause`
-            : `${label("up")}${label("left")}${label("down")}${label("right")} move - ${label("jump")} jump - ${label("attack")} attack (hold = charged) - ${label("block")} block - ${label("skill1")} ${label("skill2")} ${label("skill3")} skills - Space+${label("attack")} anti-air / air combo - tap ${label("jump")} after launcher to chase - hold air attack for heavy - air ${label("block")} block/recover - Esc pause`}</div>
+            : `${label("up")}${label("left")}${label("down")}${label("right")} move - ${label("jump")} jump - ${label("attack")} attack (hold = charged) - ${label("block")} block - ${label("skill1")} ${label("skill2")} ${label("skill3")} skills - Space+${label("attack")} anti-air / air combo - tap ${label("jump")} after launcher to chase - hold air attack for heavy - air ${label("block")} block/recover - Esc pause`}</div>}
         </div>
       )}
       <div className="toasts">{toasts.map((t) => <div key={t.id} className="toast">{t.text}</div>)}</div>
@@ -351,7 +352,7 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
                 </div>
                 <div className="highlight-fighters">
                   {highlights.fighters.map((f, i) => <div className="highlight-fighter" key={`${f.peer}-${f.team}-${i}`}>
-                    <strong style={{ color: f.glow }}>{f.name}{f.peer === cfg.localPeer ? " · YOU" : ""}</strong>
+                    <strong style={{ color: f.glow }}>{f.name}{!cfg.spectator && f.peer === cfg.localPeer ? " · YOU" : ""}</strong>
                     <div><span>Biggest combo</span><b>{f.bestCombo} hits</b></div>
                     <div><span>Successful clashes</span><b>{f.clashes}</b></div>
                     <div><span>Perfect dodges</span><b>{f.perfectDodges}</b></div>

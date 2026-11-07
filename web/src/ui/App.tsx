@@ -2,6 +2,7 @@
 import { Sound } from "@/game/sound";
 import { useEffect, useState } from "react";
 import Select from "./Select";
+import WatchSelect from "./WatchSelect"; // FIGHT_ROYALE_CPU_VS_CPU_SPECTATOR_V1
 import Ranked from "./Ranked";
 import Lobby from "./Lobby";
 import GameView from "./GameView";
@@ -18,6 +19,7 @@ import { account, useAccount } from "@/lib/account";
 type Screen =
   | { s: "menu" }
   | { s: "select"; purpose: "duel" | "brawl" | "survival" | "team" }
+  | { s: "watch" }
   | { s: "online" }
   | { s: "ranked" }
   | { s: "account" }
@@ -82,6 +84,18 @@ export default function App() {
       />
     );
   }
+  if (screen.s === "watch") return <WatchSelect onBack={toMenu}
+    onStart={(left, right, difficulty) => {
+      const players = [left, right].map((char, i) => ({
+        peer: `cpu-${i + 1}`,
+        name: CHARACTERS[char].look.name,
+        char,
+      }));
+      setScreen({ s: "game", cfg: {
+        mode: "duel", role: "offline", spectator: true,
+        players, localPeer: "spectator", difficulty,
+      }, net: null });
+    }} />;
   if (screen.s === "settings") return <Settings onBack={toMenu} />;
   if (screen.s === "online") {
     return <Lobby name={name} onBack={toMenu} onShop={() => setScreen({ s: "shop" })}
@@ -111,6 +125,7 @@ export default function App() {
           </label>
         )}
         <button className="big gold" onClick={() => setScreen({ s: "select", purpose: "duel" })}>Duel vs CPU</button>
+        <button className="big blue" onClick={() => setScreen({ s: "watch" })}>Watch CPU vs CPU (1v1)</button>
         {SHOW_BRAWL && <button className="big brawl" onClick={() => setScreen({ s: "select", purpose: "brawl" })}>Platform Brawl vs CPU</button>}
         <button className="big blue" onClick={() => setScreen({ s: "select", purpose: "team" })}>Team Battle vs CPU (2v2 - 4v4)</button>
         <button className="big" onClick={() => setScreen({ s: "select", purpose: "survival" })}>Survival (solo)</button>

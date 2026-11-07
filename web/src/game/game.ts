@@ -52,6 +52,8 @@ export interface GameConfig {
   localPeer: string;
   cpuChar?: number;
   difficulty?: number;
+  /** FIGHT_ROYALE_CPU_VS_CPU_SPECTATOR_V1: both sides are CPU-driven; viewer has no fighter. */
+  spectator?: boolean;
   /** Guest who joined a match already in progress (asks the host for a full sync). */
   late?: boolean;
   /** Ranked duel: the result moves the local player's rank stars. */
@@ -630,7 +632,11 @@ export class Game implements MobHost {
       const sx = this.plat ? 3 : 2;
       const f1 = this.spawnFighter(a, 0, new THREE.Vector3(-sx, 0, 0), Math.PI / 2);
       const f2 = this.spawnFighter(b, 1, new THREE.Vector3(sx, 0, 0), -Math.PI / 2);
-      if (b.peer === "cpu" && !this.plat) f2.autoApproach = !["mage", "bow", "bomb"].includes(f2.kit);
+      if (cfg.spectator && !this.plat) {
+        // Both CPUs close distance when using melee; ranged kits preserve their spacing.
+        f1.autoApproach = !["mage", "bow", "bomb"].includes(f1.kit);
+        f2.autoApproach = !["mage", "bow", "bomb"].includes(f2.kit);
+      } else if (b.peer === "cpu" && !this.plat) f2.autoApproach = !["mage", "bow", "bomb"].includes(f2.kit);
       f1.opponent = f2;
       f2.opponent = f1;
 
@@ -2969,8 +2975,8 @@ export class Game implements MobHost {
         if (!isCpu(winner.owner)) this.sendReward(winner.owner, "duel", WIN_GOLD);
         this.onEvent({ type: "result", winner: winner.team });
         this.emit(["result", winner.team]);
-        const text = this.cfg.role === "offline" ? (iWon ? "VICTORY" : "DEFEAT") : `${name.toUpperCase()} WINS`;
-        this.over(text, `Final Score: ${a} - ${b} | Press R or click Rematch`, iWon || this.cfg.role !== "offline" ? "#ffe08a" : "#ff7b7b");
+        const text = this.cfg.spectator ? `${name.toUpperCase()} WINS!` : this.cfg.role === "offline" ? (iWon ? "VICTORY" : "DEFEAT") : `${name.toUpperCase()} WINS`;
+        this.over(text, `Final Score: ${a} - ${b} | Press R or click Rematch`, this.cfg.spectator || iWon || this.cfg.role !== "offline" ? "#ffe08a" : "#ff7b7b");
         this.canRestart = true;
       });
     } else if (this.cfg.mode === "team") {
@@ -3301,7 +3307,7 @@ export class Game implements MobHost {
 
   // --- HUD feed -----------------------------------------------------------------------------
   hud() {
-    const me = this.local;
+    const me = this.local ?? (this.cfg.spectator ? this.fighters[0] ?? null : null);
     const boss = this.mobs.find((m) => m.def.boss && !m.dead);
     const other = this.isDuel() ? this.fighters.find((f) => f !== me) : null;
     const info = (f: Fighter) => ({ id: CHARACTERS[f.charIndex].id, name: f.look.name + (isCpu(f.owner) && f.owner !== "cpu" ? " (CPU)" : ""), hp: f.hp, maxHp: f.maxHp, guard: f.guard, maxGuard: f.maxGuard, down: f.isDown(), glow: f.look.glow,

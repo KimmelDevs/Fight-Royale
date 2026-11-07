@@ -35,6 +35,34 @@ export interface Threats {
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
 const RANGED = new Set(["mage", "bow", "bomb"]);
 
+// SMART_AI_PERSONALITIES_17_FINAL_V2_20261107
+// SMART_AI_PERSONALITIES_17_FINAL_V1 — 17 unique fighting styles; AI inputs only.
+// This does not rewrite fighter damage/animations. Spectator and reactive dodges remain.
+// Profile keys match roster Look.name, so two knights and the three mages differ.
+type FightStyle = {
+  range: number; heavy: number; combo: number; bait: number; pressure: number;
+  skillBias: readonly [number, number, number];
+};
+const FIGHT_STYLES: Readonly<Record<string, FightStyle>> = {
+  aster: { range: 1.70, heavy: 0.26, combo: 0.65, bait: 0.52, pressure: 0.42, skillBias: [1.5, 1.0, 0.8] },
+  vesper: { range: 1.55, heavy: 0.18, combo: 0.94, bait: 0.18, pressure: 0.90, skillBias: [1.0, 1.35, 0.9] },
+  garrick: { range: 2.40, heavy: 0.45, combo: 0.42, bait: 0.70, pressure: 0.30, skillBias: [0.95, 1.2, 1.3] },
+  kaede: { range: 1.92, heavy: 0.34, combo: 0.77, bait: 0.65, pressure: 0.50, skillBias: [1.75, 0.8, 1.0] },
+  ember: { range: 5.50, heavy: 0.36, combo: 0.45, bait: 0.20, pressure: 0.26, skillBias: [0.8, 1.3, 1.3] },
+  marina: { range: 5.25, heavy: 0.27, combo: 0.42, bait: 0.24, pressure: 0.25, skillBias: [1.5, 1.25, 0.9] },
+  nyx: { range: 1.53, heavy: 0.17, combo: 0.90, bait: 0.62, pressure: 0.85, skillBias: [1.4, 0.9, 1.25] },
+  rook: { range: 1.35, heavy: 0.16, combo: 0.98, bait: 0.12, pressure: 1.00, skillBias: [1.3, 0.75, 1.3] },
+  gale: { range: 1.67, heavy: 0.23, combo: 0.82, bait: 0.55, pressure: 0.73, skillBias: [0.85, 1.4, 1.1] },
+  bob: { range: 5.20, heavy: 0.27, combo: 0.44, bait: 0.45, pressure: 0.16, skillBias: [1.3, 1.1, 1.4] },
+  kira: { range: 1.68, heavy: 0.15, combo: 0.96, bait: 0.59, pressure: 0.90, skillBias: [1.35, 1.1, 1.2] },
+  raven: { range: 5.75, heavy: 0.40, combo: 0.47, bait: 0.20, pressure: 0.30, skillBias: [1.4, 1.25, 1.35] },
+  ash: { range: 6.20, heavy: 0.50, combo: 0.40, bait: 0.44, pressure: 0.19, skillBias: [1.5, 1.0, 1.4] },
+  veyr: { range: 1.59, heavy: 0.15, combo: 0.98, bait: 0.68, pressure: 0.94, skillBias: [1.0, 1.35, 1.5] },
+  zarek: { range: 2.10, heavy: 0.30, combo: 0.91, bait: 0.35, pressure: 0.86, skillBias: [1.3, 1.2, 1.45] },
+  kaizen: { range: 2.65, heavy: 0.33, combo: 0.78, bait: 0.51, pressure: 0.71, skillBias: [1.2, 1.45, 1.15] },
+  nesa: { range: 2.38, heavy: 0.43, combo: 0.64, bait: 0.62, pressure: 0.52, skillBias: [1.05, 1.15, 1.2] },
+};
+
 export class AiBrain implements Brain {
   private p = PRESETS[1];
   private queue: [number, number][] = [];
@@ -68,6 +96,11 @@ export class AiBrain implements Brain {
   private comboParryExamined = -1;
   private comboParryReleased = false;
   private ignitionChoices = new Map<number, boolean>();
+  // Personality's brief feints and reposition decisions use ordinary movement inputs.
+  private tacticsT = 0;
+  private tacticsDir = 1;
+  private tacticsCd = 0;
+  private seenClashSwing = -1;
   // NESA_DODGE_KIRA_AIR_3_V1: dodge Nesa's dangerous hammer swings rather than merely guarding them.
   private nesaThreatSerial = -1;
   private nesaEvadeChosen = false;
@@ -111,7 +144,7 @@ export class AiBrain implements Brain {
     if (f.stage) { if (this.platform(f, o, dt)) return; }
     this.react(f, o);
     this.defendLongCombo(f, o);
-    if (!f.stage) { this.dodge(f); this.position(f, o, dt); }
+    if (!f.stage) { this.dodge(f); this.position(f, o, dt); this.tacticalFootwork(f, o, dt); }
     // NESA_AI_EDGE_GIANT_KIRA_AIR_MOVE_V2: Kira can reposition between air kicks.
     // Use the same directional input and capped movement available to the player.
     if (!f.stage && f.kit === "kicks" && !f.onGround && f.state === S.ATTACK &&
@@ -468,6 +501,18 @@ export class AiBrain implements Brain {
       const dist = f.root.position.distanceTo(o.root.position);
       const canClash = f.state === S.IDLE && f.onGround && f.attacks.l1?.type === "melee" &&
         dist < (f.attacks.l1.reach + 0.35);
+      // Zarek deliberately meets a real enemy blade occasionally to earn Clash Momentum.
+      // Unlike a forced clash this is a normal light input with genuine wind-up timing.
+      if (f.kit === "glaive" && f.onGround && f.state === S.IDLE &&
+          o.atk?.type === "melee" && !o.atk.no_parry &&
+          dist < f.attacks.l1.reach + 0.15 && tth >= f.attacks.l1.wind * 0.50 &&
+          this.seenClashSwing !== o.swingSerial &&
+          Math.random() < this.p.block * (f.clashMomentum < 3 ? 0.58 : 0.33)) {
+        this.seenClashSwing = o.swingSerial;
+        this.blockWait = -1; this.blockHold = 0;
+        this.queue = [[0, 0.065]]; this.hold = 0;
+        return;
+      }
       // Guard critical / recently guard-broken: a timed attack can CLASH with a melee
       // swing. A fully staggered fighter must recover before trying. No special AI-only clash.
       if (guardLow && canClash) {
@@ -754,6 +799,226 @@ export class AiBrain implements Brain {
     f.intent.move.copy(best);
   }
 
+/** Choose footwork without teleporting or exceeding the arena movement limits.
+ * Leave projectile/hazard dodge decisions alone; terrain avoidance runs after this. */
+private tacticalFootwork(f: Fighter, o: Fighter, dt: number) {
+  const style = FIGHT_STYLES[f.look.name.toLowerCase()];
+  if (!style || f.isDown() || !f.onGround || f.state !== S.IDLE ||
+      this.sideT > 0 || this.blockHold > 0 || this.blockWait >= 0) return;
+  this.tacticsCd = Math.max(0, this.tacticsCd - dt);
+  const toward = o.root.position.clone().sub(f.root.position).setY(0);
+  const distance = toward.length();
+  if (distance < 0.05) return;
+  toward.divideScalar(distance);
+  const tangent = new THREE.Vector3(-toward.z, 0, toward.x);
+  const punish = this.hasPunishWindow(o);
+  // Never perform a deliberate bait while a real melee strike is almost active.
+  const danger = o.state === S.ATTACK && o.atkPhase === 0 &&
+    o.atk?.type === "melee" && distance < o.atk.reach + 0.7;
+  if (danger) { this.tacticsT = 0; return; }
+  if (this.tacticsT <= 0 && this.tacticsCd <= 0 &&
+      distance < style.range + 0.75 && !punish &&
+      (o.state === S.BLOCK || (o.state === S.IDLE && distance < style.range - 0.28)) &&
+      Math.random() < dt * style.bait * (0.45 + this.p.block)) {
+    this.tacticsT = rand(0.23, 0.44);
+    this.tacticsDir = Math.random() < 0.5 ? -1 : 1;
+    this.tacticsCd = rand(1.1, 2.8);
+  }
+  if (this.tacticsT > 0) {
+    this.tacticsT -= dt;
+    const retreat = toward.clone().negate().multiplyScalar(0.65)
+      .addScaledVector(tangent, this.tacticsDir * 0.76).normalize();
+    const test = f.root.position.clone().addScaledVector(retreat, 1.1);
+    // At the arena edge, replace backward drifting with a sideways orbit.
+    if (Math.hypot(test.x, test.z) > f.arenaRadius - 0.55) {
+      const side1 = tangent.clone().multiplyScalar(this.tacticsDir);
+      const side2 = side1.clone().negate();
+      const safe = [side1, side2].sort((a, b) =>
+        f.root.position.clone().addScaledVector(a, 1.1).lengthSq() -
+        f.root.position.clone().addScaledVector(b, 1.1).lengthSq());
+      f.intent.move.copy(safe[0]);
+    } else f.intent.move.copy(retreat);
+    return;
+  }
+  // Close deliberately on a whiff rather than attacking from beyond skill range.
+  if (punish && distance > style.range * 0.64 && distance < style.range + 2.2) {
+    f.intent.move.copy(toward);
+    return;
+  }
+  // Faster melee personalities actively manage spacing; ranged kits retain kiting AI.
+  if (!RANGED.has(f.kit) && f.kit !== "bomb") {
+    if (distance > style.range + 0.35) f.intent.move.copy(toward);
+    else if (distance < style.range - 0.45 && style.bait > 0.42 && o.state === S.BLOCK)
+      f.intent.move.copy(tangent).multiplyScalar(this.tacticsDir * 0.7);
+  } else if (distance < style.range - 1.15 && !punish) {
+    const retreat = toward.clone().negate();
+    if (f.root.position.clone().addScaledVector(retreat, 0.9).length() < f.arenaRadius - 0.65)
+      f.intent.move.copy(retreat);
+  }
+}
+
+private hasPunishWindow(o: Fighter): boolean {
+  return o.state === S.STAGGER || o.state === S.HITSTUN ||
+    (o.state === S.ATTACK && o.atkPhase === 2 && !!o.atk &&
+      o.stateT < o.atk.wind + o.atk.active + o.atk.recover);
+}
+
+/** Score the real equipped skills by state and fighter identity.
+ * Each move still uses Fighter.readSkill, normal cooldowns and hit detection. */
+private personalizedSkill(f: Fighter, o: Fighter, distance: number): string | null {
+  const id = f.look.name.toLowerCase();
+  const profile = FIGHT_STYLES[id];
+  if (!profile || (id === "veyr" && f.bloodFestivalT > 0)) return null;
+  const punish = this.hasPunishWindow(o);
+  const attackComing = o.state === S.ATTACK && o.atkPhase === 0;
+  const close = distance < 2.65;
+  const blocking = o.state === S.BLOCK;
+  const scored: { key: string; points: number }[] = [];
+  for (const key of ["z", "x", "c"]) {
+    const a = f.attacks[key];
+    if (!a || (f.cooldowns[key] ?? 1) > 0) continue;
+    // Nesa's 3 charges follow the Pink Heart Smash skill on any equipped key.
+    if (id === "nesa" && a.style === "nesa_heart_slam" && f.nesaCCharges <= 0) continue;
+    let viable = true;
+    let points = profile.skillBias[key === "z" ? 0 : key === "x" ? 1 : 2];
+    if (a.type === "melee" || a.type === "phantom") {
+      viable = distance < a.reach + Math.max(0.85, a.lunge * 0.19);
+      if (punish) points += 1.2;
+      if (blocking && a.guard > 24) points += 0.4;
+    } else if (a.type === "strike") {
+      viable = a.at !== "self" || distance < a.radius + 0.40;
+      if (punish) points += 0.85;
+    } else if (a.type === "projectile" || a.type === "lob") {
+      viable = distance < (a.type === "lob" ? 9 : 11);
+      if (distance > 3.5) points += 0.45;
+    } else if (a.type === "buff") {
+      viable = a.mode === "counter" || a.mode === "blood_feint"
+        ? attackComing && close
+        : a.mode === "ward" ? close || f.hp < f.maxHp * 0.55
+        : a.mode === "blood_festival" ? distance < 3.4
+        : f.hp < f.maxHp * 0.72;
+    } else if (a.type === "blink") {
+      viable = a.mode === "back" ? (close || attackComing) : distance < 5.5;
+    } else if (a.type === "mine") viable = distance < 4.6;
+    else if (a.type === "barrel") viable = !f.barrelOut && distance < 6.5;
+    if (!viable) continue;
+    // Actual roster-specific choices, not a skill randomly selected by key.
+    const name = a.name;
+    switch (id) {
+      case "aster":
+        if (name === "Shield Bash") points += close && (blocking || attackComing) ? 2.3 : 0.2;
+        if (name === "Rising Slash") points += punish && close ? 1.2 : 0;
+        break;
+      case "vesper":
+        if (name === "Rising Slash") points += punish && close ? 2.0 : 0.4;
+        if (name === "Shield Bash" && blocking) points += 1.1;
+        break;
+      case "garrick":
+        if (name === "Iron Tempest") points += close && punish ? 2.0 : 0.4;
+        if (name === "Titan Cleave") points += punish && distance < 3.1 ? 2.4 : 0;
+        if (name === "Ground Slam" && close) points += 1.2;
+        break;
+      case "kaede":
+        if (name === "Counter Stance") points += attackComing && close ? 2.7 : 0;
+        if (name === "Thousand Cuts") points += punish && close ? 1.8 : 0;
+        break;
+      case "ember":
+        if (name === "Flame Burst") points += close ? 2.6 : -0.7;
+        if (name === "Fireball Volley" && distance > 3) points += 1.1;
+        if (name === "Meteor" && punish) points += 1.1;
+        break;
+      case "marina":
+        if (name === "Bubble Ward" && attackComing) points += 3.0;
+        if (name === "Tidal Ring" && close) points += 2.0;
+        if (name === "Ocean Requiem" && punish) points += 1.2;
+        break;
+      case "nyx":
+        if (name === "Smoke Step" && (blocking || attackComing)) points += 2.1;
+        if (name === "Phantom Rush" && punish) points += 2.6;
+        break;
+      case "rook":
+        if (name === "Rush" && distance > 1.8) points += 1.8;
+        if (name === "Meteor Fist" && close && punish) points += 2.4;
+        if (name === "Shockwave Punch" && distance > 2.8) points += 1.8;
+        break;
+      case "gale":
+        if (name === "Wind Step" && distance > 2.2) points += 2.0;
+        if (name === "Tornado Rise" && close && punish) points += 2.1;
+        break;
+      case "bob":
+        if (a.type === "mine" && distance < 4.1) points += 2.0;
+        if (a.type === "barrel" && !f.barrelOut) points += 1.5;
+        if (name === "Paralyze Bomb" && attackComing) points += 1.7;
+        break;
+      case "kira":
+        if (name === "Cyclone Kick" && close) points += punish ? 2.3 : 0.75;
+        if (name === "Crescent Gale") points += distance > 2.5 ? 2.1 : -0.45;
+        if (name === "Phantom Step") points += punish && distance < 4.6 ? 2.7 : 0.35;
+        break;
+      case "raven":
+        if (name === "Blink") points += close || attackComing ? 3.1 : -0.8;
+        if (name === "Chain Lightning") points += distance > 2.0 && distance < 9.0 ? 1.7 : 0;
+        if (name === "Thunderstorm") points += punish ? 2.0 : 0.35;
+        break;
+      case "ash":
+        if (name === "Leap Back") points += close || attackComing ? 3.0 : -0.4;
+        if (name === "Hunter's Snare") points += !punish && distance > 2.7 ? 1.8 : 0.3;
+        if (name === "Arrow Rain") points += punish && distance > 2.2 ? 2.2 : 0.3;
+        break;
+      case "veyr":
+        if (name === "Death Feint") points += attackComing && close ? 3.4 : -0.6;
+        if (name === "Blood Festival") points += close && (f.hp < f.maxHp * 0.75 || punish) ? 2.6 : 0.35;
+        if (name === "Crimson Execution") points += distance > 2.3 ? 1.45 : 0.2;
+        break;
+      case "zarek":
+        if (name === "Serpent Wheel") points += blocking || close ? 1.7 : 0;
+        if (name === "Phantom Spiral") points += punish ? 2.5 : 0.5;
+        if (name === "Infinite Crescent") points += punish || f.clashMomentum >= 3 ? 2.6 : 0.25;
+        break;
+      case "kaizen":
+        // Hook catches exposed opponents just outside the five-hit sword string.
+        if (name === "Predator's Hook") {
+          if (blocking || distance < 1.45 || distance > 4.5) viable = false;
+          points += !attackComing && distance > 2.45 && !blocking ? 2.25 : 0.25;
+        }
+        // A death spiral is strongest against recoveries, not at maximum range.
+        if (name === "Thousand Cuts: Death Spiral") {
+          if (distance > 3.65) viable = false;
+          points += punish && distance < 3.2 ? 2.5 : close ? 0.8 : 0;
+        }
+        if (name === "Razor Cyclone") points += blocking || (close && punish) ? 1.95 : 0.30;
+        if (name === "Serpent Bind") points += !blocking && punish && distance < 3.1 ? 2.45 : 0.25;
+        break;
+      case "nesa":
+        // Favor the closing kick against ranged enemies, but it must still land.
+        if (name === "Upsie Daisie") {
+          if (distance > 5.65) viable = false;
+          points += distance > 2.20 && distance < 5.15 ? 2.65 :
+            attackComing && close ? 1.8 : 0.25;
+        }
+        // Spend a stored heart charge on a near, punishable target—not empty air.
+        if (name === "Pink Heart Smash") {
+          if (distance > 2.82) viable = false;
+          points += punish || blocking ? 2.4 : distance < 2.10 ? 1.0 : 0.0;
+          if (f.nesaCCharges === 1 && !punish) points -= 0.7;
+        }
+        if (name === "Side Swipe") points += close && blocking ? 2.0 : punish ? 1.7 : 0.1;
+        // Large second bonk needs a target likely to stay in radius.
+        if (name === "Heartbreaker High Striker") {
+          if (distance > 3.0) viable = false;
+          points += punish && distance < 2.4 ? 2.75 : 0.0;
+        }
+        break;
+    }
+    if (!viable) continue; // real ability limits, including character-specific checks
+    // The AI must occasionally choose another ability instead of being scripted.
+    points += rand(-0.55, 0.55);
+    scored.push({ key, points });
+  }
+  scored.sort((a, b) => b.points - a.points);
+  return scored.length && scored[0].points >= 0.6 ? scored[0].key : null;
+}
+
   private trySkill(f: Fighter, key: string, force = false) {
     if (f.cooldowns[key] > 0) return false;
     if (!force && Math.random() > 0.5) return false;
@@ -761,47 +1026,61 @@ export class AiBrain implements Brain {
     return true;
   }
 
-  private offense(f: Fighter, o: Fighter, dt: number) {
-    if (f.state !== S.IDLE || this.queue.length || this.hold > 0 || this.blockHold > 0 ||
-        this.comboParryTarget > this.threats.now()) return;
-    const dist = f.root.position.distanceTo(o.root.position);
-    if (f.guard <= f.maxGuard * 0.32 && f.onGround && f.attacks.l1?.type === "melee" &&
-      o.state === S.ATTACK && o.atk?.type === "melee" && o.atkPhase === 0 &&
-      dist < f.attacks.l1.reach + 0.35) {
-      // The normal light attack will clash if its active frames overlap the enemy swing.
-      this.queue.push([0, 0.06]);
-      return;
-    }
-    if (f.stage && Math.abs(o.root.position.y - f.root.position.y) > 1.4 && !RANGED.has(f.kit)) return;
-    const ranged = RANGED.has(f.kit);
-    const reach = ranged ? 9 : f.kit === "assassin" || f.kit === "knuckles" || f.kit === "kicks" ? 1.7 : f.kit === "greatsword" ? 2.3 : f.kit === "hammer" ? 2.45 : f.kit === "glaive" ? 1.62 : 1.9;
-    this.skillCd -= dt;
-    if (this.skillCd <= 0) {
-      this.skillCd = rand(this.p.skill[0], this.p.skill[1]);
-      for (const key of ["c", "x", "z"].sort(() => Math.random() - 0.5)) {
-        const a = f.attacks[key];
-        let ok = true;
-        if (a.type === "melee") ok = dist < a.reach + (f.kit === "glaive" ? 0.85 : 1.5);
-        else if (a.type === "strike") ok = a.at !== "self" || dist < a.radius;
-        else if (a.type === "buff") ok = a.mode === "counter" ? dist < 2.5 : f.hp < f.maxHp * 0.7;
-        else if (a.type === "blink") ok = (a.mode === "behind" && dist < 6) || (a.mode === "back" && dist < 2.5);
-        else if (a.type === "mine") ok = dist < 4.5;
-        else if (a.type === "lob") ok = dist < 9;
-        else if (a.type === "barrel") ok = !f.barrelOut && dist < 6;
-        if (ok && this.trySkill(f, key)) return;
-      }
-    }
-    if (dist > reach) return;
-    if (o.state === S.STAGGER) this.thinkCd = 0;
-    this.thinkCd -= dt;
-    if (this.thinkCd > 0) return;
-    this.thinkCd = (f.kit === "assassin" || f.kit === "knuckles" || f.kit === "kicks" ? rand(0.5, 1.1) : rand(0.7, 1.6)) * this.p.think;
-    const heavy = o.state === S.STAGGER ? 0.5 : o.state === S.BLOCK ? 0.45 : 0.22;
-    if (Math.random() < heavy) this.queue.push([0, HOLD_T + rand(0.3, 0.65)]);
-    else {
-      const maxHits = Math.min(this.p.combo, Object.keys(f.attacks).filter((k) => k.startsWith("l")).length);
-      const hits = 1 + Math.floor(Math.random() * maxHits);
-      for (let i = 0; i < hits; i++) this.queue.push([i === 0 ? 0 : 0.14, 0.06]);
-    }
+private offense(f: Fighter, o: Fighter, dt: number) {
+  if (f.state !== S.IDLE || this.queue.length || this.hold > 0 || this.blockHold > 0 ||
+      this.comboParryTarget > this.threats.now()) return;
+  const distance = f.root.position.distanceTo(o.root.position);
+  if (f.guard <= f.maxGuard * 0.32 && f.onGround && f.attacks.l1?.type === "melee" &&
+    o.state === S.ATTACK && o.atk?.type === "melee" && o.atkPhase === 0 &&
+    distance < f.attacks.l1.reach + 0.35) {
+    this.queue.push([0, 0.06]);
+    return;
   }
+  if (f.stage && Math.abs(o.root.position.y - f.root.position.y) > 1.4 && !RANGED.has(f.kit)) return;
+  const id = f.look.name.toLowerCase();
+  const style = FIGHT_STYLES[id];
+  const reach = style ? (RANGED.has(f.kit) ? 9 : style.range + 0.24)
+    : RANGED.has(f.kit) ? 9 : f.kit === "assassin" || f.kit === "knuckles" || f.kit === "kicks"
+      ? 1.7 : f.kit === "greatsword" ? 2.3 : f.kit === "glaive" ? 2.1 : 1.9;
+  const punish = this.hasPunishWindow(o);
+  const blocked = o.state === S.BLOCK;
+  const danger = o.state === S.ATTACK && o.atkPhase === 0 &&
+    o.atk?.type === "melee" && distance < o.atk.reach + 0.65;
+  this.skillCd -= dt;
+  if (this.skillCd <= 0) {
+    this.skillCd = rand(this.p.skill[0], this.p.skill[1]);
+    // Festival disables all Veyr skills until it expires; pressure with basics.
+    const skill = this.personalizedSkill(f, o, distance);
+    if (skill && (punish || Math.random() < 0.80) && this.trySkill(f, skill, true)) return;
+  }
+  if (distance > reach) return;
+  if (danger && !punish && id !== "zarek" && id !== "aster" && Math.random() < 0.80) return;
+  this.thinkCd -= dt;
+  if (this.thinkCd > 0) return;
+  const fast = ["assassin", "knuckles", "kicks", "sickle", "glaive"].includes(f.kit);
+  this.thinkCd = (fast ? rand(0.45, 0.96) : rand(0.7, 1.45)) * this.p.think;
+  if (punish) this.thinkCd *= 0.45; // uses an observed recovery, not foreknowledge
+  const heavyChance = style ? Math.min(0.78, style.heavy +
+      (punish ? 0.14 : 0) + (blocked ? 0.28 : 0))
+    : o.state === S.STAGGER ? 0.5 : blocked ? 0.45 : 0.22;
+  // Veyr's festival specifically favors sustained lights and real guard pressure.
+  const festival = id === "veyr" && f.bloodFestivalT > 0;
+  if (!festival && Math.random() < heavyChance) {
+    this.queue.push([0, HOLD_T + rand(0.24, 0.58)]);
+    return;
+  }
+  const allLights = Object.keys(f.attacks).filter(k => /^l\d+$/.test(k));
+  const limit = Math.max(1, Math.min(this.p.combo, allLights.length));
+  let count = 1 + Math.floor(Math.random() * limit);
+  if (style) {
+    if (punish && Math.random() < style.combo) count = limit;
+    else if (blocked && Math.random() < style.bait) count = 1;
+    else if (Math.random() > style.combo) count = Math.min(count, 2);
+  }
+  if (festival) count = limit;
+  // Each tap is a real input, and the Fighter checks real animation/cancel windows.
+  for (let i = 0; i < count; i++)
+    this.queue.push([i === 0 ? 0 : 0.14 + (fast ? 0 : 0.06), 0.06]);
+}
+
 }

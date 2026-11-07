@@ -321,10 +321,10 @@ function katana(): Record<string, Attack> {
 
 function bow(): Record<string, Attack> {
   return {
-    l1: a({ type: "projectile", wind: 0.16, active: 0.05, recover: 0.22, dmg: 60, guard: 14, knock: 1.4, stun: 0.28, speed: 28, style: "arrow", pose_w: "bow_w", pose_s: "bow_s", next: "l2" }),
-    l2: a({ type: "projectile", wind: 0.16, active: 0.05, recover: 0.22, dmg: 62, guard: 14, knock: 1.4, stun: 0.28, speed: 28, style: "arrow", pose_w: "bow_w", pose_s: "bow_s", next: "l3" }),
-    l3: a({ type: "projectile", wind: 0.22, active: 0.05, recover: 0.38, dmg: 46, guard: 12, knock: 2.5, stun: 0.35, speed: 28, count: 3, spread: 0.12, style: "arrow", pose_w: "bow_w", pose_s: "bow_s" }),
-    heavy: a({ type: "projectile", wind: 0.1, active: 0.05, recover: 0.5, dmg: 260, guard: 60, knock: 6, stun: 0.7, heavy: true, speed: 42, size: 1.7, style: "arrow", pierce: true, pose_w: "bow_w", pose_s: "bow_s" }),
+    l1: a({ type: "projectile", wind: 0.16, active: 0.05, recover: 0.22, dmg: 48, guard: 14, knock: 1.4, stun: 0.28, speed: 28, style: "arrow", pose_w: "bow_w", pose_s: "bow_s", next: "l2" }),
+    l2: a({ type: "projectile", wind: 0.16, active: 0.05, recover: 0.22, dmg: 50, guard: 14, knock: 1.4, stun: 0.28, speed: 28, style: "arrow", pose_w: "bow_w", pose_s: "bow_s", next: "l3" }),
+    l3: a({ type: "projectile", wind: 0.22, active: 0.05, recover: 0.38, dmg: 37, guard: 12, knock: 2.5, stun: 0.35, speed: 28, count: 3, spread: 0.12, style: "arrow", pose_w: "bow_w", pose_s: "bow_s" }),
+    heavy: a({ type: "projectile", wind: 0.1, active: 0.05, recover: 0.5, dmg: 195, guard: 60, knock: 6, stun: 0.7, heavy: true, speed: 42, size: 1.7, style: "arrow", pierce: true, pose_w: "bow_w", pose_s: "bow_s" }),
     z: a({ name: "Leap Back", desc: "Spring away to open distance.", cd: 4, type: "blink", mode: "back", wind: 0.04, recover: 0.12, pose_w: "jump", pose_s: "jump" }),
     x: a({ name: "Arrow Rain", desc: "A volley falls on the target area three times.", cd: 8, type: "strike", wind: 0.22, recover: 0.4, dmg: 80, guard: 20, knock: 2, stun: 0.35, delay: 0.7, radius: 1.8, repeat: 3, interval: 0.25, style: "arrows", pose_w: "rain_w", pose_s: "rain_s" }),
     c: a({ name: "Hunter's Snare", desc: "A barbed arrow that pins the target in place.", cd: 10, type: "projectile", wind: 0.2, recover: 0.4, dmg: 100, guard: 30, knock: 0.5, stun: 1.6, stagger: true, speed: 32, size: 1.3, style: "arrow", pose_w: "bow_w", pose_s: "bow_s" }),
@@ -492,7 +492,7 @@ function kicks(): Record<string, Attack> {
     heavy: a({ wind: 0.12, active: 0.16, recover: 0.5, dmg: 230, guard: 55, reach: 2.0, lunge: 7, knock: 6.5, stun: 0.8, heavy: true, self_jump: 4, pose_w: "charge", pose_s: "fly_s" }),
     z: a({ name: "Cyclone Kick", desc: "Three real rotating heel kicks with alternating legs and a final knock-away. Each kick can be guarded or parried.", cd: 6, type: "strike", at: "self", wind: 0.18, active: 0.57, recover: 0.40, dmg: 65, guard: 20, knock: 3, stun: 0.3, delay: 0.03, radius: 2.0, repeat: 3, interval: 0.19, style: "cyclone_kick_v2", pose_w: "cy1_w", pose_s: "cy1_s" }),
     x: a({ name: "Crescent Gale", desc: "A kick so fast it launches a cutting wind across the arena.", cd: 6, type: "projectile", wind: 0.14, recover: 0.35, dmg: 110, guard: 30, knock: 3, stun: 0.45, speed: 20, size: 1.4, style: "wave", pierce: true, pose_w: "kk2_w", pose_s: "kk2_s" }),
-    c: a({ name: "Phantom Step", desc: "Vanish and reappear behind the enemy for a kick, three times. The first kick stuns for 2 seconds, holding them for the rest.", cd: 12, type: "phantom", wind: 0.12, active: 0.05, recover: 1.35, dmg: 115, guard: 30, knock: 1.2, stun: 2.0, stagger: true, heavy: true, repeat: 3, interval: 0.5, no_parry: true, pose_w: "kk1_w", pose_s: "kk3_s" }),
+    c: a({ name: "Phantom Step", desc: "Vanish and reappear behind the enemy for a kick, three times. The first kick stuns for 2 seconds, holding them for the rest.", cd: 16, type: "phantom", wind: 0.12, active: 0.05, recover: 1.35, dmg: 115, guard: 30, knock: 1.2, stun: 2.0, stagger: true, heavy: true, repeat: 3, interval: 0.5, no_parry: true, pose_w: "kk1_w", pose_s: "kk3_s" }),
   };
 }
 
