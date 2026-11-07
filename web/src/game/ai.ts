@@ -1,3 +1,4 @@
+// COMBAT_IQ_HITCONFIRM_WHIFF_BAIT_V1_20261107
 // AI_EFFECTIVE_RANGE_KAIZEN_AIR_HOOK_20261107_V1
 // ZAREK_ARC_FLASH_CPU_SPECTATOR_COOLDOWNS_20261107_V1
 // FOURTH_SKILL_V_MASTER_AI_TWO_ROW_ROSTER_20261107_V1
@@ -53,6 +54,16 @@ export interface Threats {
 
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
 const RANGED = new Set(["mage", "bow", "bomb"]);
+
+// COMBAT_IQ: Easy seldom recognizes openings, Master is perceptive, not psychic.
+// All reads are visible fighter state (active swings, HP/guard changes, recovery).
+const COMBAT_IQ = [
+  { combo: 0.13, punish: 0.10, bait: 0.00, react: [0.45, 0.70], feintCd: [8.0, 11.0] },
+  { combo: 0.43, punish: 0.39, bait: 0.10, react: [0.27, 0.44], feintCd: [6.5, 9.0] },
+  { combo: 0.74, punish: 0.73, bait: 0.27, react: [0.15, 0.27], feintCd: [5.0, 7.0] },
+  { combo: 0.92, punish: 0.90, bait: 0.48, react: [0.09, 0.17], feintCd: [3.8, 6.0] },
+] as const;
+
 
 // SMART_AI_PERSONALITIES_17_FINAL_V2_20261107
 // SMART_AI_PERSONALITIES_17_FINAL_V1 — 17 unique fighting styles; AI inputs only.
@@ -147,6 +158,268 @@ export class AiBrain implements Brain {
   private tacticsCd = 0;
   // EFFECTIVE_RANGE_AWARENESS: choices use the fighter's REAL reach and ready skills.
   // Do not grant AI extra attack range: this only steers its regular movement.
+  // COMBAT IQ — situational reads, never direct damage, cooldown edits or teleports.
+  private iqLevel = 1;
+  private iqEnemySerial = -1;
+  private iqEnemySawActive = false;
+  private iqEnemyAllActiveOutside = true;
+  private iqEnemyMyHp = 0;
+  private iqEnemyMyGuard = 0;
+  private iqEnemyWhiffEvaluated = false;
+  private iqWhiffSerial = -1;
+  private iqWhiffReactAt = -1;
+  private iqWhiffExpires = -1;
+  private iqWhiffSpent = false;
+  private iqOwnSerial = -1;
+  private iqOwnTargetHp = 0;
+  private iqOwnHitConfirmed = false;
+  private iqOwnHitAt = -1;
+  private iqOwnFollowWanted = false;
+  private iqOwnSkillWanted = false;
+  private iqOwnFollowSpent = false;
+  private iqBaitCd = rand(3.2, 6.0);
+  private iqBaitPhase: "none" | "step" | "retreat" = "none";
+  private iqBaitT = 0;
+  private iqBaitSide = 1;
+  private iqLastEnemySwing = -1;
+
+  /** Observe actual active attacks and health changes; no knowledge of player input.
+   * HP changes confirm contact, guard damage disproves a clean whiff. For a
+   * clean whiff we must have seen the enemy OUT of range/arc for its full active
+   * animation, not just seen an attack go into recovery.
+   */
+  private iqObserve(f: Fighter, o: Fighter) {
+    const now = this.threats.now();
+    if (o.state === S.ATTACK && o.atk && o.swingSerial !== this.iqEnemySerial) {
+      this.iqEnemySerial = o.swingSerial;
+      this.iqEnemySawActive = false;
+      this.iqEnemyAllActiveOutside = true;
+      this.iqEnemyMyHp = f.hp;
+      this.iqEnemyMyGuard = f.guard;
+      this.iqEnemyWhiffEvaluated = false;
+      if (this.iqBaitPhase === "step" && o.atkPhase === 0) {
+        this.iqBaitPhase = "retreat";
+        this.iqBaitT = Math.min(this.iqBaitT + 0.18, 0.46);
+      }
+      this.iqLastEnemySwing = o.swingSerial;
+    }
+    if (o.state === S.ATTACK && o.atk && o.swingSerial === this.iqEnemySerial) {
+      if (o.atkPhase === 1 && (o.atk.type === "melee" || o.atk.type === "phantom")) {
+        this.iqEnemySawActive = true;
+        const flat = o.root.position.clone().sub(f.root.position).setY(0);
+        const gap = flat.length();
+        const toward = f.root.position.clone().sub(o.root.position).setY(0);
+        const facing = new THREE.Vector3(Math.sin(o.root.rotation.y), 0, Math.cos(o.root.rotation.y));
+        const inArc = toward.lengthSq() < 0.001 || facing.dot(toward.normalize()) > 0.15;
+        // Conservative: only a clearly missed swing qualifies, no presumed free punishes.
+        const outside = gap > o.atk.reach + f.radius + 0.20 || !inArc;
+        this.iqEnemyAllActiveOutside = this.iqEnemyAllActiveOutside && outside;
+      }
+      if (o.atkPhase === 2 && !this.iqEnemyWhiffEvaluated) {
+        this.iqEnemyWhiffEvaluated = true;
+        const remaining = o.atk.wind + o.atk.active + o.atk.recover - o.stateT;
+        const simpleMelee = o.atk.type === "melee" && o.atk.repeat <= 1 &&
+          !["chain_razor_cyclone", "chain_death_spiral", "nesa_spin", "nesa_air_spin"].includes(o.atk.style);
+        const didNotConnect = f.hp >= this.iqEnemyMyHp - 0.1 &&
+          f.guard >= this.iqEnemyMyGuard - 0.1;
+        const profile = COMBAT_IQ[this.iqLevel];
+        if (simpleMelee && this.iqEnemySawActive && this.iqEnemyAllActiveOutside &&
+            didNotConnect && remaining > profile.react[0] + 0.10 &&
+            Math.random() < profile.punish) {
+          this.iqWhiffSerial = o.swingSerial;
+          this.iqWhiffReactAt = now + rand(profile.react[0], profile.react[1]);
+          this.iqWhiffExpires = now + Math.max(0, remaining - 0.03);
+          this.iqWhiffSpent = false;
+        }
+      }
+    }
+    // A hit-confirm only uses an observed HP loss after this fighter attacked.
+    // An opponent holding BLOCK with guard loss does not count as a confirmed hit.
+    if (f.state === S.ATTACK && f.atk && f.swingSerial !== this.iqOwnSerial) {
+      this.iqOwnSerial = f.swingSerial;
+      this.iqOwnTargetHp = o.hp;
+      this.iqOwnHitConfirmed = false;
+      this.iqOwnHitAt = -1;
+      this.iqOwnFollowWanted = false;
+      this.iqOwnSkillWanted = false;
+      this.iqOwnFollowSpent = false;
+    }
+    if (f.state === S.ATTACK && f.atk && f.swingSerial === this.iqOwnSerial &&
+        f.atkPhase >= 1 && !this.iqOwnHitConfirmed &&
+        o.hp < this.iqOwnTargetHp - 0.5 &&
+        // A status-effect damage tick alone is not a reliable combo confirm.
+        (o.state === S.HITSTUN || o.state === S.STAGGER || o.state === S.KNOCKDOWN)) {
+      this.iqOwnHitConfirmed = true;
+      this.iqOwnHitAt = now;
+      // Roll once per connected swing, never reroll every frame until success.
+      this.iqOwnFollowWanted = Math.random() < COMBAT_IQ[this.iqLevel].combo;
+      this.iqOwnSkillWanted = Math.random() < COMBAT_IQ[this.iqLevel].combo * 0.55;
+    }
+  }
+
+  /** Legal, ready damaging skills only. No free V on Easy/Normal/Hard CPUs.
+   * In particular, no defensive buffs, counters or mines masquerade as punishes.
+   */
+  private iqFollowSkill(f: Fighter, o: Fighter, gap: number, remaining: number): string | null {
+    let best: string | null = null;
+    let bestScore = -1e5;
+    for (const key of ["z", "x", "c", ...(f.bonusSkillUnlocked ? ["v"] : [])]) {
+      const a = f.attacks[key];
+      if (!a || (f.cooldowns[key] ?? 1) > 0 || a.dmg <= 0 ||
+          (f.kit === "sickle" && f.bloodFestivalT > 0) ||
+          (a.style === "nesa_heart_slam" && f.nesaCCharges <= 0)) continue;
+      if (a.wind + 0.035 >= remaining) continue;
+      let inRange = false;
+      if (a.type === "melee" || a.type === "phantom")
+        inRange = gap <= a.reach + Math.min(0.45, a.lunge * 0.08);
+      else if (a.type === "strike")
+        inRange = a.at !== "self" || gap <= a.radius + 0.12;
+      else if (a.type === "projectile")
+        inRange = gap <= 8.5 && gap / Math.max(0.1, a.speed) + a.wind < remaining;
+      // Lob, mine, blast-zone, blink and buffs are deliberately not guaranteed combos.
+      if (!inRange) continue;
+      const score = a.dmg / 95 + a.stun * 0.85 - a.wind * 1.8 -
+        (a.type === "projectile" ? gap * 0.11 : 0) +
+        (a.effect ? 0.36 : 0) + rand(-0.12, 0.12);
+      if (score > bestScore) { best = key; bestScore = score; }
+    }
+    return best;
+  }
+
+  /** Timed pressure reacts to confirmed contact, verified whiffs, and baited
+   * approaches. All actions are normal intent movement/buttons, never special AI hits.
+   * Returns true only when taking an offensive input or holding a feint movement.
+   */
+  private combatIQAction(f: Fighter, o: Fighter, dt: number): boolean {
+    const profile = COMBAT_IQ[this.iqLevel];
+    const now = this.threats.now();
+    this.iqBaitCd = Math.max(0, this.iqBaitCd - dt);
+    if (f.isDown() || o.isDown() || f.chainBindT > 0 || f.chainBoundBy ||
+        this.blockWait >= 0 || this.blockHold > 0 || this.sideT > 0 ||
+        f.intent.block || f.intent.dash.lengthSq() > 0.01 ||
+        this.comboParryTarget > now ||
+        (f.kit === "sickle" && f.bloodFestivalT > 0)) {
+      this.iqBaitPhase = "none";
+      return false;
+    }
+    const delta = o.root.position.clone().sub(f.root.position).setY(0);
+    const gap = delta.length();
+    if (gap < 0.01) return false;
+    const toward = delta.divideScalar(gap);
+    const free = f.state === S.IDLE || (f.state === S.ATTACK && f.atkPhase === 2);
+
+    // Hit-confirmed light string: buffer precisely one next click through the
+    // existing Fighter.requestLight combo system. Do not blindly mash full combos.
+    if (f.state === S.ATTACK && f.atk && /^l\d+$/.test(f.atkId) &&
+        !!f.atk.next && this.iqOwnHitConfirmed && this.iqOwnFollowWanted &&
+        !this.iqOwnFollowSpent && f.atkPhase >= 1 && f.onGround &&
+        gap <= (f.attacks[f.atk.next]?.reach ?? f.atk.reach) + 0.40) {
+      this.iqOwnFollowSpent = true;
+      this.queue = [[0, 0.060]];
+      this.hold = 0;
+      this.theaterFollow = "";
+      this.theaterFollowT = 0;
+      return true;
+    }
+    // If an attack connects but ends the light string, link to a *ready* skill
+    // only if there is actual time to cast before the target can recover.
+    if (f.state === S.ATTACK && f.atk && !f.atk.next &&
+        this.iqOwnHitConfirmed && this.iqOwnSkillWanted &&
+        !this.iqOwnFollowSpent && f.atkPhase === 2 &&
+        (o.state === S.HITSTUN || o.state === S.STAGGER)) {
+      const left = Math.max(0, o.stun - o.stateT);
+      const key = this.iqFollowSkill(f, o, gap, left);
+      if (key) {
+        f.intent.skill = key;
+        this.queue = []; this.hold = 0;
+        this.iqOwnFollowSpent = true;
+        this.skillCd = Math.max(this.skillCd, 0.24);
+        return true;
+      }
+    }
+
+    // Whiff punish: only a swing visibly missed in its whole active window;
+    // respect reaction delay, opponent remaining recovery and our real attack windup.
+    if (!this.iqWhiffSpent && this.iqWhiffSerial === o.swingSerial &&
+        now >= this.iqWhiffReactAt && now < this.iqWhiffExpires &&
+        o.state === S.ATTACK && o.atkPhase === 2 && free) {
+      const left = Math.min(this.iqWhiffExpires - now,
+        o.atk ? o.atk.wind + o.atk.active + o.atk.recover - o.stateT : 0);
+      const key = this.iqFollowSkill(f, o, gap, left);
+      if (key) {
+        f.intent.skill = key;
+        this.queue = []; this.hold = 0;
+        this.iqWhiffSpent = true;
+        this.iqBaitPhase = "none";
+        this.theaterFollow = "";
+        this.theaterFollowT = 0;
+        this.skillCd = Math.max(this.skillCd, 0.22);
+        return true;
+      }
+      const light = f.attacks.l1;
+      if (f.state === S.IDLE && light && gap <= light.reach + 0.18 &&
+          light.wind + 0.055 < left && f.atkLock <= 0) {
+        this.queue = [[0, 0.062]]; this.hold = 0;
+        this.iqWhiffSpent = true;
+        this.iqBaitPhase = "none";
+        this.theaterFollow = "";
+        this.theaterFollowT = 0;
+        return true;
+      }
+      if (f.state === S.IDLE && light && f.onGround && gap <= light.reach + 1.6 &&
+          left > light.wind + 0.24 && this.threats.firePatches(f).length === 0) {
+        f.intent.move.copy(this.theaterDirection(f, o, toward));
+        // Real movement only: close in for a punish, no teleport or free dash.
+        return true;
+      }
+    }
+
+    // Fake a short approach then pull out of the enemy's range. On success the
+    // observed swing may create a whiff window. No attack or guard input is faked.
+    if (this.iqBaitPhase !== "none") {
+      if (!f.onGround || f.state !== S.IDLE || f.stage ||
+          this.threats.firePatches(f).length > 0) {
+        this.iqBaitPhase = "none";
+        return false;
+      }
+      this.iqBaitT = Math.max(0, this.iqBaitT - dt);
+      if (this.iqBaitPhase === "step" && (o.state === S.ATTACK || this.iqBaitT <= 0)) {
+        this.iqBaitPhase = "retreat";
+        this.iqBaitT = rand(0.24, 0.41);
+      }
+      if (this.iqBaitPhase === "retreat" && this.iqBaitT <= 0) {
+        this.iqBaitPhase = "none";
+        return false;
+      }
+      const tangent = new THREE.Vector3(-toward.z, 0, toward.x);
+      const preferred = this.iqBaitPhase === "step" ?
+        toward.clone().addScaledVector(tangent, this.iqBaitSide * 0.16) :
+        toward.clone().negate().addScaledVector(tangent, this.iqBaitSide * 0.56);
+      // Never override a real warning/dodge, including nearby active attack arcs.
+      if (o.state === S.ATTACK && o.atkPhase === 1 && o.atk &&
+          gap <= o.atk.reach + f.radius + 0.5) return false;
+      f.intent.move.copy(this.theaterDirection(f, o, preferred));
+      return true;
+    }
+    if (profile.bait <= 0 || this.iqBaitCd > 0 || f.stage || !f.onGround ||
+        f.state !== S.IDLE || o.state !== S.IDLE || RANGED.has(f.kit) ||
+        this.queue.length > 0 || this.hold > 0 ||
+        this.threats.firePatches(f).length > 0 ||
+        this.theaterT > 0 || this.theaterFollow || this.tacticsT > 0) return false;
+    const enemyReach = o.attacks.l1?.reach ?? 1.75;
+    if (gap < enemyReach + 0.18 || gap > enemyReach + 1.55 ||
+        Math.random() >= profile.bait * (FIGHT_STYLES[f.look.name.toLowerCase()]?.bait ?? 0.5)) {
+      this.iqBaitCd = rand(profile.feintCd[0], profile.feintCd[1]);
+      return false;
+    }
+    this.iqBaitCd = rand(profile.feintCd[0], profile.feintCd[1]);
+    this.iqBaitPhase = "step";
+    this.iqBaitT = rand(0.16, 0.31);
+    this.iqBaitSide = Math.random() < 0.5 ? -1 : 1;
+    f.intent.move.copy(this.theaterDirection(f, o, toward));
+    return true;
+  }
+
   private rangeOrbitCd = 0;
   private rangeOrbitSign = Math.random() < 0.5 ? -1 : 1;
 
@@ -1086,7 +1359,8 @@ export class AiBrain implements Brain {
   }
 
   constructor(private threats: Threats, level: number) {
-    this.p = PRESETS[Math.max(0, Math.min(level, PRESETS.length - 1))];
+    this.iqLevel = Math.max(0, Math.min(Math.floor(Number.isFinite(level) ? level : 1), PRESETS.length - 1));
+    this.p = PRESETS[this.iqLevel];
   }
 
   think(f: Fighter, dt: number) {
@@ -1097,6 +1371,7 @@ export class AiBrain implements Brain {
         f.atk?.style === "chain_razor_cyclone") f.intent.skillHeld = "z";
     const o = f.opponent as Fighter | null;
     if (!o || o.isDown()) return;
+    this.iqObserve(f, o);
     // Marked ground impacts outrank defensive guard plans and ordinary offense.
     if (this.evadeGroundStrikes(f)) return;
     if (this.evadeStaticField(f)) return;
@@ -1198,7 +1473,12 @@ export class AiBrain implements Brain {
       f.intent.skill = "x";
       this.skillCd = rand(this.p.skill[0], this.p.skill[1]);
     }
-    if (!this.aiAirTap && !f.intent.skill && this.projectileSwordCommit <= 0 &&
+    // Combat IQ runs after emergency dodges and ordinary footwork, before
+    // opportunistic skills, scripted personality follow-ups and random offense.
+    const iqActed = !this.aiAirTap && !f.intent.skill &&
+      this.projectileSwordCommit <= 0 && this.combatIQAction(f, o, dt);
+    if (!this.aiAirTap && !f.intent.skill && !iqActed &&
+        this.projectileSwordCommit <= 0 &&
         !this.readySkillOpportunity(f, o, dt) && !this.theaterOffense(f, o))
       this.offense(f, o, dt);
     // Sprint to close long gaps. A direction aimed at retreat/evade is not sprinted.
@@ -2407,6 +2687,9 @@ private offense(f: Fighter, o: Fighter, dt: number) {
     else if (Math.random() > style.combo) count = Math.min(count, 2);
   }
   if (festival) count = limit;
+  // Normal/Hard/Master: launch one opener, then wait for an actual hit-confirm
+  // before buffering more attacks. Easy occasionally keeps its old basic queue.
+  if (this.iqLevel >= 1 && !festival && !RANGED.has(f.kit)) count = 1;
   // Each tap is a real input, and the Fighter checks real animation/cancel windows.
   for (let i = 0; i < count; i++)
     this.queue.push([i === 0 ? 0 : 0.14 + (fast ? 0 : 0.06), 0.06]);
