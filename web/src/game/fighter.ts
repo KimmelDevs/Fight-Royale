@@ -1,3 +1,4 @@
+// FIGHT_ROYALE_NYX_CAMERA_CONTINUOUS_DODGE_20261107_V1
 // FIGHT_ROYALE_PARRY_SPIN_COUNTERS_V2
 // FIGHT_ROYALE_PARRY_SPIN_COUNTERS_V1
 // NESA_HEART_SMASH_V4
@@ -137,6 +138,8 @@ export class Fighter implements Entity {
   perfectDodgeT = 0;
   perfectDodgeUsed = false;
   perfectDodgeCounterT = 0; // one successful melee riposte, expires after 0.95s
+  /** NYX_SMOKE_BOOST: armed only once Smoke Step actually teleports. */
+  nyxShadowBoostT = 0;
   parryCounterT = 0; // brief follow-up window after a successful parry
   private parryCounterTarget: Entity | null = null;
   private parryCounterPendingDepth = 0;
@@ -388,6 +391,11 @@ export class Fighter implements Entity {
       this.maxHp *= 1.12;
       this.maxGuard *= 1.25;
     }
+    // FIGHT_ROYALE_GUARD_CAPACITY_AVG_2X_1P5X_V3
+    // Apply relative to ORIGINAL kit guard, not the older Aster +25% adjustment.
+    // Keep emblem effects below so they scale the new base guard normally.
+    if (look.name === "Aster" || look.name === "Vesper") this.maxGuard = st.guard * 2.0;
+    else if (look.name === "Garrick") this.maxGuard = st.guard * 1.5;
     this.parryWindow = st.parry; this.jumpV = st.jump;
     this.hp = this.maxHp;
     this.guard = this.maxGuard;
@@ -648,6 +656,7 @@ export class Fighter implements Entity {
     this.invulnT = Math.max(this.invulnT - dt, 0);
     this.perfectDodgeT = Math.max(0, this.perfectDodgeT - dt);
     this.perfectDodgeCounterT = Math.max(0, this.perfectDodgeCounterT - dt);
+    this.nyxShadowBoostT = Math.max(0, this.nyxShadowBoostT - dt);
     this.parryCounterT = Math.max(0, this.parryCounterT - dt);
     this.parryRecoilT = Math.max(0, this.parryRecoilT - dt);
     if (this.parryRecoilT > 0) this.model.recoil = Math.max(this.model.recoil, 0.23 + 0.35 * this.parryRecoilT);
@@ -893,8 +902,27 @@ export class Fighter implements Entity {
 
   // --- input -> actions ---------------------------------------------------------
   /** Double-tapped direction: a quick burst that dodges hits (6 s cooldown). */
+  // FIGHT_ROYALE_KAEDE_THOUSAND_CUTS_LOCK_MISS3_V4
+  isKaedeThousandCutsCasting(): boolean {
+    return this.kit === "katana" && this.state === S.ATTACK && !!this.atk &&
+      this.atk.name === "Thousand Cuts" && this.atk.style === "slashes";
+  }
+  /** Called only after the THIRD unsuccessful slice on the authoritative host. */
+  cancelKaedeThousandCuts() {
+    if (!this.isKaedeThousandCutsCasting()) return;
+    this.atk = null;
+    this.atkId = "";
+    this.atkPhase = 0;
+    this.buffered = false;
+    this.holding = false;
+    this.poseOverride = "";
+    this.setState(S.IDLE);
+    this.model.recoil = Math.max(this.model.recoil, 0.2);
+  }
+
   private readDash() {
     if (this.chainBindT > 0 || (this.chainBoundBy && this.chainBoundBy.chainBindT > 0)) return;
+    if (this.isKaedeThousandCutsCasting()) return; // committed, immobile cast
     const d = this.intent.dash;
     if (d.lengthSq() < 0.01 || this.dashCd > 0) return;
     if (![S.IDLE, S.BLOCK, S.CHARGE, S.ATTACK].includes(this.state)) return; // dash cancels attacks, not hitstun
@@ -932,6 +960,7 @@ export class Fighter implements Entity {
     const pressed = on && !this.atkPrev;
     const released = !on && this.atkPrev;
     this.atkPrev = on;
+    if (this.isKaedeThousandCutsCasting()) { this.holding = false; return; }
     if ([S.HITSTUN, S.STAGGER, S.KO, S.WIN].includes(this.state)) {
       this.holding = false; this.nesaAirHolding = false; return;
     }
@@ -1133,6 +1162,7 @@ export class Fighter implements Entity {
   }
 
   private readSkill() {
+    if (this.isKaedeThousandCutsCasting()) return;
     const k = this.intent.skill;
     if (!k) return;
     // While bound, Z/X are handled in update() before readSkill(); other skills are locked.
@@ -1254,8 +1284,29 @@ export class Fighter implements Entity {
     // Heavy attacks and special skills do not receive this bonus.
     if (this.kit === "sickle" && this.bloodFestivalT > 0 && /^l\d+$/.test(id)) this.atkPower *= 1.35;
     // Unbound Drive expands BASIC reach but does not bypass blocks, parries, or clashes.
+    // NYX_SMOKE_BOOST: next offensive move only. An ordinary l1..l4, air light,
+    // charged heavy or basic parry-riposte gets x2. A damaging skill gets x1.2.
+    // Smoke Step itself and non-damaging skills cannot consume the reward.
+    if (this.kit === "assassin" && this.nyxShadowBoostT > 0) {
+      const chosen = this.attacks[id];
+      const isBasic = /^(l[1-9]\d*|air_l[1-9]\d*|pc)$/.test(id);
+      // FIGHT_ROYALE_NYX_SMOKE_HEAVY_1P2_V3: charged heavy is x1.2, never x2.
+      const isSkill = /^(z|x|c|v)(?:_air)?$/.test(id) && !!chosen && chosen.dmg > 0 &&
+        chosen.type !== "buff" && chosen.type !== "blink";
+      if (chosen && (isBasic || isSkill || id === "heavy")) {
+        this.atkPower *= isBasic ? 2.0 : 1.2;
+        this.nyxShadowBoostT = 0;
+        this.model.flash(isBasic ? "#b05eff" : "#b1aaff", 0.20);
+      }
+    }
     this.atkId = id;
     this.atk = this.attacks[id];
+    if (this.kit === "katana" && this.atk?.name === "Thousand Cuts" && this.atk.style === "slashes") {
+      this.atk = { ...this.atk, lunge: 0, recover: Math.max(this.atk.recover,
+        this.atk.delay + Math.max(0, this.atk.repeat - 1) * this.atk.interval + 0.23) };
+      this.dashT = 0; this.holding = false; this.velY = Math.min(0, this.velY);
+      this.vx = 0; // stop lingering platform momentum at the start of casting
+    }
     if (id === "pc") {
       this.parryCounterDepth = this.parryCounterPendingDepth;
       this.parryCounterT = 0; this.parryCounterTarget = null;
@@ -1423,6 +1474,9 @@ export class Fighter implements Entity {
 
   // --- movement ---------------------------------------------------------------------
   private move(dt: number) {
+    if (this.isKaedeThousandCutsCasting()) {
+      this.model.walk = 0; this.model.rotation.y = this.viewBias; return;
+    }
     const pos = this.root.position;
     const o = this.opponent;
     let dir = new THREE.Vector3(Math.sin(this.root.rotation.y), 0, Math.cos(this.root.rotation.y));
@@ -1746,6 +1800,7 @@ export class Fighter implements Entity {
   win() { if (this.state !== S.KO) this.setState(S.WIN); }
 
   revive(frac: number) {
+    this.nyxShadowBoostT = 0;
     this.releaseChainBind();
     if (this.chainBoundBy) this.chainBoundBy.releaseChainBind();
     this.chainBoundBy = null;
@@ -1772,6 +1827,7 @@ export class Fighter implements Entity {
   heal(amount: number) { this.hp = Math.min(this.hp + amount, this.maxHp); }
 
   ko() {
+    this.nyxShadowBoostT = 0;
     this.nextShieldFast = false; this.shieldRaise = 0.10;
     this.comboPauseT = 0; this.comboDamageMult = 1;
     this.judgmentT = 0; this.model.setJudgment(false);
@@ -1839,6 +1895,9 @@ export class Fighter implements Entity {
   }
 
   private movePlat(dt: number) {
+    if (this.isKaedeThousandCutsCasting()) {
+      this.vx = 0; this.model.walk = 0; return;
+    }
     const pos = this.root.position;
     pos.z += (this.lane - pos.z) * Math.min(1, dt * 8);
     const mx = Math.abs(this.intent.move.x) > 0.2 ? Math.sign(this.intent.move.x) : 0;

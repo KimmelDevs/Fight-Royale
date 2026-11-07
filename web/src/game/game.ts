@@ -1,3 +1,4 @@
+// FIGHT_ROYALE_NYX_CAMERA_CONTINUOUS_DODGE_20261107_V1
 // FIGHT_ROYALE_PARRY_SPIN_COUNTERS_V2
 // FIGHT_ROYALE_PARRY_SPIN_COUNTERS_V1
 // NESA_HEART_SMASH_V4
@@ -416,6 +417,10 @@ export class Game implements MobHost {
   private trauma = 0;
   private shakeT = 0;
   private impactCameraPunch = 0;
+  // Skill cinematics are camera-only (no time scaling, teleport or collision edits).
+  private specialCameraSeen = new Map<number, number>();
+  private specialCameraT = 0;
+  private specialCameraCaster: Fighter | null = null;
   private nextId = 1;
   private events: any[] = [];
   private snapT = 0;
@@ -2130,10 +2135,23 @@ export class Game implements MobHost {
   private runStrike(f: Fighter, a: Attack, power: number) {
     const round = this.round;
     const color = f.look.glow;
+    // FIGHT_ROYALE_KAEDE_THOUSAND_CUTS_LOCK_MISS3_V4
+    // If none of the FIRST THREE slices causes an actual HP hit, the rest vanish.
+    // Guarded, parried, dodged and whiffed slices all count as misses.
+    const kaedeCuts = f.kit === "katana" && a.name === "Thousand Cuts" && a.style === "slashes";
+    const kaedeSerial = f.swingSerial;
+    let firstThreeConnected = false;
+    // The area stays where the target was when Kaede started Thousand Cuts.
+    // Dodging out of that area must remain possible; no automatic slice-by-slice tracking.
+    const kaedeCenter = kaedeCuts
+      ? (f.opponent ?? f).root.position.clone() : null;
     const one = (i: number) => {
       if (round !== this.round || f.isDown()) return;
+      if (kaedeCuts && (f.swingSerial !== kaedeSerial || !f.isKaedeThousandCutsCasting())) return;
       const src: Entity = a.at === "self" || !f.opponent ? f : f.opponent;
-      const center = this.plat ? src.root.position.clone() : src.root.position.clone().setY(0);
+      const center = kaedeCenter
+        ? (this.plat ? kaedeCenter.clone() : kaedeCenter.clone().setY(0))
+        : (this.plat ? src.root.position.clone() : src.root.position.clone().setY(0));
       const wait = i === 0 ? a.delay : a.interval;
       const mark = { target: f.opponent, land: this.time + wait, id: this.nextId++ };
       this.strikeMarks.push(mark);
@@ -2144,6 +2162,7 @@ export class Game implements MobHost {
       this.later(wait, () => {
         this.strikeMarks = this.strikeMarks.filter((m) => m !== mark);
         if (round !== this.round) return;
+        if (kaedeCuts && (f.swingSerial !== kaedeSerial || !f.isKaedeThousandCutsCasting())) return;
         const at = a.at === "self" ? (this.plat ? f.root.position.clone() : f.root.position.clone().setY(0)) : center;
         this.impactFx(a, at, color, a.radius);
         if (f.look.element === "fire" && f.kit === "mage" &&
@@ -2151,16 +2170,28 @@ export class Game implements MobHost {
           // EMBER_GROUND_HAZARD_AI_V1_NOV06: smaller persistent fire circles (Meteor / charged heavy).
           this.spawnEmberPatch(f, at, a.id === "c" ? 1.25 : 0.65);
         }
+        let realDamageThisSlice = false;
         for (const d of this.enemiesOf(f)) {
           const to = d.root.position.clone().sub(at);
           const dy = Math.abs(to.y);
           to.setY(0);
           if (to.length() <= a.radius + d.radius * 0.5 && (this.plat ? dy < 1.6 : !d.airborne())) {
             const dir = to.length() > 0.05 ? to.normalize() : d.root.position.clone().sub(f.root.position).setY(0).normalize();
-            this.applyHit(f, d, a, power, d.chest(), dir, true);
+            const outcome = this.applyHit(f, d, a, power, d.chest(), dir, true);
+            if (kaedeCuts && (outcome === "hit" || outcome === "crit" || outcome === "ko"))
+              realDamageThisSlice = true;
           } else if (d instanceof Fighter && to.length() <= a.radius + 1) {
             this.fxp("num", d.chest().add(new THREE.Vector3(0, 0.8, 0)), "DODGE", "#c9d3e6", 0.7);
           }
+        }
+        if (kaedeCuts && i < 3 && realDamageThisSlice) firstThreeConnected = true;
+        if (kaedeCuts && i === 2 && !firstThreeConnected) {
+          // Stop before scheduling slice 4. A vanished attack cannot produce phantom hits.
+          f.cancelKaedeThousandCuts();
+          this.fxp("smoke", at.clone(), "#e9a5bb");
+          this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.7, 0)),
+            "THOUSAND CUTS MISSED", "#ffa6bd", 0.88);
+          return;
         }
         for (const t of [...this.traps]) if (t.kind === "barrel" && t.team !== f.team && t.pos.distanceTo(at) <= a.radius + 0.4) this.detonate(t);
         if (i + 1 < a.repeat) one(i + 1);
@@ -2593,6 +2624,12 @@ export class Game implements MobHost {
     this.fxp("smoke", from, f.look.glow);
     f.teleport(to);
     this.fxp("smoke", f.root.position.clone(), f.look.glow);
+    if (f.kit === "assassin" && f.atkId === "z" && a.name === "Smoke Step") {
+      f.nyxShadowBoostT = 10.0;
+      this.fxp("ring", f.chest(), "#af7cff", 0.84, 0.30, 0.72);
+      this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.70, 0)),
+        "SHADOW EMPOWERED", "#d3a3ff", 0.90);
+    }
   }
 
   private applyHit(attacker: Entity | null, d: Entity, a: Attack, power: number, hitPos: THREE.Vector3, dir: THREE.Vector3, ranged: boolean): string {
@@ -3268,6 +3305,23 @@ export class Game implements MobHost {
   // --- camera -------------------------------------------------------------------------------
   private updateCamera(dt: number) {
     const cam = this.camera;
+    // Watch the authoritative attack id + swing serial so casts pulse once each.
+    // Nyx Smoke Step (Z) and Zarek's X get a short, soft anime camera punch.
+    for (const actor of this.fighters) {
+      if (actor.state !== S.ATTACK ||
+          !((actor.kit === "assassin" && actor.atkId === "z") ||
+            (actor.kit === "glaive" && actor.atkId === "x"))) continue;
+      if (this.specialCameraSeen.get(actor.id) === actor.swingSerial) continue;
+      this.specialCameraSeen.set(actor.id, actor.swingSerial);
+      this.specialCameraCaster = actor;
+      this.specialCameraT = 0.46;
+    }
+    this.specialCameraT = Math.max(0, this.specialCameraT - dt);
+    const cinematicFov = this.specialCameraT > 0 ? 46.8 : 50;
+    const oldFov = cam.fov;
+    cam.fov = THREE.MathUtils.damp(cam.fov, cinematicFov,
+      this.specialCameraT > 0 ? 16 : 9, dt);
+    if (Math.abs(cam.fov - oldFov) > 0.0001) cam.updateProjectionMatrix();
     let goal: THREE.Vector3, look: THREE.Vector3;
     const me = this.local ?? this.fighters[0];
     if (!me) { cam.position.set(0, 6, 10); cam.lookAt(0, 1, 0); return; }
@@ -3311,6 +3365,12 @@ export class Game implements MobHost {
     const k = 1 - Math.exp(-5 * dt);
     if (cam.position.lengthSq() === 0) cam.position.copy(goal);
     cam.position.lerp(goal, k);
+    if (this.specialCameraT > 0 && this.specialCameraCaster &&
+        !this.specialCameraCaster.isDown()) {
+      const casterFocus = this.specialCameraCaster.chest();
+      const focusWeight = this.plat ? 0.10 : this.cfg.mode === "duel" ? 0.14 : 0.20;
+      look.lerp(casterFocus, focusWeight * Math.min(1, this.specialCameraT * 5));
+    }
     cam.lookAt(look);
     this.trauma = Math.max(this.trauma - 1.4 * dt, 0);
     const sh = this.trauma * this.trauma;

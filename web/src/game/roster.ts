@@ -133,7 +133,7 @@ export const CHARACTERS: Character[] = [
   { id: "kaizen", title: "Chainblade Berserker", role: "Berserker - Segmented Sword",
     desc: "Switches from precise close sword cuts to unpredictable long chainblade arcs. Hook enemies, lash around their guard, and unleash a short frenzy.",
     stats: { power: 5, speed: 3, range: 4, defense: 3 },
-    look: { name: "Kaizen", body: "m", vrm: "garrick", kit: "chainblade", element: "chain", outfit: "knight", style: "short", hat: "none",
+    look: { name: "Kaizen", body: "m", vrm: "kaizen", kit: "chainblade", element: "chain", outfit: "knight", style: "short", hat: "none",
       hair: "#231f29", hair_shade: "#716570", iris_top: "#9d282a", iris_bottom: "#ff895c", eye_dark: "#2c0910",
       tunic: "#332831", band: "#6e3034", pants: "#221e25", boots: "#352b30", metal: "#adb2bd", trim: "#b88f7b",
       cape: "#4e242a", cape_bottom: "#8e3039", glow: "#ff5b63", shield: "#3b242b", emblem: "#ffa5a0" } },

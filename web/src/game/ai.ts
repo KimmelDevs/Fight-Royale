@@ -1,3 +1,5 @@
+// FIGHT_ROYALE_ZAREK_CPU_SHIELD_RECOVERY_V2
+// FIGHT_ROYALE_NYX_CAMERA_CONTINUOUS_DODGE_20261107_V1
 // FIGHT_ROYALE_PARRY_SPIN_COUNTERS_V2
 // FIGHT_ROYALE_AI_DEFENSE_AGGRESSION_REPAIR_V2
 // FIGHT_ROYALE_PARRY_SPIN_COUNTERS_V1
@@ -99,6 +101,22 @@ export class AiBrain implements Brain {
   private comboParryExamined = -1;
   private comboParryReleased = false;
   private ignitionChoices = new Map<number, boolean>();
+  // FIGHT_ROYALE_HEAVY_EVADE_DASH_JUMP_V3: one real defensive choice per swing.
+  private heavyEscapeSerial = -1;
+  private heavyEscapeReactT = 0;
+  private heavyEscapeUsed = false;
+  // A shield decision tied to a REAL swing, not a permanent turtle mode.
+  private zarekGuardSwing = -1;
+  private zarekGuardReact = 0;
+  private zarekGuardHold = 0;
+  private zarekGuardWants = false;
+  private zarekGuardPredictCd = 1.3;
+  private zarekGuardSeenShots = new Set<number>();
+
+  // Continuous attacks: react to a real incoming beat, not to every animation frame.
+  private lastUndodgeableCombo = -1;
+  private continuousDodgeReaction = 0;
+  private continuousDodgeDone = false;
   // FIGHT_ROYALE_PARRY_SPIN_COUNTERS_V2: CPUs deliberately use and defend counters.
   private counterSeen = false;
   private counterWant = false;
@@ -668,6 +686,284 @@ export class AiBrain implements Brain {
     return true;
   }
 
+
+  /** Last-resort dodge for genuinely unsafe continuous attacks. Never grants i-frames
+   * directly: issues the ordinary dash input with normal cooldown and state checks.
+   * Clashes and affordable blocks are preferred; attacking never gets cancelled unless
+   * a real dodge can be executed. Skill pressure resumes on the next frame.
+   */
+  private dodgeUnsafeContinuous(f: Fighter, o: Fighter, dt: number): boolean {
+    const atk = o.atk;
+    if (o.state !== S.ATTACK || !atk || !o.isContinuousComboActive()) {
+      this.lastUndodgeableCombo = -1;
+      this.continuousDodgeDone = false;
+      return false;
+    }
+    // Only react to threatening distance and the next legitimate hit beat.
+    const distance = f.root.position.clone().setY(0)
+      .distanceTo(o.root.position.clone().setY(0));
+    const reach = atk.type === "strike" ? Math.max(atk.radius, 1.6) :
+      Math.max(1.5, atk.reach + Math.min(Math.max(atk.lunge, 0) * 0.12, 0.65));
+    if (distance > reach + 0.65) return false;
+    if (this.lastUndodgeableCombo !== o.swingSerial) {
+      this.lastUndodgeableCombo = o.swingSerial;
+      this.continuousDodgeReaction = rand(this.p.react[0], this.p.react[1]);
+      this.continuousDodgeDone = false;
+    }
+    this.continuousDodgeReaction = Math.max(0, this.continuousDodgeReaction - dt);
+    if (this.continuousDodgeDone || this.continuousDodgeReaction > 0) return false;
+    if (f.isDown() || !f.onGround || f.dashing() ||
+        ![S.IDLE, S.BLOCK, S.CHARGE, S.ATTACK].includes(f.state)) return false;
+
+    // Upcoming combo time is authoritative when the arena schedules repeat hits.
+    const upcoming = this.threats.comboHits(o)
+      .filter(t => t >= this.threats.now() - 0.025).sort((x, y) => x - y);
+    const eta = upcoming.length ? upcoming[0] - this.threats.now() :
+      Math.max(0, atk.wind - o.stateT);
+    if (eta > 0.48) return false; // too early; avoid panic dodges
+
+    const shieldReady = f.state === S.BLOCK && f.stateT >= f.shieldRaise;
+    const shieldCanRaise = [S.IDLE, S.BLOCK].includes(f.state) &&
+      eta >= (f.nextShieldFast ? 0.01 : 0.10) + 0.035;
+    const guardNeed = Math.max(12, atk.guard * (atk.heavy ? 1.25 : 1.05));
+    const canAffordBlock = f.guard > guardNeed && (shieldReady || shieldCanRaise);
+    const myLight = f.attacks.l1;
+    const canClash = myLight?.type === "melee" &&
+      ((f.state === S.ATTACK && f.atk?.type === "melee" && f.atkPhase <= 1) ||
+       (f.state === S.IDLE && myLight.wind + 0.05 <= eta &&
+        distance <= myLight.reach + 0.20));
+    // Skip if existing good defense is still viable. Only exceptional threats
+    // should override the normal aggressive personality / ready-skill logic.
+    if (canAffordBlock || canClash) return false;
+
+    const canDash = f.dashCd <= 0 && !f.knockedDown() &&
+      (f.kit !== "hammer" || f.state !== S.ATTACK);
+    if (!canDash) return false; // no fake dodges or permanent defensive lockdown
+    // Choose a reachable safe direction inside the real arena boundaries.
+    const away = f.root.position.clone().sub(o.root.position).setY(0);
+    if (away.lengthSq() < 0.0001) away.set(f.id % 2 ? 1 : -1, 0, 0);
+    away.normalize();
+    const candidates = f.stage ? [
+      new THREE.Vector3(Math.sign(away.x) || f.facing, 0, 0),
+      new THREE.Vector3(-(Math.sign(away.x) || f.facing), 0, 0),
+    ] : [
+      away.clone(),
+      new THREE.Vector3(-away.z, 0, away.x),
+      new THREE.Vector3(away.z, 0, -away.x),
+    ];
+    const origin = f.root.position.clone().setY(0);
+    let best: THREE.Vector3 | null = null;
+    let score = -Infinity;
+    for (const dir of candidates) {
+      const dest = origin.clone().addScaledVector(dir, 2.5);
+      if (f.stage) {
+        const main = f.stage.plats[0];
+        if (!main || dest.x < main.x0 + 0.7 || dest.x > main.x1 - 0.7) continue;
+      } else if (dest.length() > f.arenaRadius - f.radius - 0.22) continue;
+      const separation = dest.distanceTo(o.root.position.clone().setY(0));
+      const value = separation + (dir.dot(away) > 0.6 ? 0.15 : 0);
+      if (value > score) { score = value; best = dir; }
+    }
+    if (!best) return false;
+    f.intent.dash.copy(best);
+    f.intent.move.copy(best);
+    f.intent.block = false;
+    f.intent.attack = false;
+    f.intent.skill = "";
+    // Commit only to one true dash per enemy swing. No repeated queue cancellation.
+    this.continuousDodgeDone = true;
+    this.blockHold = 0;
+    this.blockWait = -1;
+    return true;
+  }
+
+
+  /** Zarek sometimes missed all blocks because pressure/skill logic overrode a
+   * queued shield raise. Commit to the normal block input for one LEGITIMATE threat.
+   * No free parry, unlimited shield or attack/skill lock; he remains aggressive.
+   */
+  private zarekShieldResponse(f: Fighter, o: Fighter, dt: number): boolean {
+    if (f.kit !== "glaive") return false;
+    this.zarekGuardPredictCd = Math.max(0, this.zarekGuardPredictCd - dt);
+    if (f.isDown() || !f.onGround ||
+        (f.state !== S.IDLE && f.state !== S.BLOCK)) {
+      this.zarekGuardHold = 0;
+      return false;
+    }
+    const gap = f.root.position.clone().setY(0)
+      .distanceTo(o.root.position.clone().setY(0));
+
+    const commitGuard = (duration: number): boolean => {
+      this.zarekGuardHold = Math.max(this.zarekGuardHold, duration);
+      f.intent.block = true;
+      f.intent.attack = false;
+      f.intent.skill = "";
+      f.intent.sprint = false;
+      f.intent.move.set(0, 0, 0);
+      // Ordinary shield raise is still 0.10s (or the earned 90% faster raise).
+      // Do not let pressure/counter queues issue a basic during this guard.
+      this.blockWait = -1;
+      this.blockHold = 0;
+      this.blockDur = 0;
+      this.comboParryTarget = -1;
+      this.queue = [];
+      this.hold = 0;
+      return true;
+    };
+
+    if (this.zarekGuardHold > 0) {
+      this.zarekGuardHold = Math.max(0, this.zarekGuardHold - dt);
+      if (f.guard > Math.max(5, f.maxGuard * 0.09)) {
+        return commitGuard(0);
+      }
+      this.zarekGuardHold = 0;
+    }
+    if (f.guard <= Math.max(f.maxGuard * 0.28, 18)) return false;
+    // Projectiles deserve real shielding too: Zarek's old pressure plan often
+    // started a glaive combo instead of raising guard for the incoming shot.
+    // This reads existing real projectiles; it does not predict nonexistent ones.
+    for (const shot of this.threats.projectiles()) {
+      if (shot.target !== f || this.zarekGuardSeenShots.has(shot.id)) continue;
+      const approaching = shot.pos.clone().sub(f.chest()).dot(shot.vel) < 0;
+      const eta = f.chest().distanceTo(shot.pos) /
+        Math.max(1.0, shot.vel.length());
+      if (!approaching || eta < (f.nextShieldFast ? 0.05 : 0.14) ||
+          eta > 0.64 || f.guard <= f.maxGuard * 0.37) continue;
+      this.zarekGuardSeenShots.add(shot.id);
+      if (this.zarekGuardSeenShots.size > 150) this.zarekGuardSeenShots.clear();
+      if (Math.random() < 0.22 + this.p.block * 0.82)
+        return commitGuard(Math.min(0.80, eta + 0.19));
+    }
+    const a = o.atk;
+    const nearby = gap < 2.75;
+
+    // Anticipatory guard against a plainly visible long charge, or a short
+    // read during close-range neutral. This covers fast 0.1s combos that cannot
+    // be reacted to AFTER the blade starts moving.
+    if (this.zarekGuardPredictCd <= 0 && nearby &&
+        (o.state === S.CHARGE || o.state === S.IDLE) &&
+        f.guard > f.maxGuard * 0.61 &&
+        Math.random() < dt * (o.state === S.CHARGE ? 3.2 : 0.68) *
+          (0.65 + this.p.block)) {
+      this.zarekGuardPredictCd = o.state === S.CHARGE ? 1.35 : 2.2;
+      return commitGuard(o.state === S.CHARGE ? 0.42 : 0.24);
+    }
+    if (o.state !== S.ATTACK || !a || a.dmg <= 0 ||
+        (a.type !== "melee" && a.type !== "strike")) return false;
+    const range = a.type === "strike" ? Math.max(a.radius, 1.65) :
+      a.reach + Math.min(Math.max(0, a.lunge) * 0.13, 0.80);
+    if (gap > range + 0.48) return false;
+    if (o.swingSerial !== this.zarekGuardSwing) {
+      this.zarekGuardSwing = o.swingSerial;
+      this.zarekGuardReact = rand(this.p.react[0], this.p.react[1]) * 0.64;
+      const usefulGuard = f.guard >= Math.max(f.maxGuard * 0.32,
+        a.guard * (o.isContinuousComboActive() ? 2.0 : 1.25));
+      this.zarekGuardWants = usefulGuard &&
+        Math.random() < Math.min(0.91, 0.46 + this.p.block * 0.64);
+    }
+    if (!this.zarekGuardWants) return false;
+    this.zarekGuardReact = Math.max(0, this.zarekGuardReact - dt);
+    if (this.zarekGuardReact > 0) return false;
+
+    // Contact may come from a multi-hit beat; block those instead of assuming
+    // another parry can be raised instantly. Shield/guard damage stays real.
+    const eta = a.type === "strike" ? Math.max(0, a.wind - o.stateT + a.delay) :
+      Math.max(0, a.wind - o.stateT);
+    const remain = a.wind + a.active - o.stateT;
+    if (remain < -0.15 && !o.isContinuousComboActive()) return false;
+    const shieldReady = f.state === S.BLOCK && f.stateT >= f.shieldRaise;
+    const raise = f.nextShieldFast ? 0.01 : 0.10;
+    if (!shieldReady && eta + (o.isContinuousComboActive() ? 0.22 : 0.035) < raise) return false;
+
+    this.zarekGuardWants = false;
+    const holdTime = o.isContinuousComboActive()
+      ? Math.min(1.25, Math.max(0.28, remain + 0.20))
+      : Math.min(0.65, Math.max(0.24, remain + 0.20));
+    return commitGuard(holdTime);
+  }
+
+  /** Last-resort heavy evasion. Keep offense when shielding or clashing works.
+   * Only legal movement inputs are used; no free dash, teleport or invulnerability.
+   */
+  private evadeUnsafeHeavy(f: Fighter, o: Fighter, dt: number): boolean {
+    const a = o.atk;
+    const dangerous = o.state === S.ATTACK && !!a &&
+      (a.heavy || (o.isContinuousComboActive() && a.dmg >= 50));
+    if (!dangerous || !a) {
+      this.heavyEscapeSerial = -1;
+      this.heavyEscapeUsed = false;
+      return false;
+    }
+    if (f.isDown() || !f.onGround ||
+        ![S.IDLE, S.BLOCK, S.CHARGE, S.ATTACK].includes(f.state)) return false;
+
+    const distance = f.root.position.clone().setY(0)
+      .distanceTo(o.root.position.clone().setY(0));
+    const dangerRange = a.type === "strike" ? Math.max(1.6, a.radius) + 0.55 :
+      Math.max(1.4, a.reach + Math.min(Math.max(0, a.lunge) * 0.12, 0.8)) + 0.55;
+    if (distance > dangerRange) return false;
+
+    if (this.heavyEscapeSerial !== o.swingSerial) {
+      this.heavyEscapeSerial = o.swingSerial;
+      this.heavyEscapeUsed = false;
+      this.heavyEscapeReactT = Math.max(this.p.react[0],
+        this.p.react[0] + Math.random() * (this.p.react[1] - this.p.react[0]));
+    }
+    if (this.heavyEscapeUsed) return false;
+    this.heavyEscapeReactT = Math.max(0, this.heavyEscapeReactT - dt);
+    if (this.heavyEscapeReactT > 0) return false;
+
+    // For a repeated sequence, use the next scheduled hit time when available.
+    const hits = o.isContinuousComboActive()
+      ? this.threats.comboHits(o).filter(t => t >= this.threats.now() - 0.03)
+        .sort((x, y) => x - y) : [];
+    const eta = hits.length ? hits[0] - this.threats.now() :
+      Math.max(0, a.wind - o.stateT);
+    if (eta > 0.38) return false;
+
+    const shieldUp = f.state === S.BLOCK && f.stateT >= f.shieldRaise;
+    const canRaise = (f.state === S.IDLE || f.state === S.BLOCK) &&
+      eta >= (f.nextShieldFast ? 0.01 : 0.10) + 0.045;
+    const shieldCost = Math.max(a.guard * (a.heavy ? 1.28 : 1.10), 18);
+    const wouldCrushShield = o.kit === "hammer" && a.heavy;
+    const canBlock = (shieldUp || canRaise) && f.guard > shieldCost && !wouldCrushShield;
+    const myLight = f.attacks.l1;
+    const canClash = !!myLight && myLight.type === "melee" &&
+      ((f.state === S.ATTACK && f.atk?.type === "melee" && f.atkPhase === 1) ||
+       (f.state === S.IDLE && distance <= myLight.reach + 0.18 &&
+        myLight.wind + 0.055 < eta));
+    if (canBlock || canClash) return false;
+
+    const away = f.root.position.clone().sub(o.root.position).setY(0);
+    if (away.lengthSq() < 0.001) away.set(f.id % 2 ? 1 : -1, 0, 0);
+    away.normalize();
+    const back = f.stage ? new THREE.Vector3(Math.sign(away.x) || -f.facing, 0, 0) : away;
+    // Check actual stage edges / arena radius before issuing movement.
+    const destination = f.root.position.clone().setY(0).addScaledVector(back, 2.4);
+    if (f.stage) {
+      const main = f.stage.plats[0];
+      if (!main || destination.x < main.x0 + 0.65 || destination.x > main.x1 - 0.65)
+        return false;
+    } else if (destination.length() > f.arenaRadius - f.radius - 0.12) return false;
+
+    const canDash = f.dashCd <= 0 && !f.dashing() &&
+      (f.kit !== "hammer" || f.state !== S.ATTACK);
+    if (canDash) {
+      f.intent.dash.copy(back);
+      f.intent.move.copy(back);
+    } else if (f.state === S.IDLE || f.state === S.BLOCK) {
+      // Dash on cooldown: ordinary backward jump + air movement, not instant invulnerability.
+      f.intent.jump = true;
+      f.intent.move.copy(back);
+    } else return false;
+    f.intent.block = false;
+    f.intent.attack = false;
+    f.intent.skill = "";
+    this.heavyEscapeUsed = true;
+    // Do not erase attack queues, ready skill timers, or character-specific footwork.
+    return true;
+  }
+
   constructor(private threats: Threats, level: number) {
     this.p = PRESETS[Math.max(0, Math.min(level, PRESETS.length - 1))];
   }
@@ -675,9 +971,12 @@ export class AiBrain implements Brain {
   think(f: Fighter, dt: number) {
     const o = f.opponent as Fighter | null;
     if (!o || o.isDown()) return;
+    if (this.dodgeUnsafeContinuous(f, o, dt)) return;
+    if (this.evadeUnsafeHeavy(f, o, dt)) return;
 
     if (this.spinCounterResponse(f, o, dt)) return;
     if (this.counterThreatDefense(f, o, dt)) return;
+    if (this.zarekShieldResponse(f, o, dt)) return;
     // During X binding, decide when to yank. AI can step nearer while the enemy is held.
     // During V, choose Z/X as before. Neither fighter casts ordinary skills in this state.
     if (f.chainBindTarget && f.chainBindT > 0) {
@@ -725,6 +1024,7 @@ export class AiBrain implements Brain {
     this.antiAirCd = Math.max(0, this.antiAirCd - dt);
     this.airSliceCd = Math.max(0, this.airSliceCd - dt);
     this.aiAirTap = false;
+    if (f.kit === "wind" && !f.stage && this.airDive(f, o, dt)) return;
     // A cautious jump-in occasionally replaces the old automatic uppercut launcher.
     // Airborne CPUs swing toward an opponent's current elevation, just like players.
     const flatGap = f.root.position.clone().setY(0)
@@ -750,7 +1050,6 @@ export class AiBrain implements Brain {
     }
     if (!this.aiAirTap && !this.readySkillOpportunity(f, o, dt) &&
         !this.theaterOffense(f, o)) this.offense(f, o, dt);
-    if (f.kit === "wind" && !f.stage) this.airDive(f, o, dt);
     // Sprint to close long gaps. A direction aimed at retreat/evade is not sprinted.
     // This uses the same run animations as player Shift movement.
     const chase = o.root.position.clone().sub(f.root.position).setY(0);
@@ -939,29 +1238,74 @@ export class AiBrain implements Brain {
   }
 
   private jumpPulse = false;
-  private airPlan = -1;
-  private airDouble = false;
+  // FIGHT_ROYALE_GALE_SMASH_PRIORITY_V6: deliberate air-to-ground smash planning.
+  private galeSmashKey = "";
+  private galeSmashDelay = 0;
+  private galeSmashNext = 0.35;
 
-  /** Wind kit: now and then jump (sometimes double jump) and come down with an air skill. */
-  private airDive(f: Fighter, o: Fighter, dt: number) {
-    const ready = ["z", "x", "c"].filter((k) => f.attacks[k + "_air"] && f.cooldowns[k] <= 0);
+  /** Gale's aerial X/C/Z are actual dive ground-smashes, not normal ground casts.
+   * Only plan while a smash is ready, the enemy is in reach, and no shield defense
+   * is already pending. Use ordinary jump/skill buttons, preserving all cooldowns.
+   */
+  private airDive(f: Fighter, o: Fighter, dt: number): boolean {
+    this.galeSmashNext = Math.max(0, this.galeSmashNext - dt);
+    if (f.isDown() || o.isDown()) { this.galeSmashKey = ""; return false; }
+    const gap = f.root.position.clone().setY(0)
+      .distanceTo(o.root.position.clone().setY(0));
+    // Falling Star can chase farther; the other smashes need a nearby landing.
+    const limits: Record<string, number> = { x: 6.0, c: 3.7, z: 2.9 };
     if (f.onGround) {
-      this.airPlan = -1;
-      const dist = f.root.position.distanceTo(o.root.position);
-      if (f.state === S.IDLE && ready.length && dist < 6 && Math.random() < dt * 0.5) {
-        f.intent.jump = true;
-        this.airPlan = 0.3 + Math.random() * 0.25;
-        this.airDouble = Math.random() < 0.5;
+      this.galeSmashKey = ""; // clear any plan that ended by landing
+      if (this.galeSmashNext > 0 || f.state !== S.IDLE || f.dashing() ||
+          f.intent.block || this.blockHold > 0 || this.blockWait >= 0 ||
+          f.intent.dash.lengthSq() > 0.01 || gap < 1.15) return false;
+      // Only genuinely ready air variants qualify. Never launch just to waste Z/X/C.
+      const choices = ["x", "c", "z"].filter((key) =>
+        !!f.attacks[key + "_air"] && f.attacks[key + "_air"].mode === "dive" &&
+        (f.cooldowns[key] ?? 1) <= 0 && gap <= limits[key]);
+      if (!choices.length) return false;
+      // Prioritize X's targeted crash, then C's whirlwind ground smash, then Z.
+      // This intentionally does NOT spend a ready grounded skill first.
+      const key = choices.includes("x") && (gap > 3.4 || Math.random() < 0.55)
+        ? "x" : choices.includes("c") && Math.random() < 0.70
+        ? "c" : choices.includes("z") ? "z" : choices[0];
+      this.galeSmashKey = key;
+      this.galeSmashDelay = 0.23 + Math.random() * 0.13;
+      this.galeSmashNext = this.p.react[0] + 0.35 + Math.random() * 0.45;
+      this.queue = []; this.hold = 0;
+      f.intent.block = false;
+      f.intent.attack = false;
+      f.intent.skill = "";
+      f.intent.jump = true;
+      return true;
+    }
+    if (!this.galeSmashKey) return false;
+    if ((f.cooldowns[this.galeSmashKey] ?? 1) > 0 ||
+        !f.attacks[this.galeSmashKey + "_air"]) {
+      this.galeSmashKey = "";
+      return false;
+    }
+    // A knockback, an interrupt or another real action cancels the pending plan.
+    if (f.state !== S.IDLE && f.state !== S.BLOCK) {
+      this.galeSmashKey = "";
+      return false;
+    }
+    this.galeSmashDelay -= dt;
+    f.intent.jump = false; // release the jump button after taking off
+    f.intent.attack = false;
+    f.intent.block = false;
+    this.queue = []; this.hold = 0;
+    const selected = this.galeSmashKey;
+    if (this.galeSmashDelay <= 0 || f.velY <= 0) {
+      // Don't magically extend reach if a target fled during the leap.
+      if (gap <= limits[selected] + 0.55) {
+        f.intent.skill = selected; // Fighter chooses the legitimate _air version
+        this.galeSmashKey = "";
+      } else if (this.galeSmashDelay < -0.32) {
+        this.galeSmashKey = ""; // no invalid cross-map homing smash
       }
-      return;
     }
-    if (this.airPlan < 0) return;
-    this.airPlan -= dt;
-    if (this.airDouble && this.airPlan < 0.15 && f.velY < 2) { f.intent.jump = true; this.airDouble = false; this.airPlan += 0.3; }
-    if (this.airPlan <= 0 && ready.length) {
-      f.intent.skill = ready[Math.floor(Math.random() * ready.length)];
-      this.airPlan = -1;
-    }
+    return true;
   }
   private hopCd = 0;
 

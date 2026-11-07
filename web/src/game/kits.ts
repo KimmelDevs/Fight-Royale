@@ -413,12 +413,13 @@ function katana(): Record<string, Attack> {
   };
 }
 
+// FIGHT_ROYALE_ASH_CHARGE_GUARD_HALF_V5: Ash heavy charged-arrow guard 60 -> 30, HP damage unchanged.
 function bow(): Record<string, Attack> {
   return {
     l1: a({ type: "projectile", wind: 0.16, active: 0.05, recover: 0.22, dmg: 48, guard: 14, knock: 1.4, stun: 0.28, speed: 28, style: "arrow", pose_w: "bow_w", pose_s: "bow_s", next: "l2" }),
     l2: a({ type: "projectile", wind: 0.16, active: 0.05, recover: 0.22, dmg: 50, guard: 14, knock: 1.4, stun: 0.28, speed: 28, style: "arrow", pose_w: "bow_w", pose_s: "bow_s", next: "l3" }),
     l3: a({ type: "projectile", wind: 0.22, active: 0.05, recover: 0.38, dmg: 37, guard: 12, knock: 2.5, stun: 0.35, speed: 28, count: 3, spread: 0.12, style: "arrow", pose_w: "bow_w", pose_s: "bow_s" }),
-    heavy: a({ type: "projectile", wind: 0.1, active: 0.05, recover: 0.5, dmg: 195, guard: 60, knock: 6, stun: 0.7, heavy: true, speed: 42, size: 1.7, style: "arrow", pierce: true, pose_w: "bow_w", pose_s: "bow_s" }),
+    heavy: a({ type: "projectile", wind: 0.1, active: 0.05, recover: 0.5, dmg: 195, guard: 30, knock: 6, stun: 0.7, heavy: true, speed: 42, size: 1.7, style: "arrow", pierce: true, pose_w: "bow_w", pose_s: "bow_s" }),
     z: a({ name: "Leap Back", desc: "Spring away to open distance.", cd: 4, type: "blink", mode: "back", wind: 0.04, recover: 0.12, pose_w: "jump", pose_s: "jump" }),
     x: a({ name: "Arrow Rain", desc: "A volley falls on the target area three times.", cd: 8, type: "strike", wind: 0.22, recover: 0.4, dmg: 80, guard: 20, knock: 2, stun: 0.35, delay: 0.7, radius: 1.8, repeat: 3, interval: 0.25, style: "arrows", pose_w: "rain_w", pose_s: "rain_s" }),
     c: a({ name: "Hunter's Snare", desc: "A barbed arrow that pins the target in place.", cd: 10, type: "projectile", wind: 0.2, recover: 0.4, dmg: 100, guard: 30, knock: 0.5, stun: 1.6, stagger: true, speed: 32, size: 1.3, style: "arrow", pose_w: "bow_w", pose_s: "bow_s" }),
