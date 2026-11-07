@@ -1,3 +1,4 @@
+// AI_EFFECTIVE_RANGE_KAIZEN_AIR_HOOK_20261107_V1
 // ZAREK_ARC_FLASH_CPU_SPECTATOR_COOLDOWNS_20261107_V1
 // FOURTH_SKILL_V_MASTER_AI_TWO_ROW_ROSTER_20261107_V1
 // MARINA_RAVEN_ZAREK_BOB_ABILITIES_20261107_V1
@@ -144,6 +145,49 @@ export class AiBrain implements Brain {
   private tacticsT = 0;
   private tacticsDir = 1;
   private tacticsCd = 0;
+  // EFFECTIVE_RANGE_AWARENESS: choices use the fighter's REAL reach and ready skills.
+  // Do not grant AI extra attack range: this only steers its regular movement.
+  private rangeOrbitCd = 0;
+  private rangeOrbitSign = Math.random() < 0.5 ? -1 : 1;
+
+  private effectiveRangeBand(f: Fighter, o: Fighter): { ideal: number; near: number; far: number } {
+    const style = FIGHT_STYLES[f.look.name.toLowerCase()];
+    const basicReach = Math.max(1.1, f.attacks.l1?.reach ?? 1.7);
+    const enemyReach = Math.max(1.1, o.attacks.l1?.reach ?? 1.7);
+    const ranged = RANGED.has(f.kit);
+    // Melee fighters normally work near the outer half of their weapon reach,
+    // not standing on the opponent's feet. Short-armed brawlers must close in.
+    let ideal = ranged ? (style?.range ?? 5.3) :
+      Math.max(1.06, Math.min(basicReach - 0.18, (style?.range ?? basicReach) * 0.94));
+    if (!ranged) {
+      if (basicReach > enemyReach + 0.45) ideal = Math.min(basicReach - 0.16, ideal + 0.22);
+      if (basicReach < enemyReach - 0.5) ideal = Math.max(1.08, ideal - 0.23);
+      // Temporarily fight at a real ready skill's range. As soon as it is used,
+      // go back to weapon range. This makes projectile-capable melee fighters
+      // alternate between zoning and sword pressure rather than face-hugging.
+      const vAvailable = "bonusSkillUnlocked" in f && f.bonusSkillUnlocked === true;
+      const keys = ["z", "x", "c", ...(vAvailable ? ["v"] : [])];
+      for (const key of keys) {
+        const a = f.attacks[key];
+        if (!a || (f.cooldowns[key] ?? 1) > 0 || f.chainBindT > 0) continue;
+        if (a.style === "chain_predator_hook" && o.state !== S.BLOCK) {
+          ideal = Math.max(ideal, Math.min(3.85, a.reach - 0.78));
+        } else if (a.type === "projectile" && a.speed > 0) {
+          ideal = Math.max(ideal, Math.min(4.75, basicReach + 2.0));
+        } else if (a.type === "strike" && a.at === "self" && a.radius > basicReach + 0.65) {
+          ideal = Math.max(ideal, Math.min(3.25, a.radius - 0.66));
+        } else if ((a.type === "melee" || a.type === "phantom") && a.reach > basicReach + 1.0) {
+          ideal = Math.max(ideal, Math.min(3.8, a.reach - 0.7));
+        }
+      }
+    }
+    // Keep a comfortable band, rather than alternating forward/back each frame.
+    ideal = THREE.MathUtils.clamp(ideal, 1.05, ranged ? 6.35 : 5.0);
+    const margin = ranged ? 0.7 : Math.max(0.28, Math.min(0.48, ideal * 0.13));
+    return { ideal, near: Math.max(0.9, ideal - margin), far: ideal + margin };
+  }
+
+
   private seenClashSwing = -1;
   // NESA_DODGE_KIRA_AIR_3_V1: dodge Nesa's dangerous hammer swings rather than merely guarding them.
   private nesaThreatSerial = -1;
@@ -266,10 +310,13 @@ export class AiBrain implements Brain {
     if (this.theaterMode !== "none" && this.theaterT > 0) {
       this.theaterT = Math.max(0, this.theaterT - dt);
       if (free && this.sideT <= 0 && this.blockWait < 0 && this.blockHold <= 0) {
+        const spacing = this.effectiveRangeBand(f, o);
         const preferred = this.theaterMode === "back" ?
-          toward.clone().negate().addScaledVector(lateral, this.theaterSide * 0.3) :
+          (gap > spacing.far + 0.25 ? lateral.clone().multiplyScalar(this.theaterSide) :
+            toward.clone().negate().addScaledVector(lateral, this.theaterSide * 0.3)) :
           this.theaterMode === "circle" ? lateral.clone().multiplyScalar(this.theaterSide)
-            .addScaledVector(toward, gap > style.range ? 0.27 : -0.15) : toward;
+            .addScaledVector(toward, gap > spacing.ideal ? 0.27 : -0.15) :
+          gap <= spacing.near ? lateral.clone().multiplyScalar(this.theaterSide).addScaledVector(toward, -0.2) : toward;
         const safe = this.theaterDirection(f, o, preferred);
         f.intent.move.copy(safe);
         if (this.theaterJump && f.onGround) {
@@ -1141,8 +1188,19 @@ export class AiBrain implements Brain {
       this.queue = [];
       this.hold = 0;
     }
-    if (!this.aiAirTap && this.projectileSwordCommit <= 0 && !this.readySkillOpportunity(f, o, dt) &&
-        !this.theaterOffense(f, o)) this.offense(f, o, dt);
+    // KAIZEN_AIR_X: use legitimate X key while airborne if the real hook can reach.
+    const airHook = f.kit === "chainblade" && !f.stage && !f.onGround &&
+      f.state === S.IDLE && f.attacks.x_air?.style === "chain_predator_hook" &&
+      (f.cooldowns.x ?? 1) <= 0 && !f.chainBindT && o.state !== S.BLOCK &&
+      flatGap > 1.3 && flatGap <= f.attacks.x_air.reach - 0.4 &&
+      Math.abs(o.root.position.y - f.root.position.y) <= 2.7;
+    if (!this.aiAirTap && airHook && this.skillCd <= 0) {
+      f.intent.skill = "x";
+      this.skillCd = rand(this.p.skill[0], this.p.skill[1]);
+    }
+    if (!this.aiAirTap && !f.intent.skill && this.projectileSwordCommit <= 0 &&
+        !this.readySkillOpportunity(f, o, dt) && !this.theaterOffense(f, o))
+      this.offense(f, o, dt);
     // Sprint to close long gaps. A direction aimed at retreat/evade is not sprinted.
     // This uses the same run animations as player Shift movement.
     const chase = o.root.position.clone().sub(f.root.position).setY(0);
@@ -2060,61 +2118,66 @@ export class AiBrain implements Brain {
     f.intent.move.copy(best);
   }
 
-/** Choose footwork without teleporting or exceeding the arena movement limits.
- * Leave projectile/hazard dodge decisions alone; terrain avoidance runs after this. */
+/** Range-conscious footwork. Real weapon/ready skill reach determines where to
+ * stand; dodge, guard, parry, hazard and stage movement take precedence. */
 private tacticalFootwork(f: Fighter, o: Fighter, dt: number) {
   const style = FIGHT_STYLES[f.look.name.toLowerCase()];
   if (!style || f.isDown() || !f.onGround || f.state !== S.IDLE ||
-      this.sideT > 0 || this.blockHold > 0 || this.blockWait >= 0) return;
+      this.sideT > 0 || this.blockHold > 0 || this.blockWait >= 0 ||
+      f.intent.dash.lengthSq() > 0.01) return;
   this.tacticsCd = Math.max(0, this.tacticsCd - dt);
+  this.rangeOrbitCd = Math.max(0, this.rangeOrbitCd - dt);
+  if (this.rangeOrbitCd <= 0) {
+    this.rangeOrbitCd = rand(0.9, 1.9);
+    if (Math.random() < 0.72) this.rangeOrbitSign *= -1;
+  }
   const toward = o.root.position.clone().sub(f.root.position).setY(0);
   const distance = toward.length();
   if (distance < 0.05) return;
   toward.divideScalar(distance);
   const tangent = new THREE.Vector3(-toward.z, 0, toward.x);
   const punish = this.hasPunishWindow(o);
-  // Never perform a deliberate bait while a real melee strike is almost active.
   const danger = o.state === S.ATTACK && o.atkPhase === 0 &&
     o.atk?.type === "melee" && distance < o.atk.reach + 0.7;
   if (danger) { this.tacticsT = 0; return; }
+  const band = this.effectiveRangeBand(f, o);
+  // A threatened block can be baited, but not endlessly or beyond the arena edge.
   if (this.tacticsT <= 0 && this.tacticsCd <= 0 &&
-      distance < style.range + 0.75 && !punish &&
-      (o.state === S.BLOCK || (o.state === S.IDLE && distance < style.range - 0.28)) &&
+      distance < band.far + 0.4 && !punish &&
+      (o.state === S.BLOCK || (o.state === S.IDLE && distance < band.near)) &&
       Math.random() < dt * style.bait * (0.45 + this.p.block)) {
     this.tacticsT = rand(0.23, 0.44);
     this.tacticsDir = Math.random() < 0.5 ? -1 : 1;
     this.tacticsCd = rand(1.1, 2.8);
   }
   if (this.tacticsT > 0) {
-    this.tacticsT -= dt;
-    const retreat = toward.clone().negate().multiplyScalar(0.65)
-      .addScaledVector(tangent, this.tacticsDir * 0.76).normalize();
-    const test = f.root.position.clone().addScaledVector(retreat, 1.1);
-    // At the arena edge, replace backward drifting with a sideways orbit.
-    if (Math.hypot(test.x, test.z) > f.arenaRadius - 0.55) {
-      const side1 = tangent.clone().multiplyScalar(this.tacticsDir);
-      const side2 = side1.clone().negate();
-      const safe = [side1, side2].sort((a, b) =>
-        f.root.position.clone().addScaledVector(a, 1.1).lengthSq() -
-        f.root.position.clone().addScaledVector(b, 1.1).lengthSq());
-      f.intent.move.copy(safe[0]);
-    } else f.intent.move.copy(retreat);
+    this.tacticsT = Math.max(0, this.tacticsT - dt);
+    const bait = toward.clone().negate().multiplyScalar(0.6)
+      .addScaledVector(tangent, this.tacticsDir * 0.8);
+    f.intent.move.copy(this.theaterDirection(f, o, bait));
     return;
   }
-  // Close deliberately on a whiff rather than attacking from beyond skill range.
-  if (punish && distance > style.range * 0.64 && distance < style.range + 2.2) {
-    f.intent.move.copy(toward);
+  // Move in for an actual punish. Normal basic range remains authoritative.
+  const basicReach = f.attacks.l1?.reach ?? 1.75;
+  if (punish && distance > basicReach * 0.78 && distance < band.far + 1.5) {
+    f.intent.move.copy(this.theaterDirection(f, o, toward));
     return;
   }
-  // Faster melee personalities actively manage spacing; ranged kits retain kiting AI.
-  if (!RANGED.has(f.kit) && f.kit !== "bomb") {
-    if (distance > style.range + 0.35) f.intent.move.copy(toward);
-    else if (distance < style.range - 0.45 && style.bait > 0.42 && o.state === S.BLOCK)
-      f.intent.move.copy(tangent).multiplyScalar(this.tacticsDir * 0.7);
-  } else if (distance < style.range - 1.15 && !punish) {
-    const retreat = toward.clone().negate();
-    if (f.root.position.clone().addScaledVector(retreat, 0.9).length() < f.arenaRadius - 0.65)
-      f.intent.move.copy(retreat);
+  if (distance > band.far) {
+    // Stop at effective range. Sprint is still the normal distance-based AI
+    // sprint; there is no teleport and the arena boundary is checked.
+    f.intent.move.copy(this.theaterDirection(f, o, toward));
+  } else if (distance < band.near) {
+    // Backpedal/angle out when unnecessarily close, including long melee
+    // weapons and chain fighters. Edge-aware steering chooses a safe orbit.
+    const away = toward.clone().negate().addScaledVector(tangent, 0.32 * this.rangeOrbitSign);
+    f.intent.move.copy(this.theaterDirection(f, o, away));
+  } else {
+    // Strafe near the chosen distance; avoid perpetual face-to-face rushing.
+    const correction = THREE.MathUtils.clamp((distance - band.ideal) * 0.48, -0.26, 0.26);
+    const orbit = tangent.clone().multiplyScalar(this.rangeOrbitSign)
+      .addScaledVector(toward, correction);
+    f.intent.move.copy(this.theaterDirection(f, o, orbit)).multiplyScalar(0.55);
   }
 }
 

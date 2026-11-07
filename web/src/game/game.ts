@@ -1,3 +1,4 @@
+// AI_EFFECTIVE_RANGE_KAIZEN_AIR_HOOK_20261107_V1
 // ZAREK_ARC_FLASH_CPU_SPECTATOR_COOLDOWNS_20261107_V1
 // ASTER_WEAKEN_50S_5_STACKS_V1_20261107
 // FOURTH_SKILL_V_MASTER_AI_TWO_ROW_ROSTER_20261107_V1
@@ -1836,6 +1837,10 @@ export class Game implements MobHost {
       to.y = 0;
       const dist = to.length();
       const dir = to.clone().divideScalar(Math.max(dist, 0.001));
+      // A hooked chain has a genuine diagonal aerial reach, unlike a sword swing.
+      // Its hit still needs actual distance, facing and an unblocked attack.
+      const aerialPredatorHook = f.kit === "chainblade" && a.style === "chain_predator_hook" &&
+        (!f.onGround || (d instanceof Fighter && !d.onGround));
       // Don't allow a blade clash outside the aiming direction of an air slice.
       if (directionalAir) {
         const v = d.chest().y - f.chest().y;
@@ -1846,7 +1851,7 @@ export class Game implements MobHost {
       }
       if (d instanceof Fighter && this.isDuel() && d.state === S.ATTACK && d.atk?.type === "melee" &&
         (d.atkPhase === 1 || (d.atkPhase === 0 && d.atk.wind - d.stateT <= 0.08)) && dist <= a.reach + (f.kit === "glaive" ? 0.12 : 0.3) &&
-        dy < (directionalAir || d.atkId === "air_l1" ? 2.1 :
+        dy < (aerialPredatorHook ? 2.6 : directionalAir || d.atkId === "air_l1" ? 2.1 :
           antiAir || airCombo || d.atkId === "anti_air" || d.atkId.startsWith("air_l") ? 1.65 : 0.8)) {
         this.clash(f, d, f.root.position.clone().addScaledVector(dir, Math.min(dist * 0.5, 0.8)).add(new THREE.Vector3(0, 1.15, 0)));
         return false;
@@ -1861,7 +1866,8 @@ export class Game implements MobHost {
             Math.abs(aimToTarget - f.airSliceAngle) > 0.48 ||
             (dist > 0.6 && dir.dot(fwd) < 0.12)) continue;
       } else if (dist - d.radius + 0.35 > a.reach ||
-          dy > (antiAir ? 3.25 : airCombo ? 1.8 : 1.3) ||
+          dy > (aerialPredatorHook ? 3.15 : antiAir ? 3.25 : airCombo ? 1.8 : 1.3) ||
+          (aerialPredatorHook && Math.hypot(Math.max(0, dist - d.radius * 0.4), dy * 0.72) > a.reach + 0.2) ||
           (dist > 0.6 && dir.dot(fwd) < (antiAir ? -0.08 : 0.15))) continue;
       const hitPos = d.chest().addScaledVector(dir, -0.15);
       const result = this.applyHit(f, d, a, f.atkPower, hitPos, dir, false);

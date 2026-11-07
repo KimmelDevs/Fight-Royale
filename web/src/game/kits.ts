@@ -1,3 +1,4 @@
+// AI_EFFECTIVE_RANGE_KAIZEN_AIR_HOOK_20261107_V1
 // ZAREK_ARC_FLASH_CPU_SPECTATOR_COOLDOWNS_20261107_V1
 // ASTER_WEAKEN_50S_5_STACKS_V1_20261107
 // MARINA_RAVEN_ZAREK_BOB_ABILITIES_20261107_V1
@@ -431,6 +432,9 @@ function chainblade(): Record<string, Attack> {
     heavy: a({ name: "Chainbreaker", wind: 0.35, active: 0.17, recover: 0.67, dmg: 185, guard: 51, reach: 3.0, lunge: 1.2, knock: 5.6, stun: 0.56, heavy: true, style: "chain_heavy", pose_w: "cbh_w", pose_s: "cbh_s" }),
     z: a({ name: "Razor Cyclone", desc: "Spin the chained blade around Kaizen. Hold the skill to extend the spin and its range (max 1.6 seconds).", cd: 8, wind: 0.20, active: 1.65, recover: 0.38, dmg: 28, guard: 11, reach: 2.2, stun: 0.15, style: "chain_razor_cyclone", pose_w: "cbz_w", pose_s: "cbz_s" }),
     x: a({ name: "Predator's Hook", desc: "Throw a long chain to bind one enemy in place for up to 4 seconds. Kaizen may move, but other attacks and skills are locked. Press X again to pull the victim toward you. Blocking or a clash prevents the bind.", cd: 10, wind: 0.22, active: 0.13, recover: 0.45, dmg: 75, guard: 24, reach: 4.8, stun: 0.28, style: "chain_predator_hook", pose_w: "cbh_w", pose_s: "cbh_s" }),
+    // Air X is the same Predator's Hook, not a new skill or a second cooldown.
+    // Fighter.readSkill() automatically selects x_air when airborne.
+    x_air: a({ name: "Predator's Hook", desc: "Midair X: cast the chain at an enemy above or below. A hit binds; press X again to pull. Shares X cooldown.", cd: 10, wind: 0.22, active: 0.13, recover: 0.45, dmg: 75, guard: 24, reach: 4.8, stun: 0.28, style: "chain_predator_hook", pose_w: "cbh_w", pose_s: "cbh_s" }),
     c: a({ name: "Thousand Cuts: Death Spiral", desc: "A contracting circle of chain slashes ending in an overhead strike. Escape before the circle closes.", cd: 22, wind: 0.38, active: 1.85, recover: 0.68, dmg: 42, guard: 12, radius: 4.2, style: "chain_death_spiral", pose_w: "cbc_w", pose_s: "cbc_s" }),
   };
 }
