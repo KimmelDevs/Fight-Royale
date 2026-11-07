@@ -1,3 +1,4 @@
+// ROXY_V7_5PCT_LIGHT_CHARGED_BIRD_NO_WIND_20261108: Roxy-only 5% light/charged/bird buff.
 // AI_ROOK_NESA_KIRA_MERGED_V1_20261108
 // BALANCE_KIRA_KAEDE_PATTERN_AI_AIR_ICON_20261107_V1
 // AI_EFFECTIVE_RANGE_KAIZEN_AIR_HOOK_20261107_V1
@@ -326,7 +327,7 @@ function bonusSkill(kit: string, element: string): Attack {
       // ASTER_EMBER_LATEST_20261106: fire is consumed to amplify the beam.
       if (element === "frost") return a({ name: "Frostwing Choir", desc: "Summon 3 stationary Frostwings. Each keeps facing an enemy and fires one ice shard every 2 seconds for 25 seconds.",
         cd: 52, type: "snow_puppet", style: "bird", wind: 0.35, recover: 0.45,
-        dmg: 15, guard: 8, knock: 0.55, stun: 0.08, count: 3, speed: 0, radius: 0.7, duration: 25,
+        dmg: 15.75, guard: 8, knock: 0.55, stun: 0.08, count: 3, speed: 0, radius: 0.7, duration: 25,
         pose_w: "mh_w", pose_s: "m3_s" });
       if (element === "fire") return a({ name: "Absolute Combustion",
         desc: "Condense nearby fire patches and active burns into a white-hot beam. Each consumed patch and burn amplifies the damage.",
@@ -407,10 +408,10 @@ function mage(element: string): Record<string, Attack> {
   if (element === "frost") {
     // All light bolts are individually destructible projectiles. No piercing or homing.
     for (const key of ["l1", "l2", "l3"]) {
-      t[key] = { ...t[key], dmg: Math.round(t[key].dmg * 0.75), style: "frost_shard", pierce: false, size: 0.82 }; // ROXY V5: 25% less light damage
+      t[key] = { ...t[key], dmg: Math.round(t[key].dmg * 0.75) * 1.05, style: "frost_shard", pierce: false, size: 0.82 }; // ROXY V5: 25% less light damage
     }
     t.heavy = a({ name: "Seeking Frost", type: "projectile", wind: 0.24, active: 0.05, recover: 0.55,
-      dmg: 40, guard: 16, knock: 1.2, stun: 0.16, speed: 13.0, size: 0.85, count: 4, spread: 0.33,
+      dmg: 42, guard: 16, knock: 1.2, stun: 0.16, speed: 13.0, size: 0.85, count: 4, spread: 0.33,
       style: "frost_shard", pose_w: "mh_w", pose_s: "mh_s" });
     t.z = a({ name: "Snowglass Aegis", desc: "Four orbiting ice crystals. Each incoming damaging hit destroys one shard and deals zero damage; lasts up to 7 seconds.",
       cd: 13, type: "buff", mode: "frost_aegis", duration: 7, wind: 0.13, recover: 0.25, pose_w: "mh_w", pose_s: "m3_s" });

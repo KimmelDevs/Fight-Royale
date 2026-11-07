@@ -1,3 +1,4 @@
+// ROXY_V7_5PCT_LIGHT_CHARGED_BIRD_NO_WIND_20261108: remove unavailable Frostwing wind sound.
 // AI_LOW_HEALTH_SURVIVAL_V1_20261108
 // AI_ROOK_NESA_KIRA_MERGED_V1_20261108
 // KAIZEN_PARRY_SPEED_MINUS_10_PERCENT_20261107_V1
@@ -2420,7 +2421,7 @@ export class Game implements MobHost {
         this.emit(["snowPuppet", id, f.id, f.team, pos.toArray(), target?.id ?? -1, "bird", 25, "attack", 999, i]);
         this.fxp("motes", pos.clone(), "#f7ffff", 10);
       }
-      this.snd("wind", 0.45);
+      // ROXY V7: Frostwing summons silently (no missing /sfx/wind.mp3).
       return;
     }
     const pos = f.root.position.clone().addScaledVector(forward, 0.95);
