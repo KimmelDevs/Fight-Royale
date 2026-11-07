@@ -1,3 +1,4 @@
+// AI_CHARACTER_FIGHTING_STYLES_V1_20261108
 // AI_LOW_HEALTH_SURVIVAL_V1_20261108
 // AI_ADVANCED_FOOTWORK_V1_20261108
 // AI_ROOK_NESA_KIRA_MERGED_V1_20261108
@@ -164,6 +165,48 @@ const FIGHT_STYLES: Readonly<Record<string, FightStyle>> = {
   kaizen: { range: 2.65, heavy: 0.33, combo: 0.78, bait: 0.51, pressure: 0.71, skillBias: [1.2, 1.45, 1.15] },
   nesa: { range: 2.38, heavy: 0.43, combo: 0.64, bait: 0.62, pressure: 0.52, skillBias: [1.05, 1.15, 1.2] },
 };
+
+// CHARACTER_STYLES_V1: existing FIGHT_STYLES already holds base preferences.
+// Add short-lived, observable tactical plans; never grant AI-only statistics.
+// Each fighter has a distinct identity and unique mix of plans / V restraint.
+type PersonalityRole =
+  "counter" | "duelist" | "juggernaut" | "riposte" | "artillery" |
+  "support" | "ambush" | "rush" | "skirmish" | "trapper" |
+  "kickboxer" | "controller" | "sniper" | "executioner" |
+  "glaive" | "grappler" | "bruiser";
+type PersonalityPlan = "none" | "pressure" | "probe" | "reset";
+type PersonalityProfile = {
+  role: PersonalityRole;
+  pressure: number; probe: number; reset: number;
+  vReserve: number; spacing: number;
+};
+const CHARACTER_PERSONALITY: Readonly<Record<string, PersonalityProfile>> = {
+  // pressure / probe / reset are relative tactical weights, not fixed chance per frame.
+  aster:   { role: "counter",      pressure: 0.60, probe: 1.12, reset: 0.54, vReserve: 0.70, spacing:  0.05 },
+  vesper:  { role: "duelist",     pressure: 1.35, probe: 0.68, reset: 0.34, vReserve: 0.65, spacing: -0.13 },
+  garrick: { role: "juggernaut",  pressure: 1.13, probe: 0.66, reset: 0.24, vReserve: 0.62, spacing:  0.12 },
+  kaede:   { role: "riposte",     pressure: 0.67, probe: 1.28, reset: 0.57, vReserve: 0.82, spacing:  0.18 },
+  ember:   { role: "artillery",   pressure: 0.45, probe: 1.08, reset: 0.88, vReserve: 0.54, spacing:  0.30 },
+  marina:  { role: "support",     pressure: 0.37, probe: 0.91, reset: 1.24, vReserve: 0.45, spacing:  0.27 },
+  nyx:     { role: "ambush",      pressure: 1.04, probe: 1.01, reset: 0.50, vReserve: 0.92, spacing: -0.22 },
+  rook:    { role: "rush",        pressure: 1.83, probe: 0.36, reset: 0.17, vReserve: 0.35, spacing: -0.32 },
+  gale:    { role: "skirmish",    pressure: 1.02, probe: 1.04, reset: 0.47, vReserve: 0.65, spacing: -0.04 },
+  bob:     { role: "trapper",     pressure: 0.37, probe: 1.43, reset: 0.96, vReserve: 0.67, spacing:  0.38 },
+  kira:    { role: "kickboxer",   pressure: 1.36, probe: 0.88, reset: 0.33, vReserve: 1.25, spacing: -0.14 },
+  raven:   { role: "controller",  pressure: 0.46, probe: 1.30, reset: 1.04, vReserve: 0.61, spacing:  0.35 },
+  ash:     { role: "sniper",      pressure: 0.35, probe: 1.02, reset: 1.42, vReserve: 0.80, spacing:  0.43 },
+  veyr:    { role: "executioner", pressure: 1.53, probe: 0.67, reset: 0.29, vReserve: 0.75, spacing: -0.24 },
+  zarek:   { role: "glaive",      pressure: 1.34, probe: 0.79, reset: 0.34, vReserve: 0.64, spacing: -0.08 },
+  kaizen:  { role: "grappler",    pressure: 0.97, probe: 1.22, reset: 0.39, vReserve: 0.78, spacing:  0.10 },
+  nesa:    { role: "bruiser",     pressure: 1.03, probe: 1.04, reset: 0.45, vReserve: 0.85, spacing:  0.19 },
+};
+// Difficulty affects how often bots make informed, committed personality reads.
+const CHARACTER_IQ = [
+  { read: 0.17, gap: [1.8, 2.5], strength: 0.16 },
+  { read: 0.46, gap: [1.25, 1.9], strength: 0.43 },
+  { read: 0.79, gap: [0.93, 1.42], strength: 0.73 },
+  { read: 0.96, gap: [0.68, 1.06], strength: 1.00 },
+] as const;
 
 export class AiBrain implements Brain {
   private p = PRESETS[1];
@@ -786,6 +829,11 @@ export class AiBrain implements Brain {
   // AI_PERSONALITY_THEATER_2_V1 — distinct movement + follow-up decisions for all 17.
   // Deliberately uses only ordinary controls: move, jump, dash, attack, equipped skill.
   // Enemy defense, cooldowns, hit tests, and arena bounds remain authoritative.
+  // CHARACTER_STYLES_V1: single tactical decision per short observation window.
+  private personaEnemy: Fighter | null = null;
+  private personaNextAt = -1;
+  private personaMode: PersonalityPlan = "none";
+
   private theaterCd = rand(0.9, 2.1);
   private theaterT = 0;
   private theaterMode: "none" | "back" | "circle" | "chase" = "none";
@@ -1796,6 +1844,7 @@ export class AiBrain implements Brain {
     if (this.handleKaizenBindFollowup(f, dt)) return;
     this.iqObserve(f, o);
     this.observePatterns(f, o, dt);
+    this.personalityRead(f, o); // sample tactics; does not send an input
     // Marked ground impacts outrank defensive guard plans and ordinary offense.
     if (this.evadeGroundStrikes(f)) return;
     if (this.evadeStaticField(f)) return;
@@ -3110,7 +3159,11 @@ export class AiBrain implements Brain {
     const baseline = gap > band.far ? toward.clone() :
       gap < band.near ? toward.clone().negate() :
       tangent.clone().multiplyScalar(this.advancedSide);
-    const ideal = THREE.MathUtils.clamp(band.ideal, 1.05, 6.4);
+    const character = CHARACTER_PERSONALITY[f.look.name.toLowerCase()];
+    const personalShift = character ? CHARACTER_IQ[this.iqLevel].strength *
+      (character.spacing + (this.personaMode === "reset" ? 0.48 :
+        this.personaMode === "pressure" ? -0.30 : 0.10)) : 0;
+    const ideal = THREE.MathUtils.clamp(band.ideal + personalShift, 1.05, 6.4);
     const target = baseline.clone();
     if (this.advancedMode === "escape") {
       // Near the boundary, move back toward the middle with a tangential bias
@@ -3530,6 +3583,124 @@ export class AiBrain implements Brain {
 
 /** Range-conscious footwork. Real weapon/ready skill reach determines where to
  * stand; dodge, guard, parry, hazard and stage movement take precedence. */
+  /** Fighter-specific tactical *intent*: no hidden enemy inputs or cooldowns.
+   * Decisions are sampled once per plan, with longer gaps on easier settings.
+   * The previous emergency dodge/parry and survival AI still have priority.
+   */
+  private personalityRead(f: Fighter, o: Fighter) {
+    const now = this.threats.now();
+    if (this.personaEnemy !== o) {
+      this.personaEnemy = o;
+      this.personaNextAt = now + rand(0.25, 0.55);
+      this.personaMode = "none";
+    }
+    if (now < this.personaNextAt) return;
+    const profile = CHARACTER_PERSONALITY[f.look.name.toLowerCase()];
+    if (!profile || f.isDown() || o.isDown()) return;
+    const iq = CHARACTER_IQ[this.iqLevel];
+    this.personaNextAt = now + rand(iq.gap[0], iq.gap[1]);
+    if (Math.random() > iq.read) {
+      this.personaMode = "none"; // a missed tactical read isn't re-rolled per frame
+      return;
+    }
+    const gap = f.root.position.clone().setY(0).distanceTo(
+      o.root.position.clone().setY(0));
+    const near = gap < (o.attacks.l1?.reach ?? 1.9) + 0.50;
+    const opening = this.hasPunishWindow(o);
+    const blocking = o.state === S.BLOCK;
+    const guardWeak = o.guard / Math.max(1, o.maxGuard) < 0.35;
+    const ownGuardWeak = f.guard / Math.max(1, f.maxGuard) < 0.33;
+    const lowHp = f.hp / Math.max(1, f.maxHp) < 0.38;
+    const enemyStrong = o.hp / Math.max(1, o.maxHp) > 0.55;
+    let pressure = profile.pressure;
+    let probe = profile.probe;
+    let reset = profile.reset;
+    if (opening) pressure += 1.60;
+    if (guardWeak && near) pressure += 0.62;
+    if (blocking) probe += 0.60;
+    if (ownGuardWeak) { reset += 1.00; pressure *= 0.75; }
+    if (lowHp && enemyStrong) { reset += 0.54; pressure *= 0.78; }
+    switch (profile.role) {
+      case "counter":     if (!opening && o.state === S.IDLE) probe += 0.62; break;
+      case "duelist":    if (opening) pressure += 0.50; break;
+      case "juggernaut": if (blocking) pressure += 0.85; break;
+      case "riposte":    if (o.state === S.ATTACK && near) probe += 0.78; break;
+      case "artillery":  if (near) reset += 1.1; break;
+      case "support":    if (f.hp < f.maxHp * 0.70) reset += 1.0; break;
+      case "ambush":     if (opening) pressure += 0.85; else probe += 0.25; break;
+      case "rush":       if (!ownGuardWeak) pressure += 0.92; break;
+      case "skirmish":   if (near && !opening) probe += 0.65; break;
+      case "trapper":    if (f.barrelOut) probe += 0.75; if (near) reset += 0.60; break;
+      case "kickboxer":  if (opening && near) pressure += 1.0; break;
+      case "controller": if (near) reset += 0.95; else probe += 0.48; break;
+      case "sniper":     if (gap < 4.0) reset += 1.35; break;
+      case "executioner": if (f.bloodFestivalT > 0) pressure += 3.0; break;
+      case "glaive":     if (f.clashMomentum >= 2) pressure += 0.95; break;
+      case "grappler":   if (gap > 1.8 && gap < 4.7 &&
+          (f.cooldowns.x ?? 1) <= 0) probe += 1.1; break;
+      case "bruiser":    if (f.nesaCCharges > 0 && opening) pressure += 1.0; break;
+    }
+    const roll = Math.random() * (pressure + probe + reset);
+    this.personaMode = roll < pressure ? "pressure" :
+      roll < pressure + probe ? "probe" : "reset";
+  }
+
+  /** Style-aware scoring, not a scripted cast. Real equipped keys, cooldowns,
+   * block, attack recovery, range and the V unlock are still checked elsewhere.
+   */
+  private personalitySkillScore(f: Fighter, o: Fighter, key: string, distance: number): number {
+    const profile = CHARACTER_PERSONALITY[f.look.name.toLowerCase()];
+    if (!profile) return 0;
+    const a = f.attacks[key];
+    if (!a) return 0;
+    const strength = CHARACTER_IQ[this.iqLevel].strength;
+    const opening = this.hasPunishWindow(o);
+    const blocking = o.state === S.BLOCK;
+    const incoming = o.state === S.ATTACK && o.atkPhase === 0;
+    const ranged = a.type === "projectile" || a.type === "lob" || a.type === "strike";
+    const close = distance < 3.0;
+    let value = 0;
+    if (this.personaMode === "pressure") {
+      if (a.type === "melee" || a.type === "phantom") value += 0.37;
+      if (opening) value += 0.28;
+    } else if (this.personaMode === "probe") {
+      if (a.type === "mine" || a.type === "barrel" || a.type === "buff") value += 0.39;
+      if (opening && a.type === "melee") value += 0.15;
+    } else if (this.personaMode === "reset") {
+      if ((a.type === "projectile" || a.type === "lob") && distance > 3) value += 0.32;
+      if (a.type === "melee" && !opening) value -= 0.50;
+    }
+    switch (profile.role) {
+      case "counter":      if (incoming && a.type === "buff") value += 0.55; break;
+      case "duelist":     if (opening && a.type === "melee") value += 0.60; break;
+      case "juggernaut":  if (blocking && a.guard > 25) value += 0.64; break;
+      case "riposte":     if (incoming && a.mode === "counter") value += 0.95; break;
+      case "artillery":   if (ranged && distance > 3.1) value += 0.49; break;
+      case "support":     if (a.mode === "healing_water" && f.hp < f.maxHp * 0.68) value += 1.0; break;
+      case "ambush":      if (opening && a.lunge > 0) value += 0.66; break;
+      case "rush":        if (a.lunge > 0 && distance > 1.3) value += 0.55; break;
+      case "skirmish":    if (opening && a.lunge > 0) value += 0.54; break;
+      case "trapper":     if ((a.type === "mine" || a.type === "barrel") && !opening) value += 0.77; break;
+      case "kickboxer":   if (opening && a.type === "melee") value += 0.65; break;
+      case "controller":  if (a.mode === "static_field" && close) value += 1.0; break;
+      case "sniper":      if (ranged && distance > 4.0) value += 0.58; break;
+      case "executioner": if (opening && a.type === "melee") value += 0.67; break;
+      case "glaive":      if (f.clashMomentum >= 2 && opening) value += 0.60; break;
+      case "grappler":    if (a.style === "chain_predator_hook" && distance > 2.0 &&
+          distance < 4.4 && !blocking) value += 1.15; break;
+      case "bruiser":     if (f.nesaCCharges > 0 && opening && close &&
+          a.style === "nesa_heart_slam") value += 0.78; break;
+    }
+    // Most V ultimates are held for visible punish/guard-break opportunities.
+    // Buffs (especially actual healing) are exempt; V is *never* unlocked here.
+    if (key === "v" && a.type !== "buff" && !opening &&
+        o.state !== S.HITSTUN && o.state !== S.STAGGER) {
+      value -= profile.vReserve * 2.7;
+      if (this.personaMode === "reset") value -= 0.42;
+    }
+    return value * strength;
+  }
+
 private tacticalFootwork(f: Fighter, o: Fighter, dt: number) {
   const style = FIGHT_STYLES[f.look.name.toLowerCase()];
   if (!style || f.isDown() || !f.onGround || f.state !== S.IDLE ||
@@ -3552,12 +3723,17 @@ private tacticalFootwork(f: Fighter, o: Fighter, dt: number) {
   if (danger) { this.tacticsT = 0; return; }
   const band = this.effectiveRangeBand(f, o);
   const cdIntel = this.enemyCooldownRead(o);
+  const persona = CHARACTER_PERSONALITY[f.look.name.toLowerCase()];
+  const personaPower = CHARACTER_IQ[this.iqLevel].strength;
   // Follow a known opening modestly; keep ranged kits at ranged distance.
   const shift = THREE.MathUtils.clamp(cdIntel.pressure * (RANGED.has(f.kit) ? 0.26 : 0.48) -
     cdIntel.caution * (RANGED.has(f.kit) ? 0.28 : 0.43), -0.43, 0.48);
-  band.ideal = Math.max(1.05, band.ideal - shift);
-  band.near = Math.max(0.88, band.near - shift);
-  band.far = Math.max(band.near + 0.24, band.far - shift);
+  const personalityShift = persona ? personaPower * (
+    persona.spacing + (this.personaMode === "pressure" ? -0.30 :
+      this.personaMode === "reset" ? 0.48 : this.personaMode === "probe" ? 0.14 : 0)) : 0;
+  band.ideal = Math.max(1.05, band.ideal - shift + personalityShift);
+  band.near = Math.max(0.88, band.near - shift + personalityShift);
+  band.far = Math.max(band.near + 0.24, band.far - shift + personalityShift);
   // A threatened block can be baited, but not endlessly or beyond the arena edge.
   if (this.tacticsT <= 0 && this.tacticsCd <= 0 &&
       distance < band.far + 0.4 && !punish &&
@@ -3759,6 +3935,7 @@ private personalizedSkill(f: Fighter, o: Fighter, distance: number): string | nu
         break;
     }
     if (!viable) continue; // real ability limits, including character-specific checks
+    points += this.personalitySkillScore(f, o, key, distance);
     // The AI must occasionally choose another ability instead of being scripted.
     points += rand(-0.55, 0.55);
     scored.push({ key, points });
@@ -3795,7 +3972,10 @@ private offense(f: Fighter, o: Fighter, dt: number) {
   const cdIntel = this.enemyCooldownRead(o);
   const danger = o.state === S.ATTACK && o.atkPhase === 0 &&
     o.atk?.type === "melee" && distance < o.atk.reach + 0.65;
-  this.skillCd -= dt * (1 + cdIntel.pressure * 0.38);
+  const tempo = CHARACTER_IQ[this.iqLevel].strength *
+    (this.personaMode === "pressure" ? 0.19 :
+      this.personaMode === "reset" ? -0.17 : 0);
+  this.skillCd -= dt * (1 + cdIntel.pressure * 0.38 + tempo);
   if (this.skillCd <= 0) {
     this.skillCd = rand(this.p.skill[0], this.p.skill[1]) *
       (1 - cdIntel.pressure * 0.22 + cdIntel.caution * 0.22);
@@ -3820,6 +4000,12 @@ private offense(f: Fighter, o: Fighter, dt: number) {
   // Exploit learned cooldown openings; do not swing into an active cast.
   if (o.state !== S.ATTACK) heavyChance = THREE.MathUtils.clamp(
     heavyChance + cdIntel.pressure * 0.16 - cdIntel.caution * 0.16, 0.08, 0.80);
+  // CHARACTER_STYLES_V1: role-based aggression changes input choices, not stats.
+  heavyChance = THREE.MathUtils.clamp(heavyChance +
+    CHARACTER_IQ[this.iqLevel].strength *
+    (this.personaMode === "pressure" ? 0.09 :
+      this.personaMode === "probe" ? -0.06 :
+      this.personaMode === "reset" ? -0.13 : 0), 0.06, 0.80);
   // Veyr's festival specifically favors sustained lights and real guard pressure.
   const festival = id === "veyr" && f.bloodFestivalT > 0;
   if (!festival && Math.random() < heavyChance) {
