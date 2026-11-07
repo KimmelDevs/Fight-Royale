@@ -143,6 +143,8 @@ export class VrmRig {
   shield = false;
   /** Two-handed weapon grip point for the left hand (greatsword, katana). */
   gripL: THREE.Object3D | null = null;
+  // ZENITH_FORWARD_SPEAR_IK_V7_20261108 — physical rear grip for the right hand.
+  spearGripR: THREE.Object3D | null = null;
   /** Rest the blade on the shoulder when not fighting (greatsword). */
   restSword = false;
   glaive = false; // ZAREK_GLAIVE_CHOREO_V2: quicker, agile polearm hand alignment
@@ -421,7 +423,8 @@ export class VrmRig {
       ease(b, parentQ.multiply(target), 120);
     };
     this.hurtW += ((m.hurt ? 1 : 0) - this.hurtW) * (1 - Math.exp(-(m.hurt ? 18 : 6) * dt));
-    if (this.gripL || this.restSword) this.heavyBlade(dt, !!m.combat, set, setNow);
+    if (this.style === "magnetic" && this.spearGripR) this.zenithSpearHands(setNow);
+    else if (this.gripL || this.restSword) this.heavyBlade(dt, !!m.combat, set, setNow);
     else if (this.hurtW > 0.02) this.handsForward(set);
     if (this.blade) this.edgeAlign(dt);
     if (this.bladed > 0) {
@@ -540,6 +543,20 @@ export class VrmRig {
     if (this.shieldPos.lengthSq() === 0) this.shieldPos.copy(want);
     else this.shieldPos.lerp(want, 1 - Math.exp(-(this.style === "aster" ? 20 : 14) * dt));
     this.solveArm("left", this.shieldPos.clone().add(new THREE.Vector3(0, 0, -0.06)), new THREE.Vector3(0.6, -1, -0.35), set);
+  }
+
+  /** Zenith V7: drive both real VRM hands to their own places on the spear.
+   * Unlike glaive mode, neither wrist is allowed to steer the whole weapon.
+   * This runs after natural body motion so the target points are up to date.
+   */
+  private zenithSpearHands(setNow: (b: THREE.Object3D | null, q: THREE.Quaternion) => void) {
+    const root = this.j.root;
+    if (!this.spearGripR) return;
+    root.updateMatrixWorld(true);
+    const point = (o: THREE.Object3D) => root.worldToLocal(o.getWorldPosition(new THREE.Vector3()));
+    this.solveArm("right", point(this.spearGripR), new THREE.Vector3(-0.8, -0.65, -0.40), setNow);
+    if (this.gripL)
+      this.solveArm("left", point(this.gripL), new THREE.Vector3(0.75, -0.55, -0.30), setNow);
   }
 
   /**

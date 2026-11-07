@@ -101,7 +101,10 @@ export class FighterModel extends THREE.Group {
   private roxyOpenPalm = 0;
   private glaivePivot: THREE.Group | null = null;
   // ZENITH_TWIN_BLADES_CATCH_CHOREO_V5_20261108: one-handed metal weapons only while spear is flying.
+  // ZENITH_FORWARD_SPEAR_IK_V7_20261108 — root-mounted, target-directed spear.
   private zenithSpearGrip: THREE.Object3D | null = null;
+  private zenithSpearRightGrip: THREE.Object3D | null = null;
+  private zenithSpearInHand = true;
   private zenithTwinBlades: THREE.Group[] = [];
   private zenithTwinBases: THREE.Object3D[] = [];
   private zenithTwinTips: THREE.Object3D[] = [];
@@ -734,7 +737,9 @@ export class FighterModel extends THREE.Group {
   // ZENITH_REFERENCE_SPEAR_V4_20261108 — ornate single-headed spear inspired by the new reference.
   // Larger leaf spearhead, gold side ornaments, blue crystal core, and a blunt rear pommel.
   private buildZenithSpear() {
-    const spear = pivot(this.hand_r, [0, 0, 0], [PI / 2, 0, 0]);
+    // The spear is rooted to the fighter, NOT driven by wrist roll.
+    // The shaft aims in +Z, and the arms follow its two grip targets.
+    const spear = pivot(this, [0, 0.98, 0.23], [PI / 2, 0, 0]);
     spear.name = "zenithRoyalSpear";
     spear.scale.setScalar(0.96);
     this.glaivePivot = spear;
@@ -811,11 +816,16 @@ export class FighterModel extends THREE.Group {
     mesh(spear, sphere(0.030, 10), paleGold, [0, -0.90, 0]);
     mesh(spear, new THREE.ConeGeometry(0.018, 0.055, 8), gold, [0, -0.96, 0], [Math.PI, 0, 0]);
 
-    this.gripL = pivot(spear, [0, -0.34, 0]);
+    // Rear (right) hand guides from the hip; lead (left) hand sits ~32cm
+    // toward the blade. The previous -0.34 target gripped behind the right hand.
+    this.zenithSpearRightGrip = pivot(spear, [0, -0.02, 0]);
+    this.gripL = pivot(spear, [0, 0.32, 0]);
     this.zenithSpearGrip = this.gripL;
     this.buildZenithTwinBlades();
     this.bladeBase = pivot(spear, [0, 0.80, 0]);
     this.bladeTip = pivot(spear, [0, 1.42, 0]);
+    this.zenithSpearBase = this.bladeBase;
+    this.zenithSpearTip = this.bladeTip;
     this.shieldNode = spear;
     this.castPoint = this.bladeTip;
   }
@@ -823,6 +833,7 @@ export class FighterModel extends THREE.Group {
   /** In-flight: dual short swords; caught: one real long spear and two swords dissolve. */
   setZenithSpearHeld(held: boolean) {
     if (this.look.element !== "metal") return;
+    this.zenithSpearInHand = held;
     if (this.glaivePivot) this.glaivePivot.visible = held;
     for (const blade of this.zenithTwinBlades) blade.visible = !held;
     this.gripL = held ? this.zenithSpearGrip : null;
@@ -830,6 +841,7 @@ export class FighterModel extends THREE.Group {
     this.bladeTip = held ? this.zenithSpearTip ?? this.bladeTip : this.zenithTwinTips[0] ?? this.bladeTip;
     if (this.vrmRig) {
       this.vrmRig.gripL = held ? this.zenithSpearGrip : null;
+      this.vrmRig.spearGripR = held ? this.zenithSpearRightGrip : null;
       this.vrmRig.glaive = held;
       this.vrmRig.bladed = held ? 0.4 : 0.76;
     }
@@ -1569,6 +1581,81 @@ export class FighterModel extends THREE.Group {
 
   // --- posing ------------------------------------------------------------------------
   /** Exponentially blends joints toward `pose` and applies overlays (walk, breathing, cloth). */
+  /** Physical spear choreography. Local +Z is the opponent-facing direction.
+   * A spear is not a double glaive: keep its FRONT tip downrange and slide the
+   * entire shaft through the two spaced grips during thrusts. No gameplay changes.
+   */
+  private updateZenithForwardSpear(dt: number) {
+    if (!this.glaivePivot || !this.zenithSpearRightGrip) return;
+    const pose = this.glaivePose;
+    // Overhead charged/V summons have their own lifted-arm pose. During the
+    // summon the real spear disappears, while the conjured spear still flies.
+    const summon = /^znh_[ws]$/.test(pose) || /^znv_[ws]$/.test(pose);
+    const held = this.zenithSpearInHand && !summon;
+    this.glaivePivot.visible = held;
+    this.gripL = held && !/^znc_[ws]$/.test(pose) && !/^zncatch_[ws]$/.test(pose)
+      ? this.zenithSpearGrip : null;
+    if (this.vrmRig) {
+      this.vrmRig.spearGripR = held ? this.zenithSpearRightGrip : null;
+      this.vrmRig.gripL = this.gripL;
+    }
+    if (!held) return; // Twin blades/airborne spear keep their own animations.
+
+    const finish = /^zn[1-5]_s$/.test(pose);
+    const prepare = /^zn[1-5]_w$/.test(pose);
+    const catching = pose === "zncatch_w" || pose === "zncatch_s";
+    // Each strike has its own point-line: straight, rising, angled, low, lunge.
+    // None flips the spear tip toward Zenith or presents a rear blade.
+    const aim: Record<string, [number, number, number]> = {
+      zn1_w: [-0.10, 0.13, 1], zn1_s: [0.01, 0.02, 1],
+      zn2_w: [0.17, -0.16, 1], zn2_s: [-0.08, 0.20, 1],
+      zn3_w: [-0.18, 0.10, 1], zn3_s: [0.15, 0.07, 1],
+      zn4_w: [0.17, 0.13, 1], zn4_s: [-0.11, -0.28, 1],
+      zn5_w: [-0.12, 0.19, 1], zn5_s: [0.0, -0.01, 1],
+      znz_w: [-0.24, 0.48, 1], znz_s: [0.0, 0.06, 1],
+      znx_w: [-0.12, 0.12, 1], znx_s: [0.05, 0.05, 1],
+      znc_w: [0.13, 0.18, 1], znc_s: [0.16, 0.12, 1],
+      zncatch_w: [-0.26, 0.42, 1], zncatch_s: [0.05, 0.15, 1],
+      block: [0.02, 0.26, 1],
+    };
+    const moving = THREE.MathUtils.clamp(this.walk, 0, 1);
+    const [ax, ay, az] = aim[pose] ?? [0.04, 0.12 + 0.13 * moving, 1];
+    // Small rhythmic steps, not wide staff spins; root faces the target already.
+    const desired = new THREE.Vector3(ax, ay, az).normalize();
+    const targetQ = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), desired);
+    const rate = catching ? 24 : finish ? 32 : prepare ? 18 : 14;
+    const s = 1 - Math.exp(-rate * Math.min(dt, 0.1));
+    this.glaivePivot.quaternion.slerp(targetQ, s);
+
+    // Right hand ~waist-high, near body. Left hand 0.32m ahead on shaft.
+    // Thrusts translate the FULL weapon along +Z so the tip travels straight.
+    this.updateMatrixWorld(true);
+    const torso = this.worldToLocal(this.torso.getWorldPosition(new THREE.Vector3()));
+    const zShift = finish ? (pose === "zn5_s" ? 0.27 : 0.16)
+      : prepare ? -0.10 : pose === "znz_w" ? -0.13 : 0;
+    const yShift = pose === "zn4_s" ? -0.12 : pose === "zn2_s" ? 0.07
+      : pose === "zncatch_w" ? 0.16 : 0;
+    const target = torso.add(new THREE.Vector3(-0.09, 0.035 + yShift, 0.18 + zShift));
+    // Catch: the returning mass pushes her shoulder back, then she settles
+    // into the two-hand guard instead of snapping the spear sideways.
+    if (pose === "zncatch_w") target.z -= 0.16;
+    this.glaivePivot.position.lerp(target, s);
+  }
+
+  /** Align a procedural arm with a physical shaft grip for fallback bodies.
+   * VRM rigs use two-bone IK independently; no staff/glaive wrist tricks.
+   */
+  private reachZenithGrip(side: "left" | "right", target: THREE.Object3D) {
+    const arm = side === "left" ? this.arm_l : this.arm_r;
+    const hand = side === "left" ? this.hand_l : this.hand_r;
+    this.updateMatrixWorld(true);
+    const goal = this.torso.worldToLocal(target.getWorldPosition(new THREE.Vector3()));
+    const delta = goal.sub(arm.position);
+    if (delta.lengthSq() < 0.0001) return;
+    arm.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), delta.normalize());
+    hand.rotation.set(0, 0, 0);
+  }
+
   blend(pose: Pose, dt: number, speed: number, actionPose = "") {
     if (this.zenithCatchAura) {
       this.zenithCatchAura.visible = this.zenithCatchShieldT > 0;
@@ -1577,7 +1664,7 @@ export class FighterModel extends THREE.Group {
       this.zenithCatchAura.scale.setScalar(0.90 + 0.07 * Math.sin(this.t * 4.7));
     }
     if (this.zenithTwinBlades.length) {
-      if (!this.glaivePivot?.visible) {
+      if (!this.zenithSpearInHand) {
         const left = /znt[24]_/.test(this.glaivePose);
         const side = left ? 1 : 0;
         if (this.zenithTwinBases[side]) this.bladeBase = this.zenithTwinBases[side];
@@ -1819,7 +1906,9 @@ export class FighterModel extends THREE.Group {
     // Different actual polearm arcs: direct thrust, reverse-end slash, figure-eight rise,
     // and pivot cleave. All rotations are local to the weapon: one motion path for VRM and
     // procedural character, and the left-hand IK follows the same physical shaft.
-    if (this.glaivePivot) {
+    if (this.glaivePivot && this.look.element === "metal" && this.zenithSpearRightGrip) {
+      this.updateZenithForwardSpear(dt);
+    } else if (this.glaivePivot) {
       // Attack pose angles are independent of the VRM clip. Narrow wrist turns
       // produce a direct, forward thrust instead of Zarek's wide blade arcs.
       const angles: Record<string, [number, number, number]> = {
@@ -1866,7 +1955,11 @@ export class FighterModel extends THREE.Group {
       const rate = this.glaivePose.endsWith("_s") ? 38 : 19;
       this.glaivePivot.quaternion.slerp(q, 1 - Math.exp(-rate * dt));
     }
-    if (this.gripL) this.reachGrip();
+    if (this.look.element === "metal" && this.zenithSpearRightGrip &&
+        this.zenithSpearInHand && this.glaivePivot?.visible) {
+      this.reachZenithGrip("right", this.zenithSpearRightGrip);
+      if (this.gripL) this.reachZenithGrip("left", this.gripL);
+    } else if (this.gripL) this.reachGrip();
     this.vrmRig?.update(dt, { t: this.t, walk: this.walk, phase: this.walkPhase, crouch: this.hipsY, combat: this.combat, hurt: this.hurt, draw: this.draw, knee: this.knee, pose: actionPose });
     // ROXY V6: correct both procedural and VRM grimoire placement, every frame.
     if (this.roxyFloatingBook) {
@@ -1948,6 +2041,9 @@ export class FighterModel extends THREE.Group {
     this.vrmRig.style = this.kit === "glaive" && this.look.element === "metal" ? "magnetic" : this.kit === "knight" && this.look.element === "light" ? "aster" : this.kit === "chainblade" ? "chainblade" : this.kit === "glaive" ? "storm" : this.kit === "sickle" ? "feral" : this.kit === "hammer" ? "nesa" : this.kit === "greatsword" ? "greatsword" : this.look.body === "m" ? "heavy" : "light";
     if (this.kit === "knight") { this.buildHeaterShield(); this.vrmRig.shield = true; }
     if (this.gripL) { this.vrmRig.gripL = this.gripL; this.vrmRig.bladed = this.kit === "chainblade" ? 0.58 : this.kit === "glaive" ? 0.4 : 1; }
+    if (this.look.element === "metal") {
+      this.vrmRig.spearGripR = this.zenithSpearRightGrip;
+    }
     if (["knight", "greatsword", "hammer", "katana"].includes(this.kit) && this.bladeBase.parent) {
       // A point off the blade's cutting edge (blades are wide along their local X).
       const bb = this.bladeBase.position;
