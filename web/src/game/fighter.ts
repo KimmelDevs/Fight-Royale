@@ -1,3 +1,5 @@
+// FIGHT_ROYALE_KAIZEN_MOBILE_SPIN_V8
+// FIGHT_ROYALE_GARRICK_BOB_KAIZEN_ROOK_V7
 // FIGHT_ROYALE_NYX_CAMERA_CONTINUOUS_DODGE_20261107_V1
 // FIGHT_ROYALE_PARRY_SPIN_COUNTERS_V2
 // FIGHT_ROYALE_PARRY_SPIN_COUNTERS_V1
@@ -215,6 +217,26 @@ export class Fighter implements Entity {
   nesaCRechargeT = 0;
   private nesaCArmed = true;
 
+  // V7 Bob mine inventory. One charge is recovered per normal mine cooldown.
+  bobMineCharges = 4;
+  bobMineRechargeT = 0;
+  bobMineCount = 0; // authoritative trap count, maintained by Game
+  // V7 Garrick C follow-up is earned by a confirmed HP hit, never on a miss.
+  garrickFollowT = 0;
+  garrickFollowTarget: Entity | null = null;
+  private garrickRushTarget: Entity | null = null;
+  private garrickRushSerial = -1;
+  armGarrickFollow(target: Entity) {
+    if (this.kit !== "greatsword" || target.isDown()) return;
+    this.garrickFollowTarget = target;
+    this.garrickFollowT = 1.65;
+  }
+  /** A confirmed Titan Cleave eruption launches through Fighter-owned state. */
+  receiveGarrickLaunch() {
+    this.velY = Math.max(this.velY, 7.0);
+    this.onGround = false;
+    this.ground = null;
+  }
   private guardDelay = 0;
   // FIGHT_ROYALE_AI_GUARD_TIMING_PARRY_V1_20261107: expose only the real remaining regeneration wait to CPU logic.
   get guardRegenRemaining(): number { return Math.max(0, this.guardDelay); }
@@ -630,6 +652,26 @@ export class Fighter implements Entity {
     }
 
     this.atkLock = Math.max(this.atkLock - dt, 0);
+    // Bob ammo recharges sequentially, even while two mines remain deployed.
+    if (this.kit === "bomb") {
+      const mineSlot = ["z", "x", "c"].find(k => this.attacks[k]?.type === "mine");
+      if (mineSlot) {
+        const period = Math.max(0.2, this.attacks[mineSlot].cd * this.cdMult);
+        if (this.bobMineCharges < 4) {
+          this.bobMineRechargeT -= dt;
+          if (this.bobMineRechargeT <= 0) {
+            this.bobMineCharges = Math.min(4, this.bobMineCharges + 1);
+            this.bobMineRechargeT = this.bobMineCharges === 4 ? 0 : period;
+          }
+        }
+        this.cooldowns[mineSlot] = this.bobMineCharges > 0 ? 0 : Math.max(0, this.bobMineRechargeT);
+      }
+    }
+    this.garrickFollowT = Math.max(0, this.garrickFollowT - dt);
+    if (this.garrickFollowT <= 0 || this.garrickFollowTarget?.isDown()) {
+      this.garrickFollowTarget = null;
+      this.garrickFollowT = 0;
+    }
     this.clock += dt;
     this.knockdownLockT = Math.max(0, this.knockdownLockT - dt);
     this.dashCd = Math.max(this.dashCd - dt, 0);
@@ -1174,6 +1216,20 @@ export class Fighter implements Entity {
       if (![S.HITSTUN, S.STAGGER, S.KO, S.WIN].includes(this.state)) this.onSickleRecast(this);
       return;
     }
+    // Garrick C second press: legal ONLY after the first eruption really hit.
+    if (this.kit === "greatsword" && this.attacks[k]?.name === "Titan Cleave" &&
+        this.garrickFollowT > 0 && this.garrickFollowTarget &&
+        !this.garrickFollowTarget.isDown() && this.onGround &&
+        [S.IDLE, S.BLOCK, S.ATTACK].includes(this.state) &&
+        (this.state !== S.ATTACK || this.atk?.name === "Titan Cleave" || this.atkPhase === 2)) {
+      this.garrickRushTarget = this.garrickFollowTarget;
+      this.garrickFollowTarget = null;
+      this.garrickFollowT = 0;
+      this.holding = false;
+      this.startAttack("garrick_follow");
+      this.garrickRushSerial = this.swingSerial;
+      return;
+    }
     // Powder keg out: the same key is the detonator (works any time you're not stunned).
     if (this.barrelOut && this.attacks[k]?.type === "barrel") {
       if (![S.HITSTUN, S.STAGGER, S.KO, S.WIN].includes(this.state)) this.onTrigger(this);
@@ -1186,13 +1242,22 @@ export class Fighter implements Entity {
     if (!free) return;
     this.holding = false;
     if (this.kit === "chainblade") this.chainSkillDir = this.chainRelativeDirection();
+    // A mine charge only spends after a legal cast; two deployed mines is a hard cap.
+    const bobMine = this.kit === "bomb" && this.attacks[k]?.type === "mine";
+    if (bobMine) {
+      if (this.bobMineCharges <= 0 || this.bobMineCount >= 2) return;
+      const wasFull = this.bobMineCharges === 4;
+      this.bobMineCharges -= 1;
+      if (wasFull) this.bobMineRechargeT = Math.max(0.2, this.attacks[k].cd * this.cdMult);
+    }
     // The keg's cooldown starts when it explodes (the arena sets it).
     if (this.kit === "hammer" && this.attacks[k]?.style === "nesa_heart_slam") {
       this.nesaCArmed = false;
       if (this.nesaCCharges === 3) this.nesaCRechargeT = 7.5 * this.cdMult;
       this.nesaCCharges--;
       this.cooldowns[k] = this.nesaCCharges > 0 ? 0 : this.nesaCRechargeT;
-    } else this.cooldowns[k] = this.attacks[k].type === "barrel" ? 0.6 : this.attacks[k].cd * this.cdMult;
+    } else this.cooldowns[k] = this.attacks[k].type === "barrel" ? 0.6 :
+      bobMine ? (this.bobMineCharges > 0 ? 0 : this.bobMineRechargeT) : this.attacks[k].cd * this.cdMult;
     // Cast in the air, a skill with an air version uses it instead.
     this.startAttack(!this.onGround && this.attacks[k + "_air"] ? k + "_air" : k);
   }
@@ -1473,6 +1538,12 @@ export class Fighter implements Entity {
   poseOverride = "";
 
   // --- movement ---------------------------------------------------------------------
+  /** Only Kaizen's sustained chainblade spins unlock walk movement. */
+  private kaizenCanWalkWhileSpinning() {
+    return this.kit === "chainblade" && this.onGround && this.state === S.ATTACK &&
+      this.atkPhase <= 1 && !!this.atk &&
+      ["chain_razor_cyclone", "chain_death_spiral", "chain_carousel"].includes(this.atk.style);
+  }
   private move(dt: number) {
     if (this.isKaedeThousandCutsCasting()) {
       this.model.walk = 0; this.model.rotation.y = this.viewBias; return;
@@ -1533,6 +1604,36 @@ export class Fighter implements Entity {
         v += this.atkPhase === 0 ? 0.35 : Math.min(5.5, 1.65 + Math.max(0, dist - 2.1) * 2.1);
       } else v += this.atk.lunge;
     }
+    // Garrick Iron Tempest: genuine travel across three consecutive hit windows.
+    // The current target direction is recalculated each frame (limited steering).
+    if (this.kit === "greatsword" && this.state === S.ATTACK &&
+        this.atk?.style === "iron_tempest" && this.onGround && this.atkPhase <= 1) {
+      const t = this.stateT - this.atk.wind;
+      const stride = t >= 0.58 && t < 0.88 ? 7.2 :
+        t >= 0.28 && t < 0.55 ? 5.2 : t >= -0.035 && t < 0.22 ? 3.0 : 0;
+      v += stride;
+      if (this.intent.move.lengthSq() > 0.1 && stride > 0 && !this.stage) {
+        const desired = this.intent.move.clone().setY(0).normalize();
+        if (desired.dot(dir) > 0.05) dir.lerp(desired, 0.22).normalize();
+      }
+    }
+    // Garrick Titan Cleave recast: rush through real distance, stopping before contact.
+    if (this.kit === "greatsword" && this.state === S.ATTACK &&
+        this.atk?.style === "garrick_rush_finish" && this.garrickRushTarget &&
+        !this.garrickRushTarget.isDown() && this.garrickRushSerial === this.swingSerial) {
+      const to = this.garrickRushTarget.root.position.clone().sub(pos).setY(0);
+      const gap = to.length();
+      if (gap > 1.90 && this.stateT < this.atk.wind) {
+        dir.copy(to.divideScalar(Math.max(0.001, gap)));
+        v = Math.min(17.0, (gap - 1.90) / Math.max(0.018, dt));
+        if (!this.stage) {
+          const yaw = Math.atan2(dir.x, dir.z);
+          let delta = yaw - this.root.rotation.y;
+          delta = Math.atan2(Math.sin(delta), Math.cos(delta));
+          this.root.rotation.y += delta * Math.min(1, dt * 7.5);
+        }
+      } else v = 0;
+    }
     const recoilSpeed = this.knock;
     this.knock = Math.max(this.knock - 13 * dt, 0);
     if (dist < MIN_DIST && v > 0) v = 0;
@@ -1545,8 +1646,10 @@ export class Fighter implements Entity {
       /^air_l[1-3]$/.test(this.atkId);
     const nyxAirSteer = this.kit === "assassin" && !this.onGround && this.state === S.ATTACK &&
       /^air_l[1-2]$/.test(this.atkId);
+    // Spinning chainblade skills unlock walking while preserving Kira/Nyx aerial steering.
     const steer = this.state === S.IDLE ? 1 : this.state === S.BLOCK ? 0.5 :
-      this.state === S.CHARGE ? 0.4 : kiraAirSteer ? 0.92 : nyxAirSteer ? 0.63 : 0;
+      this.state === S.CHARGE ? 0.4 : kiraAirSteer ? 0.92 : nyxAirSteer ? 0.63 :
+      this.kaizenCanWalkWhileSpinning() ? 0.72 : 0;
     if (steer > 0 && this.intent.move.lengthSq() > 0.0001) {
       const step = this.intent.move.clone().normalize().multiplyScalar(this.moveSpeed * (this.bloodFrenzyT > 0 ? 1.15 : 1) * (this.meteorFistArmor ? 1 : this.status.speedMult()) * (this.intent.sprint && this.state === S.IDLE && this.onGround ? 1.42 : 1) * steer * dt);
       if (dist < MIN_DIST && step.dot(dir) > 0) step.addScaledVector(dir, -step.dot(dir));
@@ -1636,6 +1739,10 @@ export class Fighter implements Entity {
     if (this.wardT > 0) { this.model.recoil = 0.4; return "warded"; }
     if (this.counterT > 0 && !a.no_parry) { this.counterT = 0; return "counter"; }
     let dmg = a.dmg * power;
+    // Garrick Ground Slam's sword-plant startup is braced, not invulnerable.
+    if (this.kit === "greatsword" && this.state === S.ATTACK &&
+        this.atk?.name === "Ground Slam" && this.stateT <= this.atk.wind + 0.035)
+      dmg *= 0.67;
     // Aster's armor reduces incoming HP damage by 10%, including guard breaks.
     if (this.kit === "knight" && this.look.element === "light") dmg *= 0.90;
     this.knockFrom = attacker ? attacker.root.position.x : this.root.position.x - this.facing;
@@ -1800,6 +1907,8 @@ export class Fighter implements Entity {
   win() { if (this.state !== S.KO) this.setState(S.WIN); }
 
   revive(frac: number) {
+    this.bobMineCharges = 4; this.bobMineRechargeT = 0; this.bobMineCount = 0;
+    this.garrickFollowT = 0; this.garrickFollowTarget = null; this.garrickRushTarget = null;
     this.nyxShadowBoostT = 0;
     this.releaseChainBind();
     if (this.chainBoundBy) this.chainBoundBy.releaseChainBind();
@@ -1827,6 +1936,7 @@ export class Fighter implements Entity {
   heal(amount: number) { this.hp = Math.min(this.hp + amount, this.maxHp); }
 
   ko() {
+    this.garrickFollowT = 0; this.garrickFollowTarget = null; this.garrickRushTarget = null;
     this.nyxShadowBoostT = 0;
     this.nextShieldFast = false; this.shieldRaise = 0.10;
     this.comboPauseT = 0; this.comboDamageMult = 1;
@@ -1917,6 +2027,29 @@ export class Fighter implements Entity {
         const o = this.opponent;
         const near = o && !o.isDown() && Math.abs(o.root.position.x - pos.x) < MIN_DIST && Math.abs(o.root.position.y - pos.y) < 1;
         target = near ? 0 : this.facing * this.atk.lunge;
+        // Arena/platform mode: obey actual left/right input during the spin.
+        // Don't grant Kaizen any new lunge or attack speed.
+        if (this.kaizenCanWalkWhileSpinning()) {
+          target = mx * this.walkSpeed * 0.85;
+          if (mx) this.facing = mx;
+          walking = mx !== 0;
+        }
+        if (this.kit === "greatsword" && this.atk.style === "iron_tempest") {
+          const t = this.stateT - this.atk.wind;
+          const extra = t >= 0.58 && t < 0.88 ? 7.2 :
+            t >= 0.28 && t < 0.55 ? 5.2 : t >= -0.035 && t < 0.22 ? 3.0 : 0;
+          target += this.facing * extra;
+          if (mx === this.facing) target += mx * 0.8; // small between-swing steering
+        }
+        if (this.kit === "greatsword" && this.atk.style === "garrick_rush_finish" &&
+            this.garrickRushTarget && !this.garrickRushTarget.isDown() &&
+            this.garrickRushSerial === this.swingSerial && this.stateT < this.atk.wind) {
+          const dx = this.garrickRushTarget.root.position.x - pos.x;
+          if (Math.abs(dx) > 1.8) {
+            this.facing = Math.sign(dx);
+            target = this.facing * Math.min(17, (Math.abs(dx) - 1.8) / Math.max(dt, 0.018));
+          } else target = 0;
+        }
       }
       const grip = this.state === S.HITSTUN || this.state === S.STAGGER ? 5 : 16;
       this.vx += (target - this.vx) * (1 - Math.exp(-grip * dt));

@@ -1,3 +1,5 @@
+// FIGHT_ROYALE_KAIZEN_MOBILE_SPIN_V8
+// FIGHT_ROYALE_GARRICK_BOB_KAIZEN_ROOK_V7
 // FIGHT_ROYALE_ZAREK_CPU_SHIELD_RECOVERY_V2
 // FIGHT_ROYALE_NYX_CAMERA_CONTINUOUS_DODGE_20261107_V1
 // FIGHT_ROYALE_PARRY_SPIN_COUNTERS_V2
@@ -694,7 +696,8 @@ export class AiBrain implements Brain {
    */
   private dodgeUnsafeContinuous(f: Fighter, o: Fighter, dt: number): boolean {
     const atk = o.atk;
-    if (o.state !== S.ATTACK || !atk || !o.isContinuousComboActive()) {
+    if (o.state !== S.ATTACK || !atk || !o.isContinuousComboActive() ||
+        (o.atkPhase === 2 && o.stateT >= atk.wind + atk.active)) {
       this.lastUndodgeableCombo = -1;
       this.continuousDodgeDone = false;
       return false;
@@ -888,6 +891,7 @@ export class AiBrain implements Brain {
   private evadeUnsafeHeavy(f: Fighter, o: Fighter, dt: number): boolean {
     const a = o.atk;
     const dangerous = o.state === S.ATTACK && !!a &&
+      !(o.atkPhase === 2 && o.stateT >= a.wind + a.active) &&
       (a.heavy || (o.isContinuousComboActive() && a.dmg >= 50));
     if (!dangerous || !a) {
       this.heavyEscapeSerial = -1;
@@ -964,6 +968,59 @@ export class AiBrain implements Brain {
     return true;
   }
 
+  // V7: Kaizen's shield causes REAL 16 HP contact damage every 0.45 s in its
+  // physical radius. Move outside that radius, then return when he drops guard.
+  private kaizenGuardReact = -1;
+  private kaizenGuardDashUsed = false;
+  private avoidKaizenSpinGuard(f: Fighter, o: Fighter, dt: number): boolean {
+    const dangerous = o.kit === "chainblade" && o.state === S.BLOCK &&
+      o.guard > 0 && !o.isDown() && !o.chainBindT;
+    if (!dangerous) {
+      this.kaizenGuardReact = -1;
+      this.kaizenGuardDashUsed = false;
+      return false;
+    }
+    if (f.isDown() || !f.onGround ||
+        (f.state !== S.IDLE && f.state !== S.BLOCK)) return false;
+    const away = f.root.position.clone().sub(o.root.position).setY(0);
+    const gap = away.length();
+    if (gap > 1.85 || gap < 0.01) {
+      if (gap > 1.85) this.kaizenGuardDashUsed = false;
+      return false;
+    }
+    if (this.kaizenGuardReact < 0)
+      this.kaizenGuardReact = this.p.react[0] + Math.random() * (this.p.react[1] - this.p.react[0]);
+    this.kaizenGuardReact = Math.max(0, this.kaizenGuardReact - dt);
+    if (this.kaizenGuardReact > 0) return false;
+    away.normalize();
+    // Do not run into arena walls while trying to escape.
+    if (f.stage) {
+      const main = f.stage.plats[0];
+      if (!main || f.root.position.x + away.x * 1.0 < main.x0 + 0.65 ||
+          f.root.position.x + away.x * 1.0 > main.x1 - 0.65) return false;
+      away.set(Math.sign(away.x) || -f.facing, 0, 0);
+    } else if (f.root.position.clone().setY(0).addScaledVector(away, 1.0).length() >= f.arenaRadius - 0.2) {
+      const side = new THREE.Vector3(-away.z, 0, away.x);
+      if (f.root.position.clone().setY(0).addScaledVector(side, 1).length() >= f.arenaRadius - 0.2)
+        side.negate();
+      if (f.root.position.clone().setY(0).addScaledVector(side, 1).length() >= f.arenaRadius - 0.2)
+        return false;
+      away.copy(side);
+    }
+    f.intent.move.copy(away);
+    f.intent.block = false;
+    f.intent.sprint = false;
+    // One real dash per guard encounter, and only when dangerously close.
+    if (!this.kaizenGuardDashUsed && gap < 1.42 && f.dashCd <= 0 && !f.dashing()) {
+      f.intent.dash.copy(away);
+      this.kaizenGuardDashUsed = true;
+    }
+    // Cancel a stale shield-hold decision only while in the damaging contact area.
+    this.blockWait = -1;
+    this.blockHold = 0;
+    return true;
+  }
+
   constructor(private threats: Threats, level: number) {
     this.p = PRESETS[Math.max(0, Math.min(level, PRESETS.length - 1))];
   }
@@ -971,6 +1028,7 @@ export class AiBrain implements Brain {
   think(f: Fighter, dt: number) {
     const o = f.opponent as Fighter | null;
     if (!o || o.isDown()) return;
+    if (this.avoidKaizenSpinGuard(f, o, dt)) return;
     if (this.dodgeUnsafeContinuous(f, o, dt)) return;
     if (this.evadeUnsafeHeavy(f, o, dt)) return;
 
@@ -1016,6 +1074,8 @@ export class AiBrain implements Brain {
         f.intent.move.copy(around).multiplyScalar(0.55);
       }
     }
+    // Chase carefully during spinning Z/C without overriding dodge or fire safety.
+    this.kaizenSpinAdvance(f, o);
     // Run after normal chase/strafe choices, so fire can veto a dangerous route.
     this.avoidFireGround(f);
     // NESA_DODGE_KIRA_AIR_3_V1: opponent dodges Nesa's real wind-up; leave
@@ -1582,6 +1642,44 @@ export class AiBrain implements Brain {
       else if (Math.random() < 0.5) this.jumpWait = Math.max(eta - 0.3, 0);
     }
     if (this.seen.size > 300) this.seen.clear();
+  }
+
+  /** Real walking pressure while the current spin is active; no homing. */
+  private kaizenSpinAdvance(f: Fighter, o: Fighter) {
+    if (f.kit !== "chainblade" || f.state !== S.ATTACK || !f.onGround ||
+        !f.atk || f.atkPhase > 1 || f.isDown() || o.isDown() ||
+        !["chain_razor_cyclone", "chain_death_spiral", "chain_carousel"].includes(f.atk.style) ||
+        f.intent.dash.lengthSq() > 0.01 || f.intent.block) return;
+    const to = o.root.position.clone().sub(f.root.position).setY(0);
+    const gap = to.length();
+    const seekRange = f.atk.style === "chain_death_spiral" ? 3.1 : 2.0;
+    // No auto-target lock or wall crossing; walking ends when target is close.
+    if (gap < 1.35 || gap > seekRange + 2.5) return;
+    const dir = to.multiplyScalar(1 / Math.max(0.001, gap));
+    if (!f.stage) {
+      // Do not march into active Ember fire while spinning; retreat/evade AI
+      // still takes priority outside this controlled pursuit routine.
+      const here = f.root.position.clone().setY(0);
+      const nextStep = here.clone().addScaledVector(dir, 0.8);
+      for (const patch of this.threats.firePatches(f)) {
+        if (Math.abs(patch.pos.y - f.root.position.y) > 1.55) continue;
+        const safe = patch.radius + f.radius * 0.3 + 0.22;
+        const currentGap = here.distanceTo(patch.pos.clone().setY(0));
+        const nextGap = nextStep.distanceTo(patch.pos.clone().setY(0));
+        if (nextGap < safe && nextGap < currentGap - 0.05) return;
+      }
+    }
+    if (f.stage) {
+      const main = f.stage.plats[0];
+      if (!main || f.root.position.x + Math.sign(dir.x) * 0.65 < main.x0 + 0.6 ||
+          f.root.position.x + Math.sign(dir.x) * 0.65 > main.x1 - 0.6) return;
+      f.intent.move.set(Math.sign(dir.x), 0, 0);
+    } else {
+      const next = f.root.position.clone().addScaledVector(dir, 0.65).setY(0);
+      if (next.length() > f.arenaRadius - 0.25) return;
+      f.intent.move.copy(dir);
+    }
+    f.intent.sprint = false;
   }
 
   private position(f: Fighter, o: Fighter, dt: number) {

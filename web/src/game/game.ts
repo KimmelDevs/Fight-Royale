@@ -1,3 +1,5 @@
+// FIGHT_ROYALE_KAIZEN_MOBILE_SPIN_V8
+// FIGHT_ROYALE_GARRICK_BOB_KAIZEN_ROOK_V7
 // FIGHT_ROYALE_NYX_CAMERA_CONTINUOUS_DODGE_20261107_V1
 // FIGHT_ROYALE_PARRY_SPIN_COUNTERS_V2
 // FIGHT_ROYALE_PARRY_SPIN_COUNTERS_V1
@@ -1502,10 +1504,11 @@ export class Game implements MobHost {
   }
 
   private chainDeathSpiral(f: Fighter, a: Attack) {
-    const round = this.round, serial = f.swingSerial, origin = f.root.position.clone();
+    const round = this.round, serial = f.swingSerial;
     const times = [0.05, 0.28, 0.51, 0.74, 0.97, 1.20, 1.43];
     for (let i = 0; i < times.length; i++) this.laterCombo(f, times[i], () => {
       if (round !== this.round || f.isDown() || f.state !== S.ATTACK || f.swingSerial !== serial) return;
+      const origin = f.root.position.clone(); // spinning field follows Kaizen
       const radius = Math.max(1.7, 4.2 - i * 0.40);
       this.fxp("ring", origin.clone().add(new THREE.Vector3(0, 0.8, 0)), "#fa536c", radius, 0.18, 0.9);
       this.fxp("slashes", origin.clone().add(new THREE.Vector3(Math.sin(i * 1.2) * 1.0, 1.2, Math.cos(i * 1.2))), "#ff6e83");
@@ -1519,6 +1522,7 @@ export class Game implements MobHost {
     this.laterCombo(f, 1.67, () => {
       if (round !== this.round || f.isDown() || f.state !== S.ATTACK || f.swingSerial !== serial) return;
       f.poseOverride = "cb5_s";
+      const origin = f.root.position.clone(); // finisher follows Kaizen
       this.fxp("slashes", origin.clone().add(new THREE.Vector3(0, 1.9, 0)), "#ffbbc2");
       for (const d of this.enemiesOf(f)) {
         const diff = d.root.position.clone().sub(origin).setY(0);
@@ -1828,13 +1832,15 @@ export class Game implements MobHost {
   }
 
   private plantMine(f: Fighter, a: Attack) {
+    if (f.kit === "bomb" && this.traps.some(t => t.kind === "mine" && t.owner === f) &&
+        this.traps.filter(t => t.kind === "mine" && t.owner === f).length >= 2) return;
     const fwd = new THREE.Vector3(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
     const mine = this.addTrap("mine", f, a, f.root.position.clone().addScaledVector(fwd, 0.6).setY(0));
     mine.arm = 0.5;
     mine.life = 25;
-    // At most 3 mines each: the oldest one fizzles.
+    // Exactly two active Bob mines; excess ammo stays in the inventory.
     const mines = this.traps.filter((t) => t.kind === "mine" && t.owner === f);
-    if (mines.length > 3) this.removeTrap(mines[0], true);
+    f.bobMineCount = mines.length;
     this.snd("land", 0.6);
   }
 
@@ -1862,6 +1868,8 @@ export class Game implements MobHost {
   private removeTrap(t: Trap, fizzle = false) {
     this.scene.remove(t.mesh);
     this.traps = this.traps.filter((x) => x !== t);
+    if (t.kind === "mine" && t.owner)
+      t.owner.bobMineCount = this.traps.filter(x => x.kind === "mine" && x.owner === t.owner).length;
     this.emit(["trapEnd", t.id]);
     if (fizzle) this.fxp("smoke", t.pos.clone(), "#8a8a8a");
     if (t.kind === "barrel" && t.owner) {
@@ -2103,6 +2111,8 @@ export class Game implements MobHost {
       this.laterCombo(f, s.time, () => {
         if (round !== this.round || f.isDown() || f.state !== S.ATTACK ||
             f.swingSerial !== swing || f.atk?.style !== "iron_tempest") return;
+        // Each stage gets its own weapon silhouette. Real travel comes from Fighter.move.
+        f.poseOverride = i === 0 ? "l1_s" : i === 1 ? "l2_s" : "heavy_s";
         const at = f.root.position.clone();
         const mid = at.clone().add(new THREE.Vector3(0, i === 1 ? 1.55 : 1.05, 0));
         // Tall sweeping blade trails instead of ground craters / Gale-style slams.
@@ -2128,6 +2138,22 @@ export class Game implements MobHost {
           this.applyHit(f, d, strike, power, d.chest(), dir, false);
         }
       });
+    }
+  }
+
+  /** Garrick Ground Slam: clear only weak, hostile non-explosive projectiles.
+   * The shockwave deals no extra HP damage and never deletes powerful ultimates. */
+  private garrickBreakWeakProjectiles(f: Fighter, center: THREE.Vector3, radius: number) {
+    for (const p of this.projectiles) {
+      if (p.done || p.visualOnly || p.team === f.team || !p.atk ||
+          p.atk.type === "lob" || p.atk.dmg > 125 || p.atk.heavy) continue;
+      const gap = p.pos.clone().sub(center);
+      if (Math.abs(gap.y) > 2.2) continue;
+      gap.y = 0;
+      if (gap.length() > radius + Math.max(0.2, p.size * 0.35)) continue;
+      p.done = true;
+      this.fxp("sparks", p.pos.clone(), "#d7c9a4", 12, 4);
+      this.fxp("flash", p.pos.clone(), "#d7c9a4", 0.18, 0.08, 0.55);
     }
   }
 
@@ -2165,6 +2191,8 @@ export class Game implements MobHost {
         if (kaedeCuts && (f.swingSerial !== kaedeSerial || !f.isKaedeThousandCutsCasting())) return;
         const at = a.at === "self" ? (this.plat ? f.root.position.clone() : f.root.position.clone().setY(0)) : center;
         this.impactFx(a, at, color, a.radius);
+        if (f.kit === "greatsword" && a.name === "Ground Slam" && i === 0)
+          this.garrickBreakWeakProjectiles(f, at, a.radius + 0.35);
         if (f.look.element === "fire" && f.kit === "mage" &&
             (a.id === "heavy" || a.id === "c") && i === 0) {
           // EMBER_GROUND_HAZARD_AI_V1_NOV06: smaller persistent fire circles (Meteor / charged heavy).
@@ -2178,6 +2206,16 @@ export class Game implements MobHost {
           if (to.length() <= a.radius + d.radius * 0.5 && (this.plat ? dy < 1.6 : !d.airborne())) {
             const dir = to.length() > 0.05 ? to.normalize() : d.root.position.clone().sub(f.root.position).setY(0).normalize();
             const outcome = this.applyHit(f, d, a, power, d.chest(), dir, true);
+            // Titan Cleave: only confirmed HP damage unlocks a follow-up rush.
+            if (f.kit === "greatsword" && a.name === "Titan Cleave" &&
+                a.style === "cleave" && (outcome === "hit" || outcome === "crit") &&
+                d instanceof Fighter && !d.isDown()) {
+              d.receiveGarrickLaunch();
+              f.armGarrickFollow(d);
+              this.fxp("rocks", d.root.position.clone(), 15, 0.8);
+              this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.7, 0)),
+                "C FOLLOW-UP!", "#ffe2a0", 0.84);
+            }
             if (kaedeCuts && (outcome === "hit" || outcome === "crit" || outcome === "ko"))
               realDamageThisSlice = true;
           } else if (d instanceof Fighter && to.length() <= a.radius + 1) {

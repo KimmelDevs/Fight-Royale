@@ -1,3 +1,5 @@
+// FIGHT_ROYALE_KAIZEN_MOBILE_SPIN_V8
+// FIGHT_ROYALE_GARRICK_BOB_KAIZEN_ROOK_V7
 // FIGHT_ROYALE_PARRY_SPIN_COUNTERS_V2
 // NESA_HEART_SMASH_V4
 // FIGHT_ROYALE_ZAREK_EFFECTIVE_RANGE_NERF_V1
@@ -195,6 +197,39 @@ export function attacks(kit: string, element: string): Record<string, Attack> {
     if (move.dmg > 0) move.no_parry = true;
   }
   t.pc = parryCounterAttack(kit, element, t);
+  // FIGHT_ROYALE_GARRICK_BOB_KAIZEN_ROOK_V7: targeted kit changes.
+  if (kit === "knuckles") {
+    // Five light punches only. Charged punch, parry counter and all Z/X/C/V untouched.
+    for (const key of ["l1", "l2", "l3", "l4", "l5"]) {
+      if (t[key]) t[key].dmg = Math.round(t[key].dmg * 1.25 * 100) / 100;
+    }
+  }
+  if (kit === "chainblade") {
+    // Four skills (including the optional V); no extra multiplier at cast time.
+    for (const key of ["z", "x", "c", "v"]) if (t[key]) t[key].cd += 3;
+  }
+  if (kit === "greatsword") {
+    if (t.z?.name === "Ground Slam") {
+      t.z.stagger = true; // nearby shockwave now causes an actual short stagger
+      t.z.desc = "Plant the greatsword for a close shockwave that staggers foes, clears weak projectiles, and braces against damage during startup.";
+    }
+    if (t.x?.name === "Iron Tempest") {
+      t.x.desc = "Three successive advancing greatsword cuts: short slash, deeper diagonal cut, then a lunging finisher. Steer slightly between swings.";
+    }
+    if (t.c?.name === "Titan Cleave") {
+      t.c.desc = "Rock spikes erupt beneath the enemy. If they hit, press the same skill again to rush forward and finish with an overhead strike.";
+    }
+    t.garrick_follow = a({
+      name: "Titan Cleave", desc: "Follow-up overhead strike after a confirmed eruption hit.",
+      type: "melee", wind: 0.68, active: 0.09, recover: 0.45,
+      dmg: 125, guard: 36, reach: 2.65, lunge: 0, knock: 5.0,
+      stun: 0.46, heavy: true, pose_w: "charge", pose_s: "heavy_s",
+      style: "garrick_rush_finish", next: "",
+    });
+  }
+  if (kit === "bomb" && t.z?.type === "mine") {
+    t.z.desc = "Four stored mine charges (one recharges every 8s); place at most two active mines. Damage unchanged.";
+  }
   // ZAREK_EFFECTIVE_RANGE_NERF_V1: hitboxes now match the smaller double-ended glaive.
   // Only grounded melee attack data for Zarek is changed: no damage or passive changes.
   if (kit === "glaive") {
@@ -204,6 +239,13 @@ export function attacks(kit: string, element: string): Record<string, Attack> {
       move.reach = Math.round(move.reach * 0.82 * 100) / 100; // -18% hit reach
       move.lunge = Math.round(move.lunge * 0.80 * 100) / 100; // -20% forward travel
     }
+  }
+  // Kaizen's spins now have intentional walking footwork.
+  if (kit === "chainblade") {
+    if (t.z?.style === "chain_razor_cyclone")
+      t.z.desc = "Spin the chainblade while walking/steering toward your foe. Hold Z to extend the spinning attack.";
+    if (t.c?.style === "chain_death_spiral")
+      t.c.desc = "Walk during the contracting chain whirlwind; each slash follows Kaizen's live position before an overhead finisher.";
   }
   for (const k of Object.keys(t)) {
     t[k].element = element;
