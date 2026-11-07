@@ -1,8 +1,9 @@
+// FOURTH_SKILL_V_MASTER_AI_TWO_ROW_ROSTER_20261107_V1
 // Player key bindings. Each action has up to two inputs: a keyboard code (KeyboardEvent.code,
 // e.g. "KeyW", "Space", "ArrowUp") or a mouse button ("Mouse0" left, "Mouse1" middle,
 // "Mouse2" right). Saved per browser in localStorage.
 
-export type Action = "up" | "down" | "left" | "right" | "jump" | "attack" | "block" | "skill1" | "skill2" | "skill3";
+export type Action = "up" | "down" | "left" | "right" | "jump" | "attack" | "block" | "skill1" | "skill2" | "skill3" | "skill4";
 
 export const ACTIONS: { id: Action; label: string }[] = [
   { id: "up", label: "Move up / forward" },
@@ -15,6 +16,7 @@ export const ACTIONS: { id: Action; label: string }[] = [
   { id: "skill1", label: "Skill 1" },
   { id: "skill2", label: "Skill 2" },
   { id: "skill3", label: "Skill 3" },
+  { id: "skill4", label: "Skill 4 (unlocked V)" },
 ];
 
 export type Bindings = Record<Action, [string, string]>;
@@ -30,6 +32,7 @@ export const DEFAULT_BINDINGS: Bindings = {
   skill1: ["KeyZ", ""],
   skill2: ["KeyX", ""],
   skill3: ["KeyC", ""],
+  skill4: ["KeyV", ""],
 };
 
 /** Keys the game reserves (leave match, rematch); they can't be bound. */

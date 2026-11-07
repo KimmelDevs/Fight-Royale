@@ -1,3 +1,4 @@
+// FOURTH_SKILL_V_MASTER_AI_TWO_ROW_ROSTER_20261107_V1
 // FIGHT_ROYALE_VICTORY_HIGHLIGHTS_V1
 "use client";
 import { STATUS, type StatusKind } from "@/game/status";
@@ -6,7 +7,7 @@ import { applyResult, type RankChange } from "@/game/rank";
 import { RankBadge } from "./Ranked";
 import { useEffect, useRef, useState } from "react";
 import { label, type Action } from "@/game/keys";
-const SKILL_ACTION: Record<string, Action> = { z: "skill1", x: "skill2", c: "skill3" };
+const SKILL_ACTION: Record<string, Action> = { z: "skill1", x: "skill2", c: "skill3", v: "skill4" };
 import { Game, type GameConfig, type Perk, type UiEvent, type MatchHighlights } from "@/game/game";
 import { CHARACTERS } from "@/game/roster";
 import { Preview } from "@/game/preview";
@@ -298,8 +299,8 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
           </div>}
           {/* AIR_COMBAT_V1: show both keyboard chords without changing keybindings. */}
           {!cfg.spectator && <div className="hint">{hud?.plat
-            ? `${label("left")}/${label("right")} move - ${label("up")} or ${label("jump")} jump (twice to double jump) - ${label("down")} drop / fast fall - ${label("attack")} attack (hold = charged) - ${label("block")} shield - ${label("skill1")} ${label("skill2")} ${label("skill3")} skills - Space+${label("attack")} anti-air / air combo - tap ${label("jump")} after launcher to chase - hold air attack for heavy - air ${label("block")} block/recover - Esc pause`
-            : `${label("up")}${label("left")}${label("down")}${label("right")} move - ${label("jump")} jump - ${label("attack")} attack (hold = charged) - ${label("block")} block - ${label("skill1")} ${label("skill2")} ${label("skill3")} skills - Space+${label("attack")} anti-air / air combo - tap ${label("jump")} after launcher to chase - hold air attack for heavy - air ${label("block")} block/recover - Esc pause`}</div>}
+            ? `${label("left")}/${label("right")} move - ${label("up")} or ${label("jump")} jump (twice to double jump) - ${label("down")} drop / fast fall - ${label("attack")} attack (hold = charged) - ${label("block")} shield - ${label("skill1")} ${label("skill2")} ${label("skill3")} skills${hud.skills.some(s => s.key === "v") ? ` - ${label("skill4")} bonus V` : ""} - Space+${label("attack")} anti-air / air combo - tap ${label("jump")} after launcher to chase - hold air attack for heavy - air ${label("block")} block/recover - Esc pause`
+            : `${label("up")}${label("left")}${label("down")}${label("right")} move - ${label("jump")} jump - ${label("attack")} attack (hold = charged) - ${label("block")} block - ${label("skill1")} ${label("skill2")} ${label("skill3")} skills${hud.skills.some(s => s.key === "v") ? ` - ${label("skill4")} bonus V` : ""} - Space+${label("attack")} anti-air / air combo - tap ${label("jump")} after launcher to chase - hold air attack for heavy - air ${label("block")} block/recover - Esc pause`}</div>}
         </div>
       )}
       <div className="toasts">{toasts.map((t) => <div key={t.id} className="toast">{t.text}</div>)}</div>

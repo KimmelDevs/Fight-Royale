@@ -1,3 +1,4 @@
+// FOURTH_SKILL_V_MASTER_AI_TWO_ROW_ROSTER_20261107_V1
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { Net } from "@/game/net";
@@ -57,9 +58,9 @@ export default function Lobby({ name, onBack, onStart, onShop }: {
           const list = [...playersRef.current];
           if (list.length >= 8 || list.some((p) => p.peer === from)) return;
           const t0 = list.filter((p) => p.team === 0).length, t1 = list.length - t0;
-          list.push({ peer: from, name: String(msg.name).slice(0, 16), char: msg.char ?? 0, team: t0 <= t1 ? 0 : 1, loadout: msg.loadout, emblem: msg.emblem });
+          list.push({ peer: from, name: String(msg.name).slice(0, 16), char: msg.char ?? 0, team: t0 <= t1 ? 0 : 1, loadout: msg.loadout, emblem: msg.emblem, bonusSkillUnlocked: msg.bonusSkillUnlocked === true });
           sync(list);
-        } else if (msg.t === "pick") update(from, { char: msg.char, loadout: msg.loadout, emblem: msg.emblem });
+        } else if (msg.t === "pick") update(from, { char: msg.char, loadout: msg.loadout, emblem: msg.emblem, bonusSkillUnlocked: msg.bonusSkillUnlocked === true });
         else if (msg.t === "team") update(from, { team: msg.team === 1 ? 1 : 0 });
         else if (msg.t === "bet") update(from, { bet: Math.max(0, Math.min(MAX_BET, Math.floor(msg.amount) || 0)) });
         else if (msg.t === "ready") update(from, { ready: !!msg.v });

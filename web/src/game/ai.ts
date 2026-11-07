@@ -1,3 +1,4 @@
+// FOURTH_SKILL_V_MASTER_AI_TWO_ROW_ROSTER_20261107_V1
 // MARINA_RAVEN_ZAREK_BOB_ABILITIES_20261107_V1
 // FIGHT_ROYALE_BULLET_SWORDPLAY_GARRICK_RESOLVE_V1
 // KAIZEN_SPIN_HIT_RELIABILITY_V9
@@ -175,7 +176,7 @@ export class AiBrain implements Brain {
 
   /** Named skills are looked up AFTER loadout remapping; missing skills never fire. */
   private theaterKey(f: Fighter, name: string): string | null {
-    const key = ["z", "x", "c"].find(k =>
+    const key = ["z", "x", "c", ...(f.bonusSkillUnlocked ? ["v"] : [])].find(k =>
       f.attacks[k]?.name === name && (f.cooldowns[k] ?? 1) <= 0);
     if (!key) return null;
     const a = f.attacks[key];
@@ -570,7 +571,7 @@ export class AiBrain implements Brain {
         this.comboParryTarget > this.threats.now()) return false;
     const distance = f.root.position.clone().setY(0)
       .distanceTo(o.root.position.clone().setY(0));
-    const ready = ["z", "x", "c"].filter(k =>
+    const ready = ["z", "x", "c", ...(f.bonusSkillUnlocked ? ["v"] : [])].filter(k =>
       !!f.attacks[k] && (f.cooldowns[k] ?? 1) <= 0 &&
       !(f.attacks[k].style === "nesa_heart_slam" &&
         f.nesaCCharges <= 0));
@@ -2133,13 +2134,13 @@ private personalizedSkill(f: Fighter, o: Fighter, distance: number): string | nu
   const close = distance < 2.65;
   const blocking = o.state === S.BLOCK;
   const scored: { key: string; points: number }[] = [];
-  for (const key of ["z", "x", "c"]) {
+  for (const key of ["z", "x", "c", ...(f.bonusSkillUnlocked ? ["v"] : [])]) {
     const a = f.attacks[key];
     if (!a || (f.cooldowns[key] ?? 1) > 0) continue;
     // Nesa's 3 charges follow the Pink Heart Smash skill on any equipped key.
     if (id === "nesa" && a.style === "nesa_heart_slam" && f.nesaCCharges <= 0) continue;
     let viable = true;
-    let points = profile.skillBias[key === "z" ? 0 : key === "x" ? 1 : 2];
+    let points = key === "v" ? 1.55 : profile.skillBias[key === "z" ? 0 : key === "x" ? 1 : 2];
     if (a.type === "melee" || a.type === "phantom") {
       viable = distance < a.reach + Math.max(0.85, a.lunge * 0.19);
       if (punish) points += 1.2;
@@ -2155,6 +2156,8 @@ private personalizedSkill(f: Fighter, o: Fighter, distance: number): string | nu
         ? attackComing && close
         : a.mode === "ward" ? close || f.hp < f.maxHp * 0.55
         : a.mode === "blood_festival" ? distance < 3.4
+        : a.mode === "healing_water" ? f.hp < f.maxHp * 0.82
+        : a.mode === "static_field" ? distance < a.radius + 0.4
         : f.hp < f.maxHp * 0.72;
     } else if (a.type === "blink") {
       viable = a.mode === "back" ? (close || attackComing) : distance < 5.5;

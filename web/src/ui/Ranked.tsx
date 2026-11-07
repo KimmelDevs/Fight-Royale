@@ -1,3 +1,4 @@
+// FOURTH_SKILL_V_MASTER_AI_TWO_ROW_ROSTER_20261107_V1
 "use client";
 import { useEffect, useRef, useState } from "react";
 import type { Net } from "@/game/net";
@@ -68,7 +69,7 @@ export default function Ranked({ name, onBack, onShop, onStart }: {
     if (net.role === "host") {
       net.onMessage = (from, msg) => {
         if (msg.t !== "hello" || started.current) return;
-        const guest: PlayerSlot = { peer: from, name: String(msg.name).slice(0, 16), char: msg.char ?? 0, team: 1, loadout: msg.loadout, emblem: msg.emblem };
+        const guest: PlayerSlot = { peer: from, name: String(msg.name).slice(0, 16), char: msg.char ?? 0, team: 1, loadout: msg.loadout, emblem: msg.emblem, bonusSkillUnlocked: msg.bonusSkillUnlocked === true };
         const players = [me(net.myId), guest];
         started.current = true;
         net.broadcast({ t: "start", cfg: { mode: "duel", players, ranked: true } });

@@ -1,3 +1,4 @@
+// FOURTH_SKILL_V_MASTER_AI_TWO_ROW_ROSTER_20261107_V1
 // MARINA_RAVEN_ZAREK_BOB_ABILITIES_20261107_V1
 // FIGHT_ROYALE_BULLET_SWORDPLAY_GARRICK_RESOLVE_V1
 // KAIZEN_PARRY_SPIN_SLOW_REVERSE_V10
@@ -126,7 +127,9 @@ export class Fighter implements Entity {
   swingSerial = 0;
   lastDamage = 0;
   lastCrit = false;
-  cooldowns: Record<string, number> = { z: 0, x: 0, c: 0 };
+  cooldowns: Record<string, number> = { z: 0, x: 0, c: 0, v: 0 };
+  /** Game-controlled: purchased account V or Master CPU only. Never enabled for guests. */
+  bonusSkillUnlocked = false;
   /** After a ranged combo's last hit, normal attacks rest this long (stops shot spam). */
   atkLock = 0;
   private clock = 0;
@@ -440,10 +443,10 @@ export class Fighter implements Entity {
   /** ASTER_EMBER_LATEST_20261106: 10-second empowered sword/shield form. */
   judgmentT = 0;
 
-  /**
-   * `loadout` picks which 3 of the kit's 4 skills sit on Z/X/C; `emblem` applies its stat bonus.
-   */
-  constructor(look: Look, charIndex: number, loadout: string[] = DEFAULT_LOADOUT, emblem?: { id: string; level: number }) {
+  /** Core skills never remap. V is independent, requiring a match-scoped unlock. */
+  constructor(look: Look, charIndex: number, _loadout: string[] = DEFAULT_LOADOUT,
+    emblem?: { id: string; level: number }, bonusSkillUnlocked = false) {
+    this.bonusSkillUnlocked = bonusSkillUnlocked;
     this.look = look;
     this.charIndex = charIndex;
     this.kit = look.kit;
@@ -463,15 +466,8 @@ export class Fighter implements Entity {
     this.hp = this.maxHp;
     this.guard = this.maxGuard;
     this.attacks = Kits.attacks(this.kit, look.element);
-    const pool = { z: this.attacks.z, x: this.attacks.x, c: this.attacks.c, v: this.attacks.v } as Record<string, Attack>;
-    const slots = loadout.length === 3 && new Set(loadout).size === 3 && loadout.every((k) => pool[k]) ? loadout : DEFAULT_LOADOUT;
-    const airPool = { z: this.attacks.z_air, x: this.attacks.x_air, c: this.attacks.c_air, v: this.attacks.v_air } as Record<string, Attack | undefined>;
-    ["z", "x", "c"].forEach((key, i) => {
-      this.attacks[key] = pool[slots[i]];
-      // The air version follows the skill wherever the loadout puts it.
-      const air = airPool[slots[i]];
-      if (air) this.attacks[key + "_air"] = air; else delete this.attacks[key + "_air"];
-    });
+    // Keep Kits.attacks' original Z, X, C and V definitions, including air variants.
+    // Previously saved 3-of-4 loadouts are ignored rather than remapping V to another key.
     if (emblem) {
       const b = emblemBonus(emblem.id, emblem.level);
       this.maxHp *= 1 + b.hp;
@@ -1255,7 +1251,9 @@ export class Fighter implements Entity {
   private readSkill() {
     if (this.isKaedeThousandCutsCasting()) return;
     const k = this.intent.skill;
-    if (!k) return;
+    if (!k || !["z", "x", "c", "v"].includes(k)) return;
+    // Prevent key spoofing, old remapped skills and online requests from using locked V.
+    if (k === "v" && !this.bonusSkillUnlocked) return;
     // While bound, Z/X are handled in update() before readSkill(); other skills are locked.
     if (this.chainBindT > 0 || (this.chainBoundBy && this.chainBoundBy.chainBindT > 0)) return;
     // C: Blood Festival shuts off ALL active skills (Z/X/C/V) for its full 6 seconds.
@@ -2393,7 +2391,7 @@ export class Fighter implements Entity {
       +this.nesaSpinYaw.toFixed(3), +this.model.nesaHammerScale.toFixed(2),
       this.nesaCCharges, +this.nesaCRechargeT.toFixed(2), +this.model.nesaSpinHorizontal.toFixed(2),
       +this.parryCounterSpin.toFixed(3), this.atkId === "pc" ? 1 : 0,
-      +this.kaizenSpinSpeed.toFixed(2), this.kaizenSpinDirection, this.garrickResolve];
+      +this.kaizenSpinSpeed.toFixed(2), this.kaizenSpinDirection, this.garrickResolve, +this.cooldowns.v.toFixed(2)];
   }
 
   applySnapshot(s: any[]) {
@@ -2423,6 +2421,7 @@ export class Fighter implements Entity {
     this.trail.emitting = s[12] === 1;
     this.model.recoil = Math.max(this.model.recoil, s[13]);
     this.cooldowns.z = s[14]; this.cooldowns.x = s[15]; this.cooldowns.c = s[16];
+    this.cooldowns.v = s.length > 52 ? s[52] : 0;
     this.maxHp = s[17];
     if (s.length > 18) {
       this.pct = s[18]; this.stocks = s[19]; this.atkLock = s[21] ?? 0; this.dashCd = s[22] ?? 0; this.status.mask = s[23] ?? 0; this.barrelOut = s[24] === 1; this.bloodlust = s[25] ?? 0; this.bloodFrenzyT = s[26] ?? 0; this.sickleOut = s[27] === 1; this.bloodFestivalT = s[28] ?? 0; this.clashMomentum = s[33] ?? 0; this.chainFuryT = s[32] ?? 0;

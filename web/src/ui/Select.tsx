@@ -1,3 +1,4 @@
+// FOURTH_SKILL_V_MASTER_AI_TWO_ROW_ROSTER_20261107_V1
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { CHARACTERS } from "@/game/roster";
@@ -60,48 +61,22 @@ export function Showcase({ index }: { index: number }) {
   );
 }
 
-/**
- * Pick which 3 of the 4 skills go on Z / X / C. Click to turn a skill on or off; the loadout
- * saves as soon as exactly 3 are on (until then the last saved one is used). The bonus skill
- * must be unlocked in the shop first.
- */
-function LoadoutEditor({ index }: { index: number }) {
+/** Skills are fixed: the purchased fourth skill gets its own V button. No on/off toggles. */
+function SkillSummary({ index }: { index: number }) {
   const acc = useAccount();
   const ch = CHARACTERS[index];
   const atks = Kits.attacks(ch.look.kit, ch.look.element);
-  const saved = acc.loadout(ch.id);
-  const [draft, setDraft] = useState<string[]>(saved);
-  const [msg, setMsg] = useState("");
-  const savedKey = saved.join(",");
-  useEffect(() => { setDraft(saved); setMsg(""); }, [ch.id, savedKey]); // eslint-disable-line react-hooks/exhaustive-deps
-  const order = (l: string[]) => ["z", "x", "c", "v"].filter((s) => l.includes(s));
-  const toggle = async (k: string) => {
-    setMsg("");
-    if (!draft.includes(k) && draft.length >= 3) { setMsg("3 skills are on - turn one off first"); return; }
-    const next = order(draft.includes(k) ? draft.filter((s) => s !== k) : [...draft, k]);
-    setDraft(next);
-    if (next.length === 3) {
-      try { await account.setLoadout(ch.id, next); }
-      catch (e: any) { setMsg(e.message); }
-    }
-  };
-  const on = order(draft);
+  const canV = acc.ownsSkill(ch.id);
   return (
-    <div className="loadout">
-      <div className="small">Skills - click to turn on / off (3 of 4):</div>
-      {(["z", "x", "c", "v"] as const).map((k) => {
-        const locked = k === "v" && !acc.ownsSkill(ch.id);
-        const slot = on.indexOf(k);
-        return (
-          <button key={k} className={"skill-pick" + (slot >= 0 ? " on" : "") + (locked ? " locked" : "")} disabled={locked}
-            title={[atks[k].desc, ...Kits.skillTags(atks[k])].join(" - ")} onClick={() => toggle(k)}>
-            <Icon src={skillIcon(ch.look.kit, ch.look.element, k)} alt={atks[k].name} size={34} />
-            <span><b>{atks[k].name}</b><em>{locked ? "Locked - Shop" : slot >= 0 ? `ON - key ${["Z", "X", "C"][slot]} - ${atks[k].cd}s` : `OFF - ${atks[k].cd}s`}</em></span>
-          </button>
-        );
-      })}
-      {on.length < 3 && <div className="error">Pick {3 - on.length} more skill{on.length === 2 ? "" : "s"} (the last saved loadout is used until then)</div>}
-      {msg && <div className="error">{msg}</div>}
+    <div className="skill-summary">
+      {(["z", "x", "c", "v"] as const).map((k) => (
+        <div key={k} className={"skill-summary-row" + (k === "v" && !canV ? " locked" : "")}>
+          <Icon src={skillIcon(ch.look.kit, ch.look.element, k)} alt={atks[k].name} size={32} />
+          <span><b>[{k.toUpperCase()}] {atks[k].name}</b><small>{k === "v" && !canV
+            ? acc.signedIn ? "LOCKED - Buy in the Shop" : "LOCKED - Sign in and buy in the Shop"
+            : `${atks[k].cd}s cooldown${k === "v" ? " - UNLOCKED" : ""}`}</small></span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -131,7 +106,7 @@ export function EmblemPicker({ onChange, compact }: { onChange?: () => void; com
   );
 }
 
-/** Last step before a match: emblem and skill loadout for the chosen fighter. */
+/** Last step before a match: emblem and fixed skills for the chosen fighter. */
 export function PreparePanel({ index }: { index: number }) {
   const ch = CHARACTERS[index];
   return (
@@ -141,8 +116,8 @@ export function PreparePanel({ index }: { index: number }) {
       <h3>Emblem</h3>
       <EmblemPicker />
       <h3>Skills</h3>
-      <LoadoutEditor index={index} />
-      <p className="small">Upgrade emblems and unlock bonus skills in the Shop.</p>
+      <SkillSummary index={index} />
+      <p className="small">Z / X / C are always available. Unlock V in the Shop while signed in.</p>
     </div>
   );
 }
@@ -177,17 +152,17 @@ export function InfoPanel({ index, editable }: { index: number; editable?: boole
       <div className="small">{CONTROLS[ch.look.kit]}</div>
       <div className="small">HP {Kits.STATS[ch.look.kit].hp}</div>
       {(() => {
-        const slots = editable && acc.owns(ch.id) ? acc.loadout(ch.id) : ["z", "x", "c"];
-        return ["Z", "X", "C"].map((key, i) => {
+        const slots = ["z", "x", "c", "v"];
+        return ["Z", "X", "C", "V"].map((key, i) => {
           const a = atks[slots[i]];
           const tags = Kits.skillTags(a);
           const air = atks[slots[i] + "_air"];
-          return <div key={key} className="skill"><b>[{key}] {a.name}</b> - {a.desc} <em>({a.cd}s)</em>
+          return <div key={key} className="skill"><b>[{key}] {a.name}</b>{key === "V" && !acc.ownsSkill(ch.id) ? " - LOCKED (Shop, sign-in required)" : ` - ${a.desc}`} <em>({a.cd}s)</em>
             {tags.length > 0 && <small className="tags">{tags.join(" - ")}</small>}
             {air && <small className="tags air">In the air: {air.name} - {air.desc.replace(/^In the air: /, "")}</small>}</div>;
         });
       })()}
-      {editable && acc.owns(ch.id) && <LoadoutEditor index={index} />}
+      {editable && acc.owns(ch.id) && <div className="small">Skills are fixed to Z / X / C / V; V requires a signed-in purchase.</div>}
       {editable && !acc.owns(ch.id) && (
         <div className="locknote">Locked - unlock for {CHARACTER_PRICE.gold} gold or {CHARACTER_PRICE.diamonds} diamonds in the Shop.</div>
       )}
@@ -197,8 +172,19 @@ export function InfoPanel({ index, editable }: { index: number; editable?: boole
 
 export function CardRow({ current, onPick, allowRandom, showLocks }: { current: number; onPick: (i: number) => void; allowRandom?: boolean; showLocks?: boolean }) {
   const acc = useAccount();
+  const gridRef = useRef<HTMLDivElement>(null);
+  // Keyboard selection stays visible when the user moves beyond the first two rows.
+  useEffect(() => {
+    const grid = gridRef.current;
+    const selected = grid?.querySelector<HTMLButtonElement>(".card.on");
+    if (!grid || !selected) return;
+    const top = selected.offsetTop, bottom = top + selected.offsetHeight;
+    if (top < grid.scrollTop) grid.scrollTop = top;
+    else if (bottom > grid.scrollTop + grid.clientHeight)
+      grid.scrollTop = bottom - grid.clientHeight;
+  }, [current]);
   return (
-    <div className="cards">
+    <div className="cards" ref={gridRef}>
       {CHARACTERS.map((ch, i) => ({ ch, i }))
         .sort((a, b) => Number(acc.owns(b.ch.id)) - Number(acc.owns(a.ch.id)))
         .map(({ ch, i }) => (
@@ -265,7 +251,7 @@ export default function Select({ purpose, onBack, onDone, onShop }: {
       <div className="header">
         <h1 style={{ color: step === 1 ? "#ffb3a8" : step === prepStep ? "#ffe08a" : "#fff" }}>{step === 0 ? "CHOOSE YOUR FIGHTER" : step === prepStep ? "PREPARE FOR BATTLE" : team ? "TEAM BATTLE VS CPU" : "CHOOSE YOUR OPPONENT"}</h1>
         <div className="sub">{step === 0 ? "Click a card or use Left / Right. Drag to rotate. Enter: next."
-          : step === prepStep ? "Pick your emblem and which 3 skills to bring. Enter: fight."
+          : step === prepStep ? "Pick your emblem. Z/X/C are fixed; V unlocks after purchase. Enter: fight."
           : team ? `You: ${CHARACTERS[me].look.name}. CPU teammates join you against a CPU team. Pick the size and difficulty.`
           : `You: ${CHARACTERS[me].look.name}. Pick the CPU's fighter and difficulty.`}</div>
       </div>

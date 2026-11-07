@@ -1,3 +1,4 @@
+// FOURTH_SKILL_V_MASTER_AI_TWO_ROW_ROSTER_20261107_V1
 "use client";
 import { Sound } from "@/game/sound";
 import { useState } from "react";
@@ -76,7 +77,9 @@ export default function Shop({ onBack, onAccount, start = "fighters" }: { onBack
               <div key={ch.id} className="item" style={{ borderColor: ch.look.glow }}>
                 <div className="item-head"><Icon src={skillIcon(ch.look.kit, ch.look.element, "v")} alt={v.name} size={48} /><b>{v.name}</b></div>
                 <span>{ch.look.name}: {v.desc} ({v.cd}s){Kits.skillTags(v).length > 0 && <small className="tags"> {Kits.skillTags(v).join(" - ")}</small>}</span>
-                {owned ? <em>Unlocked - equip it in character select</em> : (
+                {owned ? <em>Unlocked - use the V key in battle</em> : !acc.signedIn ? (
+                  <button className="buy" onClick={onAccount}>Sign in to unlock V</button>
+                ) : (
                   <div className="row">
                     <button className="buy gold" onClick={() => run(() => account.buySkill(ch.id, "gold"), `${v.name} unlocked!`)}>{SKILL_PRICE.gold} gold</button>
                     <button className="buy dia" onClick={() => run(() => account.buySkill(ch.id, "diamonds"), `${v.name} unlocked!`)}>{SKILL_PRICE.diamonds} diamonds</button>

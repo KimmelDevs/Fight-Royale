@@ -1,3 +1,4 @@
+// FOURTH_SKILL_V_MASTER_AI_TWO_ROW_ROSTER_20261107_V1
 // MARINA_RAVEN_ZAREK_BOB_ABILITIES_20261107_V1
 // FIGHT_ROYALE_BULLET_SWORDPLAY_GARRICK_RESOLVE_V1
 // KAIZEN_PARRY_SPIN_SLOW_REVERSE_V10
@@ -38,6 +39,7 @@ import { Fighter, S, STOCKS, RANGED_COMBO_REST, DASH_CD, type Entity, type Brain
 import { Mob, waveRoster, MOB_TYPES, type MobHost } from "./mobs";
 import { AiBrain, LEVELS, type Threats } from "./ai";
 import { CHARACTERS } from "./roster";
+import { account } from "@/lib/account";
 import { MOB_GOLD, WIN_GOLD } from "./economy";
 import * as Kits from "./kits";
 import type { Attack } from "./kits";
@@ -48,8 +50,10 @@ import type { Net, Msg } from "./net";
 
 export interface PlayerSlot {
   peer: string; name: string; char: number;
-  /** Which 3 of the character's 4 skills go on Z/X/C. */
+  /** Legacy, ignored by the fighter: Z/X/C are now fixed. */
   loadout?: string[];
+  /** Match-scoped fourth-skill entitlement; independent of Z/X/C. */
+  bonusSkillUnlocked?: boolean;
   emblem?: { id: string; level: number };
   /** Team mode only: 0 or 1. */
   team?: number;
@@ -890,7 +894,11 @@ export class Game implements MobHost {
   }
 
   private spawnFighter(slot: PlayerSlot, team: number, pos: THREE.Vector3, rotY: number, id = 0): Fighter {
-    const f = new Fighter(CHARACTERS[slot.char].look, slot.char, slot.loadout, slot.emblem);
+    const mayUseV = isCpu(slot.peer) ? this.cfg.difficulty === 3
+      : slot.peer === this.cfg.localPeer && this.cfg.role !== "client"
+        ? account.ownsSkill(CHARACTERS[slot.char].id)
+        : slot.bonusSkillUnlocked === true;
+    const f = new Fighter(CHARACTERS[slot.char].look, slot.char, slot.loadout, slot.emblem, mayUseV);
     f.id = id || this.nextId++;
     f.team = team;
     f.owner = slot.peer;
@@ -944,7 +952,7 @@ export class Game implements MobHost {
     this.fighters.push(f);
     this.entities.set(f.id, f);
     if (slot.peer === this.cfg.localPeer) this.local = f;
-    this.emit(["spawnF", f.id, slot.char, team, slot.peer, slot.name, +pos.x.toFixed(2), +pos.z.toFixed(2), rotY, slot.loadout ?? null, slot.emblem ?? null]);
+    this.emit(["spawnF", f.id, slot.char, team, slot.peer, slot.name, +pos.x.toFixed(2), +pos.z.toFixed(2), rotY, slot.loadout ?? null, slot.emblem ?? null, f.bonusSkillUnlocked]);
     return f;
   }
 
@@ -3634,7 +3642,7 @@ export class Game implements MobHost {
     if (this.cfg.mode !== "survival") return reject("That room is in the middle of a match. Try again when it ends.");
     if (this.cfg.players.some((p) => p.peer === peer)) return;
     if (this.cfg.players.length >= 4) return reject("That survival run is full (4 players).");
-    const slot: PlayerSlot = { peer, name: String(msg.name ?? "Player").slice(0, 16), char: msg.char ?? 0, loadout: msg.loadout, emblem: msg.emblem };
+    const slot: PlayerSlot = { peer, name: String(msg.name ?? "Player").slice(0, 16), char: msg.char ?? 0, loadout: msg.loadout, emblem: msg.emblem, bonusSkillUnlocked: msg.bonusSkillUnlocked === true };
     this.cfg.players.push(slot);
     this.net?.sendTo(peer, { t: "start", cfg: { mode: this.cfg.mode, players: this.cfg.players }, late: true });
   }
@@ -3644,7 +3652,7 @@ export class Game implements MobHost {
     const ev: any[] = [];
     for (const f of this.fighters) {
       const s = this.cfg.players.find((p) => p.peer === f.owner);
-      ev.push(["spawnF", f.id, f.charIndex, f.team, f.owner, s?.name ?? f.look.name, +f.root.position.x.toFixed(2), +f.root.position.z.toFixed(2), f.root.rotation.y, s?.loadout ?? null, s?.emblem ?? null]);
+      ev.push(["spawnF", f.id, f.charIndex, f.team, f.owner, s?.name ?? f.look.name, +f.root.position.x.toFixed(2), +f.root.position.z.toFixed(2), f.root.rotation.y, s?.loadout ?? null, s?.emblem ?? null, f.bonusSkillUnlocked]);
     }
     for (const m of this.mobs) if (!m.dead) ev.push(["spawnM", m.id, m.type, m.elite ? 1 : 0, m.hpMult ?? 1, +m.root.position.x.toFixed(2), +m.root.position.z.toFixed(2)]);
     this.net?.sendTo(peer, { t: "sync", e: ev, s: [this.wave, this.kills, this.phase] });
@@ -3662,7 +3670,7 @@ export class Game implements MobHost {
     switch (ev[0]) {
       case "reset": this.clearAll(); break;
       case "spawnF": {
-        const f = this.spawnFighter({ peer: ev[4], name: ev[5], char: ev[2], loadout: ev[9] ?? undefined, emblem: ev[10] ?? undefined }, ev[3], new THREE.Vector3(ev[6], 0, ev[7]), ev[8], ev[1]);
+        const f = this.spawnFighter({ peer: ev[4], name: ev[5], char: ev[2], loadout: ev[9] ?? undefined, emblem: ev[10] ?? undefined, bonusSkillUnlocked: ev[11] === true }, ev[3], new THREE.Vector3(ev[6], 0, ev[7]), ev[8], ev[1]);
         f.puppet = true;
         break;
       }
@@ -3850,7 +3858,7 @@ export class Game implements MobHost {
       foes: this.cfg.mode === "team" ? this.fighters.filter((f) => f.team !== me?.team).map(info) : [],
       atkLock: me && me.attacks.l1.type !== "melee" ? { t: me.atkLock, max: RANGED_COMBO_REST[me.kit] ?? 1.2 } : null,
       dash: me ? { t: me.dashCd, max: DASH_CD } : null,
-      skills: me ? ["z", "x", "c"].map((k) => {
+      skills: me ? ["z", "x", "c", ...(me.bonusSkillUnlocked ? ["v"] : [])].map((k) => {
         // In the air, show the air version of a skill when it has one.
         const a = !me.onGround && me.attacks[k + "_air"] ? me.attacks[k + "_air"] : me.attacks[k];
         // KAIZEN_BIND_ZX_V6: bound follow-ups have no extra cooldown and replace Z/X icons.

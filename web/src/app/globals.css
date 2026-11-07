@@ -297,3 +297,48 @@ input:focus { border-color: #e6c26e; }
   .highlight-fighters { grid-template-columns: 1fr 1fr; }
   .over:has(.match-highlights-layout) { justify-content: flex-start; padding-top: 8vh; }
 }
+
+
+/* FOURTH_SKILL_V_MASTER_AI_TWO_ROW_ROSTER_20261107_V1
+   Two visible rows and a vertical scrollbar; more fighters remain selectable. */
+.cards {
+  display: grid;
+  position: relative;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-auto-rows: 96px;
+  gap: 6px;
+  flex: 0 1 670px;
+  width: min(70%, 670px);
+  max-width: min(70%, 670px);
+  height: 202px;
+  max-height: 202px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #e6c26e rgba(12, 22, 52, .45);
+  padding: 2px 7px 2px 2px;
+  align-content: start;
+}
+.cards::-webkit-scrollbar { width: 9px; }
+.cards::-webkit-scrollbar-thumb { background: #e6c26e; border-radius: 12px; }
+.cards::-webkit-scrollbar-track { background: rgba(12, 22, 52, .45); border-radius: 12px; }
+.cards .card { width: 100%; height: 96px; min-height: 0; box-sizing: border-box; }
+.skill-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.skill-summary-row { display: flex; align-items: center; gap: 7px; padding: 7px;
+  border: 1px solid rgba(255,255,255,.25); border-radius: 9px; background: rgba(255,255,255,.055); }
+.skill-summary-row.locked { opacity: .58; }
+.skill-summary-row > span { display: flex; flex-direction: column; min-width: 0; }
+.skill-summary-row b { font-size: 12px; }
+.skill-summary-row small { color: #ffe08a; font-size: 11px; }
+@media (max-width: 800px) {
+  .cards { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); grid-auto-rows: 92px;
+    width: 100%; max-width: 100%; height: 194px; max-height: 194px; overflow-y: auto; overflow-x: hidden; }
+  .cards .card { width: 100%; height: 92px; min-height: 0; flex: auto; }
+  .panel { bottom: 280px; max-height: 26vh; }
+  .skill-summary { grid-template-columns: 1fr; }
+}
+@media (max-width: 430px) {
+  .cards { grid-template-columns: repeat(3, minmax(0,1fr)); }
+  .actions .row { gap: 4px; }
+}

@@ -1,3 +1,4 @@
+// FOURTH_SKILL_V_MASTER_AI_TWO_ROW_ROSTER_20261107_V1
 // MELEE_PROJECTILE_SPRINT_V1_NOV06
 // Keyboard + mouse state, mapped through the player's key bindings (keys.ts). Defaults: left
 // mouse attacks, right mouse blocks, WASD moves relative to the camera, Space jumps, Z/X/C
@@ -12,7 +13,7 @@ export interface RawInput { attack: boolean; block: boolean; jump: boolean; skil
 const DOUBLE_TAP_MS = 260;
 const MOVE_DIR: Partial<Record<Action, [number, number]>> = { right: [1, 0], left: [-1, 0], up: [0, 1], down: [0, -1] };
 
-const SKILL_KEY: Partial<Record<Action, string>> = { skill1: "z", skill2: "x", skill3: "c" };
+const SKILL_KEY: Partial<Record<Action, string>> = { skill1: "z", skill2: "x", skill3: "c", skill4: "v" };
 
 export class Input {
   /** Pressed codes: keyboard codes and "Mouse0".."Mouse4". */

@@ -1,3 +1,4 @@
+// FOURTH_SKILL_V_MASTER_AI_TWO_ROW_ROSTER_20261107_V1
 "use client";
 import { Sound } from "@/game/sound";
 import { useEffect, useState } from "react";
@@ -141,7 +142,7 @@ export default function App() {
           <span>{label("up")} {label("left")} {label("down")} {label("right")} move</span><span>{label("jump")} jump</span><span>Double-tap a direction: dash (3 s cooldown)</span>
           <span>{label("attack")}: attack (tap) / charged attack (hold)</span>
           <span>{label("block")}: block (block just before a hit to PARRY)</span>
-          <span>{label("skill1")} {label("skill2")} {label("skill3")} skills</span><span>Esc: pause</span>
+          <span>{label("skill1")} {label("skill2")} {label("skill3")} core skills; {label("skill4")} unlocked 4th skill</span><span>Esc: pause</span>
           <span>Win a 1v1: +250 gold. Survival: gold for every mob.</span>
         </div>
         <p className="credits">3D characters made with VRoid Studio. Aster, Vesper, Garrick, Kaede, Rook, Raven, Ember, Nyx, Ash, Kira, Marina and Gale models by Fruit.</p>

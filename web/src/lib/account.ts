@@ -1,10 +1,11 @@
+// FOURTH_SKILL_V_MASTER_AI_TWO_ROW_ROSTER_20261107_V1
 // Player account: either a Supabase account (progress saved in the cloud, all changes go
 // through server functions that enforce prices and caps) or a guest wallet kept in this
 // browser's localStorage, so the game stays fully playable without signing up.
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { useEffect, useState } from "react";
 import {
-  CHARACTER_PRICE, SKILL_PRICE, EMBLEM_MAX, emblemCost, guestProfile, START_CHARACTERS, type Profile,
+  CHARACTER_PRICE, EMBLEM_MAX, emblemCost, guestProfile, START_CHARACTERS, type Profile,
 } from "@/game/economy";
 import { CHARACTERS } from "@/game/roster";
 
@@ -169,9 +170,11 @@ class Account {
     // Signed-in accounts still use their purchased/unlocked characters.
     return this.profile.characters.includes(charId);
   }
-  ownsSkill(charId: string) { return this.profile.skills.includes(charId); }
+  /** Fourth skills require a real signed-in purchase; old guest purchases never count. */
+  ownsSkill(charId: string) { return this.signedIn && !this.loading && !this.loadError && this.profile.skills.includes(charId); }
   emblemLevel(id: string) { return this.profile.emblems[id] ?? 1; }
-  loadout(charId: string) { return this.profile.loadouts[charId] ?? ["z", "x", "c"]; }
+  /** Legacy custom loadouts are intentionally ignored: Z/X/C are always the core skills. */
+  loadout(_charId: string) { return ["z", "x", "c"]; }
 
   /** Guests can only spend gold; diamonds need an account. */
   async buyCharacter(charId: string, currency: "gold" | "diamonds") {
@@ -184,12 +187,9 @@ class Account {
   }
 
   async buySkill(charId: string, currency: "gold" | "diamonds") {
-    if (this.signedIn) return this.rpc("buy_skill", { p_char: charId, p_currency: currency });
-    if (currency !== "gold") throw new Error("Sign in to use diamonds");
-    if (this.profile.gold < SKILL_PRICE.gold) throw new Error("not enough gold");
-    this.profile.gold -= SKILL_PRICE.gold;
-    this.profile.skills = [...this.profile.skills, charId];
-    this.saveGuest();
+    if (!this.signedIn || this.loading || this.loadError)
+      throw new Error("Sign in and load your account to unlock fourth skills");
+    return this.rpc("buy_skill", { p_char: charId, p_currency: currency });
   }
 
   async setLoadout(charId: string, slots: string[]) {
@@ -255,7 +255,7 @@ class Account {
   /** The loadout and emblem a match should use for this character. */
   matchKit(charIndex: number) {
     const id = CHARACTERS[charIndex].id;
-    return { loadout: this.loadout(id), emblem: { id: this.profile.emblem, level: this.emblemLevel(this.profile.emblem) } };
+    return { loadout: ["z", "x", "c"], bonusSkillUnlocked: this.ownsSkill(id), emblem: { id: this.profile.emblem, level: this.emblemLevel(this.profile.emblem) } };
   }
 }
 
