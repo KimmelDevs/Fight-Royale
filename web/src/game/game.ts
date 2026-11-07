@@ -1,3 +1,4 @@
+// AI_ROOK_NESA_KIRA_MERGED_V1_20261108
 // KAIZEN_PARRY_SPEED_MINUS_10_PERCENT_20261107_V1
 // BALANCE_KIRA_KAEDE_PATTERN_AI_AIR_ICON_20261107_V1
 // AI_EFFECTIVE_RANGE_KAIZEN_AIR_HOOK_20261107_V1
@@ -1142,7 +1143,12 @@ export class Game implements MobHost {
 
   /** Threat feed for the duel AI: incoming projectiles and pending ground strikes. */
   private threats: Threats = {
-    projectiles: () => this.projectiles.filter((p) => !p.visualOnly).map((p) => ({ target: p.target, pos: p.pos, vel: p.vel, id: p.id })),
+    // AI_PROJECTILE_CLASH_IQ: only visible live shots and their public appearance.
+    projectiles: () => this.projectiles.filter((p) => !p.visualOnly && !p.done).map((p) => ({
+      target: p.target, pos: p.pos, vel: p.vel, id: p.id, team: p.team,
+      style: p.atk?.style ?? "", size: p.size, atkType: p.atk?.type ?? "",
+      heavy: p.atk?.heavy ?? false,
+    })),
     strikes: () => this.strikeMarks,
     fields: (f: Fighter) => this.magicPools.filter(p => p.kind === "static_field" && p.team !== f.team && p.time > 0)
       .map(p => ({ id: p.id, center: p.center, radius: p.radius })),

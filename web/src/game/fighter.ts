@@ -1,3 +1,4 @@
+// AI_ROOK_NESA_KIRA_MERGED_V1_20261108
 // KAIZEN_PARRY_SPEED_MINUS_10_PERCENT_20261107_V1
 // BALANCE_KIRA_KAEDE_PATTERN_AI_AIR_ICON_20261107_V1
 // FOURTH_SKILL_V_MASTER_AI_TWO_ROW_ROSTER_20261107_V1
@@ -1005,13 +1006,11 @@ export class Fighter implements Entity {
     return this.kit === "kicks" && this.state === S.ATTACK &&
       this.atkId === "v" && this.atk?.name === "Hundred Kicks";
   }
-  /** Hide render model only, leaving root and server hitboxes intact. */
+  /** Kira V remains visible. The existing casting poses play while
+   * movement/dash/extra attacks stay locked until the stance finishes. */
   private updateKiraCastVisual() {
     if (this.kit !== "kicks" || this.model.loading) return;
-    const casting = this.puppet
-      ? this.state === S.ATTACK && this.poseName.startsWith("kira_hundred_cast_")
-      : this.isKiraHundredKicksCasting();
-    this.model.visible = !casting;
+    this.model.visible = true;
   }
   /** Compute sheathing progress locally or from networked attack pose. */
   private updateKaedeSheathVisual() {

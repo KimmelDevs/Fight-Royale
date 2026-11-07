@@ -1,3 +1,6 @@
+// AI_ROOK_NESA_KIRA_MERGED_V1_20261108
+AI_PROJECTILE_CLASH_IQ_V1_20261108
+AI_AERIAL_COMBAT_INTELLIGENCE_V1_20261108
 // AI_ENEMY_COOLDOWN_MEMORY_V1_20261107
 // KAIZEN_V_SERPENT_DIRECTION_AI_20261107_V1
 // BALANCE_KIRA_KAEDE_PATTERN_AI_AIR_ICON_20261107_V1
@@ -38,7 +41,7 @@ const PRESETS = [
 ];
 
 export interface Threats {
-  projectiles(): { target: any; pos: THREE.Vector3; vel: THREE.Vector3; id: number }[];
+  projectiles(): { target: any; pos: THREE.Vector3; vel: THREE.Vector3; id: number; team?: number; style?: string; size?: number; atkType?: string; heavy?: boolean }[];
   /** Real telegraphed damage circles, not guessed from enemy animation. */
   fields(f: Fighter): { id: number; center: THREE.Vector3; radius: number }[];
   strikes(): {
@@ -57,6 +60,32 @@ export interface Threats {
 
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
 const RANGED = new Set(["mage", "bow", "bomb"]);
+
+// AI_PROJECTILE_CLASH_IQ: incoming shots are seen once each, never rerolled
+// per frame. A read is an imperfect estimate of a physical mid-flight clash.
+const PROJECTILE_CLASH_IQ = [
+  { notice: 0.10, reaction: [0.34, 0.54], tolerance: 0.34, reserve: 0.82 },
+  { notice: 0.43, reaction: [0.23, 0.37], tolerance: 0.26, reserve: 0.66 },
+  { notice: 0.72, reaction: [0.13, 0.24], tolerance: 0.18, reserve: 0.42 },
+  { notice: 0.91, reaction: [0.060, 0.135], tolerance: 0.11, reserve: 0.22 },
+] as const;
+type CounterfireRead = { reactAt: number; wants: boolean; spent: boolean };
+
+
+// Aerial reads use sampled, *visible* position changes, not enemy future inputs.
+// Detection is rolled once per jump; reactions take real time. All choices are
+// subject to the existing Fighter jump / attack / cooldown / collision rules.
+const AERIAL_IQ = [
+  { notice: 0.14, react: [0.40, 0.67], landReact: [0.34, 0.50],
+    jump: 0.10, strike: 2.2, uncertainty: 1.20 },
+  { notice: 0.46, react: [0.27, 0.46], landReact: [0.24, 0.38],
+    jump: 0.32, strike: 4.2, uncertainty: 0.70 },
+  { notice: 0.76, react: [0.16, 0.30], landReact: [0.14, 0.25],
+    jump: 0.61, strike: 7.0, uncertainty: 0.34 },
+  { notice: 0.93, react: [0.09, 0.18], landReact: [0.085, 0.16],
+    jump: 0.82, strike: 10.5, uncertainty: 0.17 },
+] as const;
+
 
 // Enemy cooldowns are *estimated* from witnessed casts, never read from
 // opponent.cooldowns. Variance and recognition delay prevent psychic CPU plays.
@@ -124,6 +153,34 @@ export class AiBrain implements Brain {
   private strafeT = 0;
   private thinkCd = 1;
   // AIR_COMBAT_V1: CPUs also learn to contest the air and chase successful launches.
+  // AI_AERIAL_COMBAT_INTELLIGENCE: one observation/choice per real jump.
+  private aerialEnemy: Fighter | null = null;
+  private aerialWasUp = false;
+  private aerialHasVelocity = false;
+  private aerialSeenAt = -1;
+  private aerialLastPos = new THREE.Vector3();
+  private aerialVelocity = new THREE.Vector3();
+  private aerialLandingSpot = new THREE.Vector3();
+  private aerialLandingEta = 99;
+  private aerialReactAt = 0;
+  private aerialLandedReactAt = 0;
+  private aerialLandedUntil = 0;
+  private aerialNotice = false;
+  private aerialJumpChosen = false;
+  private aerialJumpSpent = false;
+  private aerialLandingSpent = false;
+  private aerialNoise = new THREE.Vector3();
+
+  // AI_PROJECTILE_CLASH_IQ: an independent, per-shot decision memory.
+  private counterfireEnemy: Fighter | null = null;
+  private counterfireReads = new Map<number, CounterfireRead>();
+  private counterfireRecoveryUntil = 0;
+
+  // Seen Rook Meteor Fist casts: choose once per jump, not once per frame.
+  private rookMeteorSerial = -1;
+  private rookMeteorWants = false;
+  private rookMeteorReactAt = -1;
+
   private antiAirCd = 0;
   private aiAirTap = false;
   private airSliceCd = 0;
@@ -917,7 +974,7 @@ export class AiBrain implements Brain {
       case "nesa":
         if (gap < 3.0 && hostileSwing && intent(0.83))
           this.theaterPlan("circle", 0.26, "Pink Heart Smash");
-        else if (gap > 2.7 && gap < 6.3 && intent(0.83))
+        else if (gap > 2.7 && gap < 4.2 && intent(0.83))
           this.theaterPlan("chase", 0.31, "Upsie Daisie", false, gap > 4.5);
         else if (gap < 2.8 && (punish || o.state === S.BLOCK))
           this.theaterPlan("circle", 0.20, "Pink Heart Smash");
@@ -970,7 +1027,7 @@ export class AiBrain implements Brain {
     const a = f.attacks[key];
     const isBlink = a.type === "blink";
     const inRange = isBlink ? (a.mode === "behind" ? gap < 5.3 : gap < 6.4) :
-      a.name === "Upsie Daisie" ? gap <= Math.min(6.55, a.reach + a.lunge * 0.31) :
+      a.name === "Upsie Daisie" ? gap <= Math.min(3.35, a.reach + 0.72) :
       a.type === "melee" || a.type === "phantom" ?
         gap <= Math.max(a.reach + Math.min(1.15, a.lunge * 0.19), a.type === "phantom" ? 4.2 : 1.8) :
       a.type === "strike" && a.at === "self" ? gap <= a.radius + 0.35 :
@@ -1568,6 +1625,64 @@ export class AiBrain implements Brain {
     this.p = PRESETS[this.iqLevel];
   }
 
+  /** The leap itself is a visible warning: the scheduled ground strike marker
+   * only appears on touchdown, too late to finish raising a shield. Hold
+   * the NORMAL block button before touchdown, never grant fake invulnerability.
+   */
+  private defendRookMeteor(f: Fighter, o: Fighter): boolean {
+    const a = o.atk;
+    if (o.kit !== "knuckles" || o.state !== S.ATTACK ||
+        a?.name !== "Meteor Fist" || o.atkPhase === 2) return false;
+    if (f.isDown() || !f.onGround || f.stage || o.stage ||
+        f.chainBoundBy || f.chainBindTarget) return false;
+    const now = this.threats.now();
+    const gap = f.root.position.clone().setY(0)
+      .distanceTo(o.root.position.clone().setY(0));
+    // The attack leap homes toward its real opponent, so it can close a gap.
+    if (gap > 7.0 || o.opponent !== f) return false;
+    if (o.swingSerial !== this.rookMeteorSerial) {
+      this.rookMeteorSerial = o.swingSerial;
+      const chance = [0.22, 0.52, 0.82, 0.995][this.iqLevel];
+      this.rookMeteorWants = Math.random() < chance;
+      const min = [0.32, 0.21, 0.12, 0.035][this.iqLevel];
+      const max = [0.48, 0.33, 0.20, 0.065][this.iqLevel];
+      this.rookMeteorReactAt = now + rand(min, max);
+    }
+    if (!this.rookMeteorWants || now < this.rookMeteorReactAt) return false;
+    const guardCost = a.guard * (f.judgmentT > 0 ? 1.5 : 1);
+    if (f.guard > guardCost + 8 &&
+        (f.state === S.IDLE || f.state === S.BLOCK)) {
+      // Early regular guard works when the landing marker is too late.
+      this.queue = []; this.hold = 0;
+      this.blockWait = -1; this.blockHold = 0;
+      f.intent.block = true;
+      f.intent.attack = false;
+      f.intent.skill = "";
+      f.intent.jump = false;
+      f.intent.move.set(0, 0, 0);
+      f.intent.dash.set(0, 0, 0);
+      return true;
+    }
+    // A depleted shield must not be treated as protection. Normal dash still
+    // obeys its cooldown and invulnerability timing; no guaranteed escape.
+    if (f.state === S.IDLE && f.dashCd <= 0 && !f.dashing() &&
+        (o.atkPhase === 1 || o.stateT > a.wind * 0.5)) {
+      const away = f.root.position.clone().sub(o.root.position).setY(0);
+      if (away.lengthSq() < 0.01) away.set(f.id % 2 ? 1 : -1, 0, 0);
+      away.normalize();
+      const destination = f.root.position.clone().setY(0).addScaledVector(away, 3.4);
+      if (destination.length() >= f.arenaRadius - 0.4)
+        away.set(-away.z, 0, away.x);
+      f.intent.dash.copy(away);
+      f.intent.move.copy(away);
+      f.intent.block = false;
+      f.intent.attack = false;
+      f.intent.skill = "";
+      return true;
+    }
+    return false;
+  }
+
   /** Kaizen's V Serpent Bind has TWO existing legal follow-ups:
    * Z = Serpent Lift (forward), X = Serpent Overthrow (backward).
    * Consider arena boundaries, then alternate where both throws are safe.
@@ -1629,7 +1744,10 @@ export class AiBrain implements Brain {
         f.atk?.style === "chain_razor_cyclone") f.intent.skillHeld = "z";
     const o = f.opponent as Fighter | null;
     if (!o || o.isDown()) return;
+    this.observeAerialOpponent(f, o);
     this.observeEnemyCooldown(o);
+    if (this.defendRookMeteor(f, o)) return;
+    this.observeCounterfire(f, o);
     // An active grab locks both fighters. Commit to Z/X before other tactics.
     if (this.handleKaizenBindFollowup(f, dt)) return;
     this.iqObserve(f, o);
@@ -1650,6 +1768,7 @@ export class AiBrain implements Brain {
     if (f.stage) { if (this.platform(f, o, dt)) return; }
     this.react(f, o);
     this.defendLongCombo(f, o);
+    if (this.projectileCounterfire(f, o)) return;
     if (!f.stage) {
       this.projectileSwordCommit = Math.max(0, this.projectileSwordCommit - dt);
       this.dodge(f);
@@ -1675,6 +1794,7 @@ export class AiBrain implements Brain {
     }
     // Chase carefully during spinning Z/C without overriding dodge or fire safety.
     this.kaizenSpinAdvance(f, o);
+    this.aerialFootwork(f, o);
     // Run after normal chase/strafe choices, so fire can veto a dangerous route.
     this.avoidFireGround(f);
     // NESA_DODGE_KIRA_AIR_3_V1: opponent dodges Nesa's real wind-up; leave
@@ -1690,7 +1810,8 @@ export class AiBrain implements Brain {
       .distanceTo(o.root.position.clone().setY(0));
     if (!f.stage && f.onGround && f.state === S.IDLE && !RANGED.has(f.kit) &&
         this.antiAirCd <= 0 && flatGap > 0.65 && flatGap < 2.3 &&
-        Math.random() < dt * 0.24) {
+        (this.shouldAerialJump(f, o, flatGap) ||
+          (o.onGround && Math.random() < dt * 0.12))) {
       f.intent.jump = true;
       this.antiAirCd = rand(2.2, 3.8);
     }
@@ -1701,7 +1822,7 @@ export class AiBrain implements Brain {
         !f.airSliceUsed &&
         flatGap < f.attacks.air_l1.reach + 0.20 &&
         Math.abs(o.chest().y - f.chest().y) < 2.1 && this.airSliceCd <= 0 &&
-        Math.random() < dt * 7.0) {
+        this.aerialAirStrikeChance(o, dt)) {
       this.aiAirTap = true;
       this.airSliceCd = f.kit === "kicks" || f.kit === "assassin" ? rand(0.17, 0.24) : rand(0.55, 0.85);
       this.queue = [];
@@ -1719,11 +1840,13 @@ export class AiBrain implements Brain {
     }
     // Combat IQ runs after emergency dodges and ordinary footwork, before
     // opportunistic skills, scripted personality follow-ups and random offense.
-    const iqActed = !this.aiAirTap && !f.intent.skill &&
+    const landedActed = !this.aiAirTap && !f.intent.skill &&
+      this.aerialLandingPunish(f, o);
+    const iqActed = !landedActed && !this.aiAirTap && !f.intent.skill &&
       this.projectileSwordCommit <= 0 && this.combatIQAction(f, o, dt);
-    const patternActed = !iqActed && !this.aiAirTap && !f.intent.skill &&
+    const patternActed = !landedActed && !iqActed && !this.aiAirTap && !f.intent.skill &&
       this.projectileSwordCommit <= 0 && this.patternFootwork(f, o);
-    if (!this.aiAirTap && !f.intent.skill && !iqActed && !patternActed &&
+    if (!landedActed && !this.aiAirTap && !f.intent.skill && !iqActed && !patternActed &&
         this.projectileSwordCommit <= 0 &&
         !this.readySkillOpportunity(f, o, dt) && !this.theaterOffense(f, o))
       this.offense(f, o, dt);
@@ -1924,6 +2047,174 @@ export class AiBrain implements Brain {
    * Only plan while a smash is ready, the enemy is in reach, and no shield defense
    * is already pending. Use ordinary jump/skill buttons, preserving all cooldowns.
    */
+  /** Track a real airborne target by sampling its position as frames pass.
+   * Opponent velY and private attack cooldowns are intentionally NOT read.
+   * Sudden teleports, knockback, and a new opponent invalidate stale samples.
+   */
+  private observeAerialOpponent(f: Fighter, o: Fighter) {
+    const now = this.threats.now();
+    if (o !== this.aerialEnemy) {
+      this.aerialEnemy = o;
+      this.aerialWasUp = false;
+      this.aerialHasVelocity = false;
+      this.aerialSeenAt = -1;
+      this.aerialLandedUntil = 0;
+      this.aerialLandingSpent = false;
+    }
+    if (f.stage || o.stage || o.isDown()) {
+      this.aerialWasUp = false;
+      this.aerialLandedUntil = 0;
+      return;
+    }
+    if (o.onGround) {
+      if (this.aerialWasUp) {
+        this.aerialWasUp = false;
+        const profile = AERIAL_IQ[this.iqLevel];
+        this.aerialLandedReactAt = now + rand(profile.landReact[0], profile.landReact[1]);
+        this.aerialLandedUntil = now + 0.62;
+        this.aerialLandingSpent = false;
+        this.aerialHasVelocity = false;
+      }
+      return;
+    }
+    if (!this.aerialWasUp) {
+      const profile = AERIAL_IQ[this.iqLevel];
+      this.aerialWasUp = true;
+      this.aerialSeenAt = now;
+      this.aerialLastPos.copy(o.root.position);
+      this.aerialVelocity.set(0, 0, 0);
+      this.aerialLandingSpot.copy(o.root.position).setY(0);
+      this.aerialLandingEta = 99;
+      this.aerialHasVelocity = false;
+      this.aerialNotice = Math.random() < profile.notice;
+      this.aerialReactAt = now + rand(profile.react[0], profile.react[1]);
+      this.aerialJumpChosen = Math.random() < profile.jump;
+      this.aerialJumpSpent = false;
+      this.aerialLandingSpent = false;
+      // Imprecise per-jump aim. Do not reroll random noise every animation frame.
+      const angle = rand(-Math.PI, Math.PI);
+      this.aerialNoise.set(Math.cos(angle), 0, Math.sin(angle))
+        .multiplyScalar(rand(0.25, 1) * profile.uncertainty);
+      return;
+    }
+    const elapsed = now - this.aerialSeenAt;
+    if (elapsed <= 0.012) return;
+    const pos = o.root.position;
+    const delta = pos.clone().sub(this.aerialLastPos);
+    // Teleports / frame stalls should not produce absurd perfect predictions.
+    if (elapsed > 0.25 || delta.length() > Math.max(2.7, 28 * elapsed)) {
+      this.aerialHasVelocity = false;
+    } else {
+      const measured = delta.divideScalar(elapsed);
+      if (Math.abs(measured.y) <= 25 && measured.length() <= 28) {
+        this.aerialVelocity.lerp(measured, this.aerialHasVelocity ? 0.65 : 1);
+        this.aerialHasVelocity = true;
+      }
+    }
+    this.aerialSeenAt = now;
+    this.aerialLastPos.copy(pos);
+    if (!this.aerialHasVelocity) {
+      this.aerialLandingEta = 99;
+      return;
+    }
+    // Arena 3D gravity is 22m/s^2. Solve a ballistic landing estimate from
+    // observed height and sampled vertical displacement, not a future position.
+    const g = 22;
+    const vy = this.aerialVelocity.y;
+    const height = Math.max(0, pos.y);
+    const t = (vy + Math.sqrt(vy * vy + 2 * g * height)) / g;
+    this.aerialLandingEta = THREE.MathUtils.clamp(t, 0, 2.25);
+    const lead = Math.min(t, 0.85); // err against over-leading distant jumpers
+    const vx = THREE.MathUtils.clamp(this.aerialVelocity.x, -5.5, 5.5);
+    const vz = THREE.MathUtils.clamp(this.aerialVelocity.z, -5.5, 5.5);
+    this.aerialLandingSpot.set(
+      pos.x + vx * lead + this.aerialNoise.x,
+      0,
+      pos.z + vz * lead + this.aerialNoise.z,
+    );
+    const radius = Math.max(1, f.arenaRadius - 0.55);
+    const flat = this.aerialLandingSpot.length();
+    if (flat > radius) this.aerialLandingSpot.multiplyScalar(radius / flat);
+  }
+
+  /** Approach the estimated touchdown position, not a magically known target.
+   * Normal combat footwork remains the default. Hazard avoidance runs after
+   * this method, so active fire patches can still veto an unsafe route.
+   */
+  private aerialFootwork(f: Fighter, o: Fighter) {
+    const now = this.threats.now();
+    if (!this.aerialNotice || !this.aerialWasUp || now < this.aerialReactAt ||
+        f.stage || o.stage || f.isDown() || f.state !== S.IDLE ||
+        f.intent.block || this.blockHold > 0 || this.blockWait >= 0 ||
+        f.intent.dash.lengthSq() > 0.01 || this.projectileSwordCommit > 0 ||
+        f.chainBindTarget || f.chainBoundBy || this.iqBaitPhase !== "none") return;
+    const target = this.aerialHasVelocity && this.aerialLandingEta < 1.25
+      ? this.aerialLandingSpot : o.root.position;
+    const toward = target.clone().sub(f.root.position).setY(0);
+    const gap = toward.length();
+    if (gap < 0.10) return;
+    const airReach = f.attacks.air_l1?.reach ?? f.attacks.l1?.reach ?? 1.7;
+    // A melee fighter should take a position inside actual weapon range.
+    // Ranged fighters preserve room to cast, instead of dashing face-first.
+    const preferred = RANGED.has(f.kit) ? 4.5 : Math.max(1.05, airReach * 0.77);
+    if (gap > preferred + 0.38 && gap < 9.5) {
+      f.intent.move.copy(this.theaterDirection(f, o, toward));
+    } else if (!RANGED.has(f.kit) && gap < 0.82) {
+      f.intent.move.copy(this.theaterDirection(f, o, toward.negate())).multiplyScalar(0.36);
+    }
+  }
+
+  /** A planned counter-jump is allowed only in normal 3D arena mode.
+   * No auto-launches/teleports: Fighter still processes a normal Space press.
+   */
+  private shouldAerialJump(f: Fighter, o: Fighter, gap: number): boolean {
+    if (!this.aerialNotice || !this.aerialJumpChosen || this.aerialJumpSpent ||
+        !this.aerialWasUp || !this.aerialHasVelocity ||
+        this.threats.now() < this.aerialReactAt || f.stage || o.stage ||
+        f.intent.block || f.intent.dash.lengthSq() > 0.01 ||
+        this.blockHold > 0 || this.blockWait >= 0 ||
+        this.projectileSwordCommit > 0 || this.threats.firePatches(f).some(p =>
+          f.root.position.distanceTo(p.pos) < p.radius + 0.5) ||
+        this.aerialLandingEta < 0.34 || this.aerialLandingEta > 1.25 ||
+        o.root.position.y < 0.85 || o.root.position.y > 3.4 ||
+        gap > Math.max(2.6, (f.attacks.air_l1?.reach ?? 1.9) + 0.75)) return false;
+    this.aerialJumpSpent = true;
+    return true;
+  }
+
+  /** Small post-touchdown attack opportunity. The target gets no forced stun,
+   * and the fighter must already be in legitimate basic attack range.
+   */
+  private aerialLandingPunish(f: Fighter, o: Fighter): boolean {
+    const now = this.threats.now();
+    if (!this.aerialNotice || this.aerialLandingSpent || !o.onGround ||
+        now < this.aerialLandedReactAt || now > this.aerialLandedUntil ||
+        !f.onGround || f.stage || o.stage || f.state !== S.IDLE ||
+        f.atkLock > 0 || f.intent.skill || f.intent.block ||
+        this.blockHold > 0 || this.queue.length || this.hold > 0 ||
+        this.projectileSwordCommit > 0 || RANGED.has(f.kit)) return false;
+    const basic = f.attacks.l1;
+    if (!basic || basic.type !== "melee") return false;
+    const gap = f.root.position.clone().setY(0)
+      .distanceTo(o.root.position.clone().setY(0));
+    if (gap > basic.reach + 0.10) return false;
+    // A landing in an active attack is not a safe punish by itself.
+    if (o.state === S.ATTACK && o.atkPhase < 2 && o.atk?.type === "melee") return false;
+    this.aerialLandingSpent = true;
+    this.queue = [[0, 0.065]];
+    this.hold = 0;
+    return true;
+  }
+
+  private aerialAirStrikeChance(o: Fighter, dt: number): boolean {
+    // Even when a jump wasn't recognized, the CPU may react to a target
+    // it can presently reach. Timing depends on difficulty, not frame rate.
+    const profile = AERIAL_IQ[this.iqLevel];
+    const speed = !o.onGround && this.aerialNotice &&
+      this.threats.now() >= this.aerialReactAt ? profile.strike * 1.2 : profile.strike;
+    return Math.random() < 1 - Math.exp(-Math.max(0, dt) * speed);
+  }
+
   private airDive(f: Fighter, o: Fighter, dt: number): boolean {
     this.galeSmashNext = Math.max(0, this.galeSmashNext - dt);
     if (f.isDown() || o.isDown()) { this.galeSmashKey = ""; return false; }
@@ -2212,6 +2503,157 @@ export class AiBrain implements Brain {
     return true;
   }
 
+  /** Observe only projectiles already in the arena. No future inputs,
+   * target cooldowns, or hidden opponent abilities are inspected.
+   */
+  private observeCounterfire(f: Fighter, o: Fighter) {
+    if (this.counterfireEnemy !== o) {
+      this.counterfireEnemy = o;
+      this.counterfireReads.clear();
+      this.counterfireRecoveryUntil = 0;
+    }
+    const now = this.threats.now();
+    const shots = this.threats.projectiles();
+    const living = new Set<number>();
+    const readyShot = (f.attacks.l1?.type === "projectile" && f.atkLock <= 0) ||
+      ["z", "x", "c", ...(f.bonusSkillUnlocked ? ["v"] : [])]
+        .some(k => f.attacks[k]?.type === "projectile" && (f.cooldowns[k] ?? 1) <= 0);
+    for (const p of shots) {
+      living.add(p.id);
+      if (this.counterfireReads.has(p.id)) continue;
+      if (!readyShot || p.target !== f || (p.team !== undefined && p.team === f.team) ||
+          p.atkType === "lob" || p.style === "bomb" || p.style === "clusterbomb") continue;
+      const eta = this.projectileTimeToContact(f, p);
+      if (eta < 0.18 || eta > 1.75) continue;
+      const profile = PROJECTILE_CLASH_IQ[this.iqLevel];
+      this.counterfireReads.set(p.id, {
+        reactAt: now + rand(profile.reaction[0], profile.reaction[1]),
+        wants: Math.random() < profile.notice, spent: false,
+      });
+    }
+    for (const id of this.counterfireReads.keys()) {
+      if (!living.has(id)) this.counterfireReads.delete(id);
+    }
+    if (this.counterfireReads.size > 180) this.counterfireReads.clear();
+  }
+
+  /** Closest approach for an actually fired shot vs a moving hostile shot.
+   * Game.fireProjectiles aims at the fighter's current opponent, so we forecast
+   * that SAME aim and spread, not an impossible AI-only aimed projectile.
+   * Real game projectile collision detection determines the eventual result.
+   */
+  private predictCounterfireCollision(f: Fighter, o: Fighter,
+    p: ReturnType<Threats["projectiles"]>[number],
+    a: Fighter["attacks"][string]): { time: number; miss: number } | null {
+    if (a.type !== "projectile" || a.speed <= 0 ||
+        p.atkType === "lob" || p.style === "bomb" || p.style === "clusterbomb") return null;
+    const eta = this.projectileTimeToContact(f, p);
+    if (eta >= 999) return null;
+    const origin = f.model.castPoint.getWorldPosition(new THREE.Vector3());
+    const toward = o.chest().sub(origin);
+    if (toward.lengthSq() < 0.05) return null;
+    const aim = toward.normalize();
+    // Conservative input and animation-frame overhead. Attack wind remains real.
+    const launch = Math.max(0.025, a.wind) + 0.025;
+    if (launch >= eta - 0.055) return null;
+    const offsets = Math.max(1, Math.min(7, a.count));
+    const profile = PROJECTILE_CLASH_IQ[this.iqLevel];
+    let best: { time: number; miss: number } | null = null;
+    for (let i = 0; i < offsets; i++) {
+      const angle = offsets === 1 ? 0 : -a.spread + 2 * a.spread * i / (offsets - 1);
+      const ownVel = aim.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), angle)
+        .multiplyScalar(a.speed);
+      const incomingAtLaunch = p.pos.clone().addScaledVector(p.vel, launch);
+      const separation = origin.clone().sub(incomingAtLaunch);
+      const relativeVel = ownVel.sub(p.vel);
+      const speedSq = relativeVel.lengthSq();
+      if (speedSq < 1.0) continue;
+      const afterLaunch = -separation.dot(relativeVel) / speedSq;
+      if (afterLaunch < 0.015 || afterLaunch > 1.10) continue;
+      const collisionTime = launch + afterLaunch;
+      // An interception after the shot reaches this fighter isn't defensive.
+      if (collisionTime > eta - 0.025) continue;
+      const miss = separation.addScaledVector(relativeVel, afterLaunch).length();
+      const ownRadius = Math.max(0.14, Math.min(0.48, a.size *
+        (a.style === "wave" || a.style === "shock" ? 0.37 : 0.23)));
+      const theirSize = p.size ?? 1;
+      const theirRadius = Math.max(0.14, Math.min(0.48, theirSize *
+        (p.style === "wave" || p.style === "shock" ? 0.37 : 0.23)));
+      // Difficulty uncertainty is a *stricter* collision requirement for easier
+      // bots, not a fake enlargement of the real collision hitboxes.
+      const believable = ownRadius + theirRadius - profile.tolerance;
+      if (miss > Math.max(0.09, believable)) continue;
+      if (!best || miss < best.miss) best = { time: collisionTime, miss };
+    }
+    return best;
+  }
+
+  /** Try ONE legal action per observed shot. Ordinary dodge/parry handling
+   * takes over whenever the timing, angle or real attack availability fails.
+   */
+  private projectileCounterfire(f: Fighter, o: Fighter): boolean {
+    const now = this.threats.now();
+    if (now < this.counterfireRecoveryUntil || f.isDown() || o.isDown() ||
+        f.state !== S.IDLE || !f.onGround || f.atkLock > 0 ||
+        f.chainBindT > 0 || f.chainBoundBy || f.dashing() ||
+        f.intent.block || f.intent.skill || f.intent.dash.lengthSq() > 0.01 ||
+        this.blockWait >= 0 || this.blockHold > 0 || this.queue.length > 0 ||
+        this.hold > 0 || this.projectileSwordCommit > 0 ||
+        this.comboParryTarget > now ||
+        (f.kit === "sickle" && f.bloodFestivalT > 0) ||
+        this.threats.firePatches(f).some(p =>
+          f.root.position.distanceTo(p.pos) < p.radius + 0.35)) return false;
+    const profile = PROJECTILE_CLASH_IQ[this.iqLevel];
+    let best: { shot: number; key: string; score: number } | null = null;
+    for (const p of this.threats.projectiles()) {
+      const read = this.counterfireReads.get(p.id);
+      if (!read?.wants || read.spent || now < read.reactAt || p.target !== f ||
+          p.atkType === "lob" || p.style === "bomb" || p.style === "clusterbomb" ||
+          (p.team !== undefined && p.team === f.team)) continue;
+      const eta = this.projectileTimeToContact(f, p);
+      if (eta <= 0.10 || eta > 1.50) continue;
+      const heavyIncoming = p.heavy === true || (p.size ?? 1) > 1.65;
+      const keys = ["l1", "z", "x", "c", ...(f.bonusSkillUnlocked ? ["v"] : [])];
+      for (const key of keys) {
+        const a = f.attacks[key];
+        if (!a || a.type !== "projectile" ||
+            (key !== "l1" && (f.cooldowns[key] ?? 1) > 0)) continue;
+        const forecast = this.predictCounterfireCollision(f, o, p, a);
+        if (!forecast) continue;
+        // Avoid wasting an expensive skill if a free normal projectile is a
+        // plausible intercept. High-strength shots can justify a heavier reply.
+        const strongReply = a.heavy || a.pierce || a.dmg >= 95;
+        if (heavyIncoming && !strongReply && this.iqLevel >= 2) continue;
+        const expenditure = key === "l1" ? 0 :
+          a.cd * (1.2 - profile.reserve) * 0.55;
+        const score = (heavyIncoming && strongReply ? 4.8 : 0) +
+          (key === "l1" ? 5.4 : 1.2) - expenditure - forecast.miss * 3 -
+          forecast.time * 0.3;
+        if (!best || score > best.score) best = { shot: p.id, key, score };
+      }
+    }
+    if (!best) return false;
+    const choice = best;
+    const read = this.counterfireReads.get(choice.shot);
+    if (read) read.spent = true;
+    this.counterfireRecoveryUntil = now + (choice.key === "l1" ? 0.32 : 0.48);
+    // Ordinary Fighter inputs only. These go through the normal attack windup,
+    // cooldown, hit tests and Game.resolveProjectileClashes.
+    this.queue = [];
+    this.hold = 0;
+    this.blockWait = -1;
+    f.intent.block = false;
+    f.intent.move.set(0, 0, 0);
+    f.intent.sprint = false;
+    if (choice.key === "l1") f.intent.attack = true;
+    else {
+      f.intent.attack = false;
+      f.intent.skill = choice.key;
+      this.skillCd = Math.max(this.skillCd, 0.27);
+    }
+    return true;
+  }
+
   // Predict the actual crossing time of the projectile through the fighter's chest.
   // Sword collisions are ALWAYS Game.meleeCatchesProjectile; no fake hits or parries.
   private projectileTimeToContact(f: Fighter, pr: ReturnType<Threats["projectiles"]>[number]): number {
@@ -2463,6 +2905,13 @@ export class AiBrain implements Brain {
     for (const p of this.threats.projectiles()) {
       if (p.target !== f || this.seen.has(p.id)) continue;
       const predicted = this.projectileTimeToContact(f, p);
+      // Defer the first defensive reaction only if counterfire has
+      // enough time to fire before actual collision.
+      const counterRead = this.counterfireReads.get(p.id);
+      if (counterRead?.wants && !counterRead.spent && predicted < 999) {
+        const remaining = counterRead.reactAt - this.threats.now();
+        if (remaining > 0 && remaining + 0.17 < predicted) continue;
+      }
       // Do not consume the shot at spawn time. Wait for its actionable window.
       const blade = f.attacks.l1;
       const canPrepareSlice = predicted < 999 && f.state === S.IDLE && f.onGround &&
@@ -2739,7 +3188,9 @@ private personalizedSkill(f: Fighter, o: Fighter, distance: number): string | nu
     let viable = true;
     let points = key === "v" ? 1.55 : profile.skillBias[key === "z" ? 0 : key === "x" ? 1 : 2];
     if (a.type === "melee" || a.type === "phantom") {
-      viable = distance < a.reach + Math.max(0.85, a.lunge * 0.19);
+      viable = a.name === "Upsie Daisie"
+        ? distance <= Math.min(3.35, a.reach + 0.72) && f.onGround
+        : distance < a.reach + Math.max(0.85, a.lunge * 0.19);
       if (punish) points += 1.2;
       if (blocking && a.guard > 24) points += 0.4;
     } else if (a.type === "strike") {
@@ -2854,8 +3305,8 @@ private personalizedSkill(f: Fighter, o: Fighter, distance: number): string | nu
       case "nesa":
         // Favor the closing kick against ranged enemies, but it must still land.
         if (name === "Upsie Daisie") {
-          if (distance > 5.65) viable = false;
-          points += distance > 2.20 && distance < 5.15 ? 2.65 :
+          if (distance > 3.35 || !f.onGround) viable = false;
+          points += distance > 2.20 && distance < 3.25 ? 2.65 :
             attackComing && close ? 1.8 : 0.25;
         }
         // Spend a stored heart charge on a near, punishable target—not empty air.

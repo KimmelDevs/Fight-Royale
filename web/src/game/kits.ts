@@ -1,3 +1,4 @@
+// AI_ROOK_NESA_KIRA_MERGED_V1_20261108
 // BALANCE_KIRA_KAEDE_PATTERN_AI_AIR_ICON_20261107_V1
 // AI_EFFECTIVE_RANGE_KAIZEN_AIR_HOOK_20261107_V1
 // ZAREK_ARC_FLASH_CPU_SPECTATOR_COOLDOWNS_20261107_V1
@@ -350,7 +351,7 @@ function bonusSkill(kit: string, element: string): Attack {
     case "knuckles":
       return a({ name: "Iron Body", desc: "Shrug off every hit for 2.5 seconds.", cd: 13, type: "buff", mode: "ward", duration: 2.5, wind: 0.1, recover: 0.25, pose_w: "block", pose_s: "block" });
     case "kicks":
-      return a({ name: "Hundred Kicks", desc: "Stand completely still and vanish while casting eight phantom strikes. Damage reduced by 25%. Can be interrupted and hit while invisible.", cd: 10, type: "strike", wind: 0.15, recover: 0.6, dmg: 30, guard: 10, knock: 0.8, stun: 0.3, delay: 0.2, radius: 1.5, repeat: 8, interval: 0.06, style: "slashes", pose_w: "kira_hundred_cast_w", pose_s: "kira_hundred_cast_s" });
+      return a({ name: "Hundred Kicks", desc: "Visible, immobile casting pose with six phantom strikes. Casting duration reduced by 25%, damage remains 30 per hit. Still vulnerable to attacks.", cd: 10, type: "strike", wind: 0.1125, active: 0.06, recover: 0.45, dmg: 30, guard: 10, knock: 0.8, stun: 0.3, delay: 0.15, radius: 1.5, repeat: 6, interval: 0.045, style: "slashes", pose_w: "kira_hundred_cast_w", pose_s: "kira_hundred_cast_s" });
     default:
       if (element === "light") return a({ name: "Judgment",
         desc: "Raise your sword, receive harmless lightning, and merge your sword and shield for 10s. Defense converts to power, missing HP adds damage, and health drains while blocking weakens.",
