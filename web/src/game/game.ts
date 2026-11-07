@@ -1,3 +1,4 @@
+// KAIZEN_PARRY_SPIN_SLOW_REVERSE_V10
 // KAIZEN_SPIN_HIT_RELIABILITY_V9
 // FIGHT_ROYALE_KAIZEN_MOBILE_SPIN_V8
 // FIGHT_ROYALE_GARRICK_BOB_KAIZEN_ROOK_V7
@@ -1000,6 +1001,20 @@ export class Game implements MobHost {
   private laterCombo(f: Fighter, delay: number, fn: () => void) {
     this.timers.push({ t: this.time + delay + f.comboPauseT, fn, owner: f, serial: f.swingSerial });
   }
+  /** After a real parry, stretch only this Kaizen spin's upcoming pulses.
+   * Existing 0.20s parry pause is preserved (not multiplied), keeping the
+   * scheduled hits and Fighter.stateT at the same effective 25% tempo. */
+  private slowKaizenSpinFollowups(f: Fighter) {
+    const factor = f.kaizenSpinTimerScale;
+    f.kaizenSpinTimerScale = 1;
+    if (factor <= 1) return; // already at the 25%-speed floor
+    const pauseEnd = this.time + 0.20;
+    for (const timer of this.timers) {
+      if (timer.owner !== f || timer.serial !== f.swingSerial || timer.t <= this.time) continue;
+      timer.t = pauseEnd + Math.max(0, timer.t - pauseEnd) * factor;
+    }
+  }
+
   private delayComboFollowups(f: Fighter, delay: number) {
     for (const timer of this.timers) {
       if (timer.owner === f && timer.serial === f.swingSerial) timer.t += delay;
@@ -2849,6 +2864,13 @@ export class Game implements MobHost {
         if (attacker instanceof Fighter) {
           if (attacker.onComboParried()) {
             this.delayComboFollowups(attacker, 0.20);
+          if (attacker.kit === "chainblade" && attacker.kaizenSpinSpeed < 1) {
+            // The SAME parry reverses the orbit. Further parries flip it again.
+            this.slowKaizenSpinFollowups(attacker);
+            this.fxp("num", attacker.chest().add(new THREE.Vector3(0, 1.13, 0)),
+              attacker.kaizenSpinDirection < 0 ? "SPIN 25% - REVERSED CCW" : "SPIN 25% - REVERSED CW",
+              "#9de7ff", 0.84);
+          }
             this.fxp("num", attacker.chest().add(new THREE.Vector3(0, 0.9, 0)),
               "COMBO -10% • +0.2s", "#b8eaff", 0.82);
           }

@@ -1,3 +1,4 @@
+// KAIZEN_PARRY_SPIN_SLOW_REVERSE_V10
 // FIGHT_ROYALE_KAIZEN_MOBILE_SPIN_V8
 // FIGHT_ROYALE_GARRICK_BOB_KAIZEN_ROOK_V7
 // FIGHT_ROYALE_NYX_CAMERA_CONTINUOUS_DODGE_20261107_V1
@@ -246,6 +247,12 @@ export class Fighter implements Entity {
   /** Only ongoing multi-hit specials accumulate these parry/clash penalties. */
   comboDamageMult = 1;
   comboPauseT = 0;
+  // KAIZEN_PARRY_SPIN_SLOW_REVERSE_V10: per-attack spin tempo.
+  // The first perfect parry drops a circular skill to 1/4 speed.
+  // Subsequent parries flip direction, without slowing below that floor.
+  kaizenSpinSpeed = 1;
+  kaizenSpinDirection = 1;
+  kaizenSpinTimerScale = 1; // one-shot rescaling factor for remaining timed hits
   isContinuousComboActive() {
     return this.state === S.ATTACK && !!this.atk &&
       (CONTINUOUS_STYLES.has(this.atk.style) || (this.atk.type === "phantom" && this.atk.repeat > 1));
@@ -253,6 +260,14 @@ export class Fighter implements Entity {
   /** Returns false for ordinary single-hit attacks (their normal stagger is preserved). */
   onComboParried(): boolean {
     if (!this.isContinuousComboActive()) return false;
+    // Only actual parries of Razor Cyclone / Death Spiral slow and reverse it.
+    if (this.kit === "chainblade" && this.atk &&
+        (this.atk.style === "chain_razor_cyclone" || this.atk.style === "chain_death_spiral")) {
+      const previous = this.kaizenSpinSpeed;
+      this.kaizenSpinSpeed = 0.25;
+      this.kaizenSpinTimerScale = previous / this.kaizenSpinSpeed;
+      this.kaizenSpinDirection *= -1;
+    }
     this.comboDamageMult = Math.max(0.35, this.comboDamageMult * 0.90);
     this.comboPauseT += 0.20;
     this.model.recoil = Math.max(this.model.recoil, 0.30);
@@ -633,7 +648,11 @@ export class Fighter implements Entity {
     const advancing = this.state === S.ATTACK && this.comboPauseT > 0
       ? Math.max(0, dt - this.comboPauseT) : dt;
     this.comboPauseT = Math.max(0, this.comboPauseT - dt);
-    this.stateT += advancing;
+    // Keep animation pose timing aligned with the slowed damage pulse schedule.
+    // Only the CURRENT circular chainblade skill is slowed, never other attacks.
+    const slowedKaizenSpin = this.kit === "chainblade" && this.state === S.ATTACK &&
+      (this.atk?.style === "chain_razor_cyclone" || this.atk?.style === "chain_death_spiral");
+    this.stateT += advancing * (slowedKaizenSpin ? this.kaizenSpinSpeed : 1);
     for (const k in this.cooldowns) this.cooldowns[k] = Math.max(this.cooldowns[k] - dt, 0);
     if (this.kit === "hammer") {
       // NESA_HEART_SMASH_V4: one charge returns every 7.5 seconds, max three.
@@ -908,6 +927,10 @@ export class Fighter implements Entity {
     this.computePose();
     this.model.bloodFestivalT = this.kit === "sickle" ? this.bloodFestivalT : 0;
     this.model.chainFuryT = this.kit === "chainblade" ? this.chainFuryT : 0;
+    this.model.kaizenSpinSpeed = this.kaizenSpinSpeed;
+    this.model.kaizenSpinDirection = this.kaizenSpinDirection;
+    this.model.kaizenSpinActive = this.kit === "chainblade" && this.state === S.ATTACK &&
+      this.kaizenSpinSpeed < 1;
     this.model.chainPose = this.kit === "chainblade"
       ? (this.state === S.WIN && this.stateT >= 0.55 && this.stateT <= 2.30 ? "cbz_w" : this.poseName)
       : "idle";
@@ -1415,6 +1438,9 @@ export class Fighter implements Entity {
     this.buffered = false;
     this.comboDamageMult = 1;
     this.comboPauseT = 0;
+    this.kaizenSpinSpeed = 1;
+    this.kaizenSpinDirection = 1;
+    this.kaizenSpinTimerScale = 1;
     this.swingSerial++;
     if (this.atk.self_jump > 0 && this.atk.mode !== "leap" &&
         !(this.kit === "hammer" && this.atk.name === "Upsie Daisie")) {
@@ -2325,7 +2351,8 @@ export class Fighter implements Entity {
       +this.pct.toFixed(1), this.stocks, this.out ? 1 : 0, +this.atkLock.toFixed(2), +this.dashCd.toFixed(2), this.status.mask, this.barrelOut ? 1 : 0, Math.round(this.bloodlust), +this.bloodFrenzyT.toFixed(2), this.sickleOut ? 1 : 0, +this.bloodFestivalT.toFixed(2), +this.tempestSpin.toFixed(3), +this.cycloneSpin.toFixed(3), +this.bladeSwingYaw.toFixed(3), +this.chainFuryT.toFixed(2), this.clashMomentum, this.chainBindTarget ? +this.chainBindTarget.chest().x.toFixed(2) : null, this.chainBindTarget ? +this.chainBindTarget.chest().y.toFixed(2) : null, this.chainBindTarget ? +this.chainBindTarget.chest().z.toFixed(2) : null, +this.chainBindT.toFixed(2), +this.judgmentT.toFixed(2), +this.comboDamageMult.toFixed(3), +this.comboPauseT.toFixed(2), +this.stateT.toFixed(3),
       +this.nesaSpinYaw.toFixed(3), +this.model.nesaHammerScale.toFixed(2),
       this.nesaCCharges, +this.nesaCRechargeT.toFixed(2), +this.model.nesaSpinHorizontal.toFixed(2),
-      +this.parryCounterSpin.toFixed(3), this.atkId === "pc" ? 1 : 0];
+      +this.parryCounterSpin.toFixed(3), this.atkId === "pc" ? 1 : 0,
+      +this.kaizenSpinSpeed.toFixed(2), this.kaizenSpinDirection];
   }
 
   applySnapshot(s: any[]) {
@@ -2344,6 +2371,9 @@ export class Fighter implements Entity {
     this.parryCounterSpin = s.length > 47 ? s[47] : 0;
     this.model.parryCounterSpin = this.parryCounterSpin;
     this.counterVisualRemote = s.length > 48 && s[48] === 1;
+    // Appended fields: older snapshots default to normal clockwise speed.
+    this.kaizenSpinSpeed = s.length > 49 ? s[49] : 1;
+    this.kaizenSpinDirection = s.length > 50 ? s[50] : 1;
     this.hp = s[8];
     this.guard = s[9];
     this.model.walk = s[10];
@@ -2390,6 +2420,10 @@ export class Fighter implements Entity {
     this.model.hurt = this.state === S.HITSTUN || this.state === S.STAGGER;
     this.model.bloodFestivalT = this.kit === "sickle" ? this.bloodFestivalT : 0;
     this.model.chainFuryT = this.kit === "chainblade" ? this.chainFuryT : 0;
+    this.model.kaizenSpinSpeed = this.kaizenSpinSpeed;
+    this.model.kaizenSpinDirection = this.kaizenSpinDirection;
+    this.model.kaizenSpinActive = this.kit === "chainblade" && this.state === S.ATTACK &&
+      this.kaizenSpinSpeed < 1;
     this.model.chainPose = this.kit === "chainblade"
       ? (this.state === S.WIN && this.stateT >= 0.55 && this.stateT <= 2.30 ? "cbz_w" : this.poseName)
       : "idle";

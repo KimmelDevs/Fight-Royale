@@ -1,3 +1,4 @@
+// KAIZEN_PARRY_SPIN_SLOW_REVERSE_V10
 // FIGHT_ROYALE_PARRY_SPIN_COUNTERS_V2
 // FIGHT_ROYALE_PARRY_SPIN_COUNTERS_V1
 // NESA_HEART_SMASH_V4
@@ -119,6 +120,10 @@ export class FighterModel extends THREE.Group {
   private chainPoseClock = 0;
   private chainPrevPose = "";
   private chainOrbit = 0;
+  // Host/player and multiplayer visual sync; never changes collision geometry.
+  kaizenSpinSpeed = 1;
+  kaizenSpinDirection = 1;
+  kaizenSpinActive = false;
   chainPose = "idle";
   chainFuryT = 0;
   chainExtended = false;
@@ -836,7 +841,7 @@ export class FighterModel extends THREE.Group {
     const handR = this.worldToLocal(this.hand_r.getWorldPosition(new THREE.Vector3()));
     const pose = this.chainPose;
     if (pose !== this.chainPrevPose) { this.chainPoseClock = 0; this.chainPrevPose = pose; }
-    else this.chainPoseClock += dt;
+    else this.chainPoseClock += dt * (this.kaizenSpinActive ? this.kaizenSpinSpeed : 1);
     const t = this.chainPoseClock;
     const blocking = pose === "block";
     const orbit = /^(?:cbx|cbz|cbc)/.test(pose);
@@ -844,7 +849,12 @@ export class FighterModel extends THREE.Group {
     const attack = /^(?:cb[1-5]_|cbh_|cbz_|cbv_|cbc_|cbx)/.test(pose);
     const bound = this.chainBindTargetWorld !== null;
     const bindCenter = bound ? this.worldToLocal(this.chainBindTargetWorld!.clone()) : null;
-    this.chainOrbit += dt * (blocking ? 15 : orbit ? (strike ? 20 : 11) : attack ? 8 : 1.4);
+    // The counter-parried circular skill genuinely rotates in reverse and at
+    // one quarter speed. Kaizen's normal spinning shield is NOT affected.
+    const spinRate = this.kaizenSpinActive ? this.kaizenSpinSpeed : 1;
+    const spinDirection = this.kaizenSpinActive ? this.kaizenSpinDirection : 1;
+    this.chainOrbit += dt * (blocking ? 15 : orbit ? (strike ? 20 : 11) : attack ? 8 : 1.4)
+      * spinRate * spinDirection;
 
     let goal = handR.clone().add(new THREE.Vector3(0, 0.08, 0.16));
     if (bindCenter) {
