@@ -46,6 +46,8 @@ const ENGAGE = 1.45;
 const MIN_DIST = 0.95;
 const GRAVITY = 22;
 const GUARD_REGEN = 30;
+// FIGHT_ROYALE_GUARD_REGEN_DAMAGE_DELAY_V1: continuous damage-free seconds before guard can regenerate.
+const GUARD_REGEN_DAMAGE_DELAY = 2.0;
 
 /** One-way platforms (solid = main stage: can't drop through, has side walls). */
 export interface Plat { x0: number; x1: number; y: number; solid: boolean }
@@ -696,13 +698,13 @@ export class Fighter implements Entity {
 
     if (this.stage) { this.movePlat(dt); this.verticalPlat(dt); }
     else { this.move(dt); this.vertical(dt); }
-    if (this.state !== S.BLOCK) {
-      this.guardDelay -= dt;
-      if (this.guardDelay <= 0) {
-        // KAIZEN_GUARD_CLASH_V8: Kaizen regenerates guard at half the usual rate.
-        const guardRegen = this.kit === "chainblade" ? GUARD_REGEN * 0.5 : GUARD_REGEN;
-        this.guard = Math.min(this.guard + guardRegen * dt, this.maxGuard);
-      }
+    // Count down the two-second damage-free timer even while defending.
+    // Holding block still prevents actual guard regeneration, just as before.
+    this.guardDelay = Math.max(0, this.guardDelay - dt);
+    if (this.state !== S.BLOCK && this.guardDelay <= 0) {
+      // KAIZEN_GUARD_CLASH_V8: Kaizen regenerates guard at half the usual rate.
+      const guardRegen = this.kit === "chainblade" ? GUARD_REGEN * 0.5 : GUARD_REGEN;
+      this.guard = Math.min(this.guard + guardRegen * dt, this.maxGuard);
     }
     const a = this.atk;
     this.trail.emitting = this.state === S.ATTACK && !!a &&
@@ -1414,6 +1416,8 @@ export class Fighter implements Entity {
     const st = this.status.tick(dt, this.model.walk > 0.3);
     for (const d of st.dots) {
       this.hp = Math.max(this.hp - d.dmg, 0);
+      // Damage-over-time counts as taking damage for guard recovery.
+      if (d.dmg > 0) this.guardDelay = GUARD_REGEN_DAMAGE_DELAY;
       this.dots.push({ ...d, src: this.status.src });
       if (this.hp <= 0) { this.ko(); return; }
     }
@@ -1473,7 +1477,7 @@ export class Fighter implements Entity {
         attacker.bloodFestivalT > 0 && a.type === "melee" && /^l\d+$/.test(attacker.atkId);
       this.guard -= a.guard * power * (festivalGuardTriple ? 2 / 1.35 : 1) *
         (this.judgmentT > 0 ? 1.5 : 1); // Aster Judgment weakens defense; Veyr nerf unchanged
-      this.guardDelay = 1;
+      this.guardDelay = GUARD_REGEN_DAMAGE_DELAY;
       if (this.guard <= 0) {
         this.guard = 0;
         const hammerCrush = attacker instanceof Fighter && attacker.hammerWeightArmor &&
@@ -1523,6 +1527,9 @@ export class Fighter implements Entity {
     const cc = attacker && (attacker as any).critChance !== undefined ? (attacker as any).critChance : 0.2;
     this.lastCrit = Math.random() < cc;
     if (this.lastCrit) dmg *= 1.6;
+    // An unblocked hit also restarts guard recovery, even if the guard bar
+    // itself did not change. Arena and platform combat use the same rule.
+    if (dmg > 0) this.guardDelay = GUARD_REGEN_DAMAGE_DELAY;
     if (this.stage) return this.launch(attacker, a, dmg);
     this.lastDamage = dmg;
     this.hp = Math.max(this.hp - dmg, 0);
@@ -1615,6 +1622,7 @@ export class Fighter implements Entity {
     this.model.nesaSpinHorizontal = 0;
     this.hp = this.maxHp * frac;
     this.guard = this.maxGuard;
+    this.guardDelay = 0; // Fresh round: no guard recovery penalty carries over.
     this.chainFuryT = 0;
     this.judgmentT = 0; this.model.setJudgment(false);
     this.clashMomentum = 0;
