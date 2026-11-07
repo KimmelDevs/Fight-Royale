@@ -1,3 +1,4 @@
+// FIGHT_ROYALE_BULLET_SWORDPLAY_GARRICK_RESOLVE_V1
 // KAIZEN_SPIN_HIT_RELIABILITY_V9
 // FIGHT_ROYALE_KAIZEN_MOBILE_SPIN_V8
 // FIGHT_ROYALE_GARRICK_BOB_KAIZEN_ROOK_V7
@@ -1065,7 +1066,15 @@ export class AiBrain implements Brain {
     if (f.stage) { if (this.platform(f, o, dt)) return; }
     this.react(f, o);
     this.defendLongCombo(f, o);
-    if (!f.stage) { this.dodge(f); this.position(f, o, dt); this.tacticalFootwork(f, o, dt); this.theaterFootwork(f, o, dt); }
+    if (!f.stage) {
+      this.projectileSwordCommit = Math.max(0, this.projectileSwordCommit - dt);
+      this.dodge(f);
+      this.position(f, o, dt);
+      if (this.projectileSwordCommit <= 0) {
+        this.tacticalFootwork(f, o, dt);
+        this.theaterFootwork(f, o, dt);
+      }
+    }
     // NESA_AI_EDGE_GIANT_KIRA_AIR_MOVE_V2: Kira can reposition between air kicks.
     // Use the same directional input and capped movement available to the player.
     // NYX_SHADOW_COMBAT_AIR_2_V1: airborne dagger pursuit uses normal steering.
@@ -1114,7 +1123,7 @@ export class AiBrain implements Brain {
       this.queue = [];
       this.hold = 0;
     }
-    if (!this.aiAirTap && !this.readySkillOpportunity(f, o, dt) &&
+    if (!this.aiAirTap && this.projectileSwordCommit <= 0 && !this.readySkillOpportunity(f, o, dt) &&
         !this.theaterOffense(f, o)) this.offense(f, o, dt);
     // Sprint to close long gaps. A direction aimed at retreat/evade is not sprinted.
     // This uses the same run animations as player Shift movement.
@@ -1601,41 +1610,87 @@ export class AiBrain implements Brain {
     return true;
   }
 
-  /** Sometimes contest an incoming shot with a REAL light swing. Collision is still
-   * decided by Game's shared weapon-vs-projectile hitbox, not by this AI prediction. */
+  // Predict the actual crossing time of the projectile through the fighter's chest.
+  // Sword collisions are ALWAYS Game.meleeCatchesProjectile; no fake hits or parries.
+  private projectileTimeToContact(f: Fighter, pr: ReturnType<Threats["projectiles"]>[number]): number {
+    const toward = f.chest().sub(pr.pos);
+    const speedSq = pr.vel.lengthSq();
+    if (speedSq <= 4) return 999;
+    const eta = toward.dot(pr.vel) / speedSq;
+    if (eta <= 0 || eta > 2.0) return 999;
+    const nearest = pr.pos.clone().addScaledVector(pr.vel, eta);
+    if (nearest.distanceTo(f.chest()) > 1.2 + f.radius) return 999;
+    return eta;
+  }
+
+  private projectileSwordCommit = 0;
+
+  /** A real basic sword tap can slice a shot only during the weapon's active frames.
+   * We schedule the real tap/release so the blade arrives at the predicted shot. */
   private tryProjectileClash(f: Fighter, pr: ReturnType<Threats["projectiles"]>[number]): boolean {
     const a = f.attacks.l1;
     if (pr.target !== f || f.state !== S.IDLE || !f.onGround || a?.type !== "melee" ||
-        f.atkLock > 0 || this.queue.length > 0 || this.hold > 0 ||
-        this.blockHold > 0 || this.blockWait >= 0) return false;
-    const speedSq = pr.vel.lengthSq();
-    if (speedSq < 4) return false;
-    // Predict where the shot crosses the blade arc during light attack's active frames.
-    const rel = pr.pos.clone().sub(f.chest());
-    if (rel.dot(pr.vel) >= 0) return false; // flying away
-    const t = THREE.MathUtils.clamp(-rel.dot(pr.vel) / speedSq,
-      a.wind + 0.025, a.wind + a.active);
-    if (t > 0.65) return false;
-    const intercept = pr.pos.clone().addScaledVector(pr.vel, t).sub(f.chest());
-    if (Math.abs(intercept.y) > 1.05) return false;
+        f.atkLock > 0 || this.queue.length || this.hold > 0 || this.projectileSwordCommit > 0 ||
+        this.blockHold > 0 || this.blockWait >= 0 || f.intent.block) return false;
+    const eta = this.projectileTimeToContact(f, pr);
+    const attackContact = 0.07 + a.wind + a.active * 0.35;
+    if (eta < attackContact - 0.025 || eta > attackContact + 0.075) return false;
+    const intercept = pr.pos.clone().addScaledVector(pr.vel, attackContact).sub(f.chest());
+    if (Math.abs(intercept.y) > 1.0) return false;
     intercept.y = 0;
-    const dist = intercept.length();
-    if (dist > a.reach + 0.3) return false;
-    const forward = new THREE.Vector3(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
-    if (dist > 0.65 && intercept.dot(forward) / Math.max(0.001, dist) < 0.18) return false;
-    // Easy AI seldom reacts; stronger opponents favor a cinematic blade clash.
-    if (Math.random() > Math.min(0.78, 0.14 + this.p.block * 0.95)) return false;
-    this.queue = [[0, 0.08]];
+    if (intercept.length() > a.reach + 0.2) return false;
+    const enemy = f.opponent;
+    if (enemy && !enemy.isDown()) {
+      const dir = enemy.root.position.clone().sub(f.root.position).setY(0);
+      if (dir.lengthSq() > 0.001 && intercept.lengthSq() > 0.2 &&
+          intercept.clone().normalize().dot(dir.normalize()) < -0.25) return false;
+    }
+    const skill = f.look.name.toLowerCase() === "garrick" ? 0.16 : 0;
+    if (Math.random() > Math.min(0.94, 0.30 + this.p.block * 0.72 + skill)) return false;
+    // Never give an instant unearned slice: use an ordinary basic input pulse.
+    this.queue = [[0, 0.065]];
     this.hold = 0;
+    this.projectileSwordCommit = 0.38;
+    this.blockWait = -1;
+    f.intent.skill = "";
+    return true;
+  }
+
+  /** Timed parry input; blocks remain the normal game mechanic. A late or
+   * unparryable shot will block or hit exactly as it did previously. */
+  private tryProjectileParry(f: Fighter, pr: ReturnType<Threats["projectiles"]>[number]): boolean {
+    if (f.state !== S.IDLE || !f.onGround || f.guard < f.maxGuard * 0.26 ||
+        this.blockHold > 0 || this.blockWait >= 0 || this.projectileSwordCommit > 0) return false;
+    const eta = this.projectileTimeToContact(f, pr);
+    const raise = f.nextShieldFast ? 0.01 : 0.10;
+    if (eta < raise + 0.035 || eta > raise + Math.min(f.parryWindow * 0.9, 0.22)) return false;
+    if (Math.random() > this.p.parry * 2.0 + (f.look.name === "Garrick" ? 0.15 : 0.08)) return false;
+    this.blockWait = 0;
+    this.blockDur = Math.max(0.20, eta + 0.13);
+    this.queue = [];
+    this.hold = 0;
+    f.intent.skill = "";
     return true;
   }
 
   private dodge(f: Fighter) {
     for (const p of this.threats.projectiles()) {
       if (p.target !== f || this.seen.has(p.id)) continue;
-      if (this.tryProjectileClash(f, p)) { this.seen.add(p.id); continue; }
+      const predicted = this.projectileTimeToContact(f, p);
+      // Do not consume the shot at spawn time. Wait for its actionable window.
+      const blade = f.attacks.l1;
+      const canPrepareSlice = predicted < 999 && f.state === S.IDLE && f.onGround &&
+        blade?.type === "melee" && f.atkLock <= 0 &&
+        this.blockHold <= 0 && this.blockWait < 0;
+      // Only a fighter preparing to slice delays their usual defense decision.
+      // Everyone else's existing jump/block logic stays at the same timing.
+      if (canPrepareSlice && predicted > 0.07 + blade.wind + blade.active * 0.35 + 0.075) continue;
+      if (this.tryProjectileClash(f, p) || this.tryProjectileParry(f, p)) {
+        this.seen.add(p.id);
+        continue;
+      }
       this.seen.add(p.id);
-      const eta = f.chest().distanceTo(p.pos) / Math.max(p.vel.length(), 0.1);
+      const eta = predicted < 999 ? predicted : f.chest().distanceTo(p.pos) / Math.max(p.vel.length(), 0.1);
       const r = Math.random();
       if (r < this.p.jump && f.onGround) this.jumpWait = Math.max(eta - 0.28, 0);
       else if (r < this.p.jump + this.p.block) this.schedule(Math.min(Math.max(eta - 0.2, 0), this.p.react[1]), eta + 0.2);

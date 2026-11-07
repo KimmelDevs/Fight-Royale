@@ -1,3 +1,4 @@
+// FIGHT_ROYALE_BULLET_SWORDPLAY_GARRICK_RESOLVE_V1
 // KAIZEN_PARRY_SPIN_SLOW_REVERSE_V10
 // KAIZEN_SPIN_HIT_RELIABILITY_V9
 // FIGHT_ROYALE_KAIZEN_MOBILE_SPIN_V8
@@ -711,6 +712,32 @@ export class Game implements MobHost {
    * sparkle at rest. Purely visual, so every peer runs it locally (no network events).
    */
   private moteT = new Map<Fighter, number>();
+  private garrickCrackSteps = new Map<Fighter, { pos: THREE.Vector3; t: number; left: boolean }>();
+  /** Visual-only heavy footfalls at Resolve 3; no damage, collisions, or new terrain. */
+  private garrickResolveFootsteps(dt: number) {
+    for (const f of this.fighters) {
+      if (f.look.name !== "Garrick" || f.garrickResolve < 3 || !f.onGround ||
+          f.isDown() || f.model.walk < 0.25) {
+        this.garrickCrackSteps.delete(f);
+        continue;
+      }
+      let step = this.garrickCrackSteps.get(f);
+      if (!step) {
+        step = { pos: f.root.position.clone(), t: 0, left: false };
+        this.garrickCrackSteps.set(f, step);
+      }
+      step.t -= dt;
+      if (step.t > 0 || step.pos.distanceToSquared(f.root.position) < 0.0324) continue;
+      step.t = 0.23;
+      step.left = !step.left;
+      step.pos.copy(f.root.position);
+      const yaw = f.root.rotation.y;
+      const side = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+      const foot = f.root.position.clone().addScaledVector(side, step.left ? -0.22 : 0.22);
+      foot.y = 0;
+      this.fx.arenaReaction(foot, "crack", 0.76);
+    }
+  }
   private statusT = new Map<Entity, number>();
   private statusLabelAt = new Map<Entity, number>();
 
@@ -898,6 +925,7 @@ export class Game implements MobHost {
     this.bladeLight(dt);
     for (const m of this.mobs) m.update(dt);
     this.statusFx(dt);
+    this.garrickResolveFootsteps(dt);
     this.updateProjectiles(dt);
     this.updateTraps(dt);
     this.updateBloodFestivals(dt);
@@ -2036,6 +2064,10 @@ export class Game implements MobHost {
     // Only an actually destroyed projectile builds Zarek's passive (player or AI).
     // Bob's bombs explode on contact, so intercepting them does not grant Momentum.
     if (!bomb) this.awardZarekClash(defender);
+    if (defender.grantGarrickResolve()) {
+      this.fxp("num", defender.chest().add(new THREE.Vector3(0, 1.12, 0)),
+        `RESOLVE ${defender.garrickResolve}/3`, "#ffd49a", 0.85);
+    }
     if (bomb && p.atk) {
       // Keep Bob's original blast damage and radius — melee interception is NOT a defuse.
       this.bombBlast(p.shooter, p.atk, p.power, contact, p.team);
@@ -2859,6 +2891,10 @@ export class Game implements MobHost {
         break;
       case "parry": {
         const df = d as Fighter;
+        if (ranged && a.type === "projectile" && df.look.name === "Garrick") {
+          this.fxp("num", df.chest().add(new THREE.Vector3(0, 1.1, 0)),
+            `RESOLVE ${df.garrickResolve}/3`, "#ffd49a", 0.86);
+        }
         this.fxp("impactBurst", shieldPos, "#b9f5ff", 1.65, "clash");
         this.fxp("impactFrame", "parry", "#b9f5ff", 0.72);
         if (attacker instanceof Fighter) {

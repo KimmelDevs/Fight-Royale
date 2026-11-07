@@ -1,3 +1,4 @@
+// FIGHT_ROYALE_BULLET_SWORDPLAY_GARRICK_RESOLVE_V1
 // KAIZEN_PARRY_SPIN_SLOW_REVERSE_V10
 // FIGHT_ROYALE_KAIZEN_MOBILE_SPIN_V8
 // FIGHT_ROYALE_GARRICK_BOB_KAIZEN_ROOK_V7
@@ -223,6 +224,30 @@ export class Fighter implements Entity {
   bobMineRechargeT = 0;
   bobMineCount = 0; // authoritative trap count, maintained by Game
   // V7 Garrick C follow-up is earned by a confirmed HP hit, never on a miss.
+  // BULLET_SWORDPLAY_V1: Garrick earns Resolve only from successful projectile parries/clashes.
+  garrickResolve = 0;
+  grantGarrickResolve() {
+    if (this.kit !== "greatsword" || this.look.name !== "Garrick" || this.isDown()) return false;
+    const was = this.garrickResolve;
+    this.garrickResolve = Math.min(3, this.garrickResolve + 1);
+    return this.garrickResolve > was;
+  }
+  /** Advancing means actively moving toward an opponent, not blocking or retreating. */
+  private garrickIsAdvancing(toward?: Entity | null): boolean {
+    if (this.kit !== "greatsword" || this.look.name !== "Garrick" ||
+        this.garrickResolve < 2 || !this.onGround || this.state === S.BLOCK || this.intent.block) return false;
+    const enemy = toward ?? this.opponent;
+    if (!enemy || enemy.isDown()) return false;
+    const aim = enemy.root.position.clone().sub(this.root.position).setY(0);
+    if (aim.lengthSq() < 0.04) return false;
+    const input = this.intent.move.clone().setY(0);
+    if (input.lengthSq() < 0.10) {
+      return this.autoApproach && this.brain !== null && this.state === S.IDLE;
+    }
+    return input.normalize().dot(aim.normalize()) > 0.40;
+  }
+  /** Resolve multiplies approach movement, never dashes, attacks, or knockback. */
+  private garrickAdvanceFactor() { return this.garrickIsAdvancing() ? 1.20 : 1; }
   garrickFollowT = 0;
   garrickFollowTarget: Entity | null = null;
   private garrickRushTarget: Entity | null = null;
@@ -1615,7 +1640,7 @@ export class Fighter implements Entity {
     let v = 0;
     let walking = false;
     // No brain yet = still in the READY countdown: stand still.
-    if (this.state === S.IDLE && this.autoApproach && this.brain && o && !o.isDown() && dist > ENGAGE) { v = this.walkSpeed * (this.meteorFistArmor ? 1 : this.status.speedMult()); walking = true; }
+    if (this.state === S.IDLE && this.autoApproach && this.brain && o && !o.isDown() && dist > ENGAGE) { v = this.walkSpeed * (this.meteorFistArmor ? 1 : this.status.speedMult()) * this.garrickAdvanceFactor(); walking = true; }
     if (this.state === S.ATTACK && this.atk && this.atkPhase <= 1 && dist > MIN_DIST + 0.15) {
       if (this.kit === "hammer" && /^l[1-4]$/.test(this.atkId)) {
         // The next swing shuffles after the knockback with deliberate weighted steps.
@@ -1677,7 +1702,7 @@ export class Fighter implements Entity {
       this.state === S.CHARGE ? 0.4 : kiraAirSteer ? 0.92 : nyxAirSteer ? 0.63 :
       this.kaizenCanWalkWhileSpinning() ? 0.72 : 0;
     if (steer > 0 && this.intent.move.lengthSq() > 0.0001) {
-      const step = this.intent.move.clone().normalize().multiplyScalar(this.moveSpeed * (this.bloodFrenzyT > 0 ? 1.15 : 1) * (this.meteorFistArmor ? 1 : this.status.speedMult()) * (this.intent.sprint && this.state === S.IDLE && this.onGround ? 1.42 : 1) * steer * dt);
+      const step = this.intent.move.clone().normalize().multiplyScalar(this.moveSpeed * (this.bloodFrenzyT > 0 ? 1.15 : 1) * (this.meteorFistArmor ? 1 : this.status.speedMult()) * (this.intent.sprint && this.state === S.IDLE && this.onGround ? 1.42 : 1) * this.garrickAdvanceFactor() * steer * dt);
       if (dist < MIN_DIST && step.dot(dir) > 0) step.addScaledVector(dir, -step.dot(dir));
       pos.add(step);
       walking = this.onGround;
@@ -1765,6 +1790,7 @@ export class Fighter implements Entity {
     if (this.wardT > 0) { this.model.recoil = 0.4; return "warded"; }
     if (this.counterT > 0 && !a.no_parry) { this.counterT = 0; return "counter"; }
     let dmg = a.dmg * power;
+    if (a.type === "projectile" && this.garrickIsAdvancing(attacker)) dmg *= 0.75;
     // Garrick Ground Slam's sword-plant startup is braced, not invulnerable.
     if (this.kit === "greatsword" && this.state === S.ATTACK &&
         this.atk?.name === "Ground Slam" && this.stateT <= this.atk.wind + 0.035)
@@ -1788,6 +1814,7 @@ export class Fighter implements Entity {
         this.model.flash("#99e6ff", 0.15);
         // Reward applies to the NEXT shield raise, once only; never stack it.
         this.nextShieldFast = true;
+        if (a.type === "projectile") this.grantGarrickResolve();
         return "parry";
       }
       // Blood Festival: Veyr's blocked LIGHT sickle hits drain 3x normal guard.
@@ -1933,6 +1960,7 @@ export class Fighter implements Entity {
   win() { if (this.state !== S.KO) this.setState(S.WIN); }
 
   revive(frac: number) {
+    this.garrickResolve = 0;
     this.bobMineCharges = 4; this.bobMineRechargeT = 0; this.bobMineCount = 0;
     this.garrickFollowT = 0; this.garrickFollowTarget = null; this.garrickRushTarget = null;
     this.nyxShadowBoostT = 0;
@@ -1962,6 +1990,7 @@ export class Fighter implements Entity {
   heal(amount: number) { this.hp = Math.min(this.hp + amount, this.maxHp); }
 
   ko() {
+    this.garrickResolve = 0;
     this.garrickFollowT = 0; this.garrickFollowTarget = null; this.garrickRushTarget = null;
     this.nyxShadowBoostT = 0;
     this.nextShieldFast = false; this.shieldRaise = 0.10;
@@ -2048,7 +2077,7 @@ export class Fighter implements Entity {
     let walking = false;
     if (this.onGround) {
       let target = 0;
-      if (free) { target = mx * this.moveSpeed * (this.state === S.CHARGE ? 0.3 : 1.55) * (this.state === S.IDLE && this.onGround && this.intent.sprint ? 1.42 : 1); walking = mx !== 0; }
+      if (free) { target = mx * this.moveSpeed * (this.state === S.CHARGE ? 0.3 : 1.55) * (this.state === S.IDLE && this.onGround && this.intent.sprint ? 1.42 : 1) * this.garrickAdvanceFactor(); walking = mx !== 0; }
       if (this.state === S.ATTACK && this.atk && this.atkPhase <= 1) {
         const o = this.opponent;
         const near = o && !o.isDown() && Math.abs(o.root.position.x - pos.x) < MIN_DIST && Math.abs(o.root.position.y - pos.y) < 1;
@@ -2352,7 +2381,7 @@ export class Fighter implements Entity {
       +this.nesaSpinYaw.toFixed(3), +this.model.nesaHammerScale.toFixed(2),
       this.nesaCCharges, +this.nesaCRechargeT.toFixed(2), +this.model.nesaSpinHorizontal.toFixed(2),
       +this.parryCounterSpin.toFixed(3), this.atkId === "pc" ? 1 : 0,
-      +this.kaizenSpinSpeed.toFixed(2), this.kaizenSpinDirection];
+      +this.kaizenSpinSpeed.toFixed(2), this.kaizenSpinDirection, this.garrickResolve];
   }
 
   applySnapshot(s: any[]) {
@@ -2374,6 +2403,7 @@ export class Fighter implements Entity {
     // Appended fields: older snapshots default to normal clockwise speed.
     this.kaizenSpinSpeed = s.length > 49 ? s[49] : 1;
     this.kaizenSpinDirection = s.length > 50 ? s[50] : 1;
+    this.garrickResolve = s.length > 51 ? s[51] : 0;
     this.hp = s[8];
     this.guard = s[9];
     this.model.walk = s[10];

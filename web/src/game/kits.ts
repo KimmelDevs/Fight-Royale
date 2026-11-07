@@ -1,3 +1,4 @@
+// FIGHT_ROYALE_BULLET_SWORDPLAY_GARRICK_RESOLVE_V1
 // FIGHT_ROYALE_KAIZEN_MOBILE_SPIN_V8
 // FIGHT_ROYALE_GARRICK_BOB_KAIZEN_ROOK_V7
 // FIGHT_ROYALE_PARRY_SPIN_COUNTERS_V2
@@ -197,6 +198,23 @@ export function attacks(kit: string, element: string): Record<string, Attack> {
     if (move.dmg > 0) move.no_parry = true;
   }
   t.pc = parryCounterAttack(kit, element, t);
+  // BULLET_SWORDPLAY_V1: Aster's X now sweeps forward instead of jumping.
+  // Keep its existing name, damage and cooldown; Weaken reduces outgoing damage 20% for 4s.
+  if (kit === "knight" && element === "light" && t.x?.name === "Rising Slash") {
+    t.x.self_jump = 0;
+    t.x.wind = 0.18;
+    t.x.active = 0.12;
+    t.x.recover = 0.40;
+    t.x.reach = 2.25;
+    t.x.lunge = 4.4;
+    t.x.style = "aster_forward_sweep";
+    t.x.pose_w = "aster_sweep_low_w";
+    t.x.pose_s = "aster_sweep_low_s";
+    t.x.effect = "weaken";
+    t.x.effect_t = 4;
+    t.x.effect_p = 0.80;
+    t.x.desc = "Crouch low, advance, and sweep the blade forward. A hit weakens the enemy for 4 seconds.";
+  }
   // FIGHT_ROYALE_GARRICK_BOB_KAIZEN_ROOK_V7: targeted kit changes.
   if (kit === "knuckles") {
     // Five light punches only. Charged punch, parry counter and all Z/X/C/V untouched.
@@ -758,6 +776,9 @@ const ASTER_COMBAT_V2: Record<string, Pose> = {
   aster_bash_w: P([0.07, -0.23, -0.01], [-0.035, 0.11, 0], [-0.79, 0.31, -0.25], [-0.18, 0, 0], [-1.48, -0.24, 0.12], [0, 0, -0.12], [-0.41, 0, 0.12], [0.33, 0, -0.11], -0.105),
   aster_bash_s: P([0.36, 0.18, -0.035], [-0.105, -0.14, 0], [-0.75, 0.15, -0.28], [-0.15, 0, 0], [-1.66, -0.06, 0.12], [0, 0, -0.1], [-0.66, 0, 0.12], [0.48, 0, -0.11], -0.13),
   // Rising Slash: load the sword low and drive an uppercut through the jump.
+  // Aster crouches on the front leg, coils his torso, then extends the sword horizontally.
+  aster_sweep_low_w: P([0.34, -0.42, 0.12], [0.05, 0.14, 0], [-0.40, -0.69, -0.16], [0.22, 0, 0], [-1.20, -0.16, 0.15], [0, 0, -0.10], [-0.72, 0, 0.10], [0.64, 0, -0.08], -0.19),
+  aster_sweep_low_s: P([0.18, 0.62, -0.07], [-0.04, -0.24, 0], [-1.46, 0.67, -0.24], [0.37, 0, -0.10], [-1.15, -0.24, 0.26], [0, 0, -0.11], [-0.59, 0, 0.08], [0.51, 0, -0.07], -0.13),
   aster_rise_w: P([0.21, -0.29, 0], [-0.03, 0.25, 0], [-0.39, -0.58, -0.21], [0.44, 0, 0], [-1.3, -0.2, 0.18], [0, 0, -0.1], [-0.45, 0, 0.11], [0.39, 0, -0.09], -0.095),
   aster_rise_s: P([-0.22, 0.37, 0], [-0.14, -0.25, 0], [-2.73, 0.43, -0.13], [0.34, 0, 0], [-1.18, -0.17, 0.22], [0, 0, -0.1], [-0.59, 0, 0.09], [0.23, 0, -0.09], -0.025),
   // Blade Wave: shoulder-level coil, sharp release into a broad projecting cut.
