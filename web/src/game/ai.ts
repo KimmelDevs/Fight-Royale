@@ -115,6 +115,319 @@ export class AiBrain implements Brain {
 
 
 
+  // AI_PERSONALITY_THEATER_2_V1 — distinct movement + follow-up decisions for all 17.
+  // Deliberately uses only ordinary controls: move, jump, dash, attack, equipped skill.
+  // Enemy defense, cooldowns, hit tests, and arena bounds remain authoritative.
+  private theaterCd = rand(0.9, 2.1);
+  private theaterT = 0;
+  private theaterMode: "none" | "back" | "circle" | "chase" = "none";
+  private theaterFollow = "";
+  private theaterFollowT = 0;
+  private theaterJump = false;
+  private theaterDash = false;
+  private theaterSide = 1;
+  private theaterLastGap = 99;
+  private theaterComboCd = 0;
+  private theaterLastTargetSwing = -1;
+
+  /** Named skills are looked up AFTER loadout remapping; missing skills never fire. */
+  private theaterKey(f: Fighter, name: string): string | null {
+    const key = ["z", "x", "c"].find(k =>
+      f.attacks[k]?.name === name && (f.cooldowns[k] ?? 1) <= 0);
+    if (!key) return null;
+    const a = f.attacks[key];
+    if (f.kit === "sickle" && f.bloodFestivalT > 0) return null;
+    if (a.style === "nesa_heart_slam" && f.nesaCCharges <= 0) return null;
+    return key;
+  }
+
+  private theaterPlan(mode: "back" | "circle" | "chase", t: number,
+      follow: string, jump = false, dash = false) {
+    this.theaterMode = mode;
+    this.theaterT = t;
+    this.theaterFollow = follow;
+    this.theaterFollowT = t + 1.65;
+    this.theaterJump = jump;
+    this.theaterDash = dash;
+    this.theaterSide = Math.random() < 0.5 ? -1 : 1;
+    // Don't finish an old preplanned combo after deciding to disengage.
+    this.queue = [];
+    this.hold = 0;
+    this.tacticsT = 0;
+  }
+
+  /** Find a useful movement direction that actually fits inside the circular arena.
+   * This is a steering choice, not a teleport. Projectile/fire avoidance runs later.
+   */
+  private theaterDirection(f: Fighter, o: Fighter, preference: THREE.Vector3): THREE.Vector3 {
+    const at = f.root.position.clone().setY(0);
+    const toward = o.root.position.clone().sub(at).setY(0);
+    if (toward.lengthSq() < 0.001) toward.set(0, 0, 1);
+    toward.normalize();
+    const lateral = new THREE.Vector3(-toward.z, 0, toward.x);
+    const center = at.clone().negate();
+    if (center.lengthSq() > 0.001) center.normalize();
+    const target = preference.lengthSq() > 0.001 ? preference.clone().normalize() : toward;
+    const choices = [
+      target.clone(),
+      target.clone().addScaledVector(lateral, 0.75).normalize(),
+      target.clone().addScaledVector(lateral, -0.75).normalize(),
+      lateral.clone(), lateral.clone().negate(),
+      target.clone().addScaledVector(center, 0.8).normalize(),
+      center.clone(),
+    ];
+    const cap = Math.max(1.5, f.arenaRadius - f.radius - 0.28);
+    const ahead = f.dashCd <= 0 && f.onGround ? 3.3 : 1.15;
+    let best = target, score = -Infinity;
+    for (const dir of choices) {
+      if (dir.lengthSq() < 0.001) continue;
+      const dest = at.clone().addScaledVector(dir, ahead);
+      if (dest.length() > cap) dest.setLength(cap);
+      const displacement = dest.clone().sub(at);
+      const actual = displacement.length();
+      const alignment = actual > 0.001 ? displacement.normalize().dot(target) : -1;
+      const value = alignment * 2.1 + actual * 0.44 - (actual < ahead * 0.28 ? 2.2 : 0);
+      if (value > score) { score = value; best = dir; }
+    }
+    return best.clone().normalize();
+  }
+
+  /** Start recognizable mini-sequences: step away, entice a miss, then come back
+   * with the fighter's real equipped move. Low HP changes temperament by class.
+   */
+  private theaterFootwork(f: Fighter, o: Fighter, dt: number) {
+    if (f.stage || f.isDown()) return;
+    const id = f.look.name.toLowerCase();
+    const style = FIGHT_STYLES[id];
+    if (!style) return;
+    const delta = o.root.position.clone().sub(f.root.position).setY(0);
+    const gap = delta.length();
+    if (gap < 0.01) return;
+    const toward = delta.divideScalar(gap);
+    const lateral = new THREE.Vector3(-toward.z, 0, toward.x);
+    const punish = this.hasPunishWindow(o);
+    const hostileSwing = o.state === S.ATTACK && o.atkPhase === 0 &&
+      !!o.atk && o.atk.type === "melee" && gap < o.atk.reach + 0.95;
+    const chased = gap < this.theaterLastGap - 0.06;
+    this.theaterLastGap = gap;
+    this.theaterComboCd = Math.max(0, this.theaterComboCd - dt);
+    this.theaterCd = Math.max(0, this.theaterCd - dt);
+    this.theaterFollowT = Math.max(0, this.theaterFollowT - dt);
+    if (this.theaterFollowT <= 0) this.theaterFollow = "";
+
+    // Existing projectile evasions, Nesa dodge, parry, and hazard reactions outrank
+    // voluntary showmanship. Never cancel an already committed attack to perform it.
+    const free = f.state === S.IDLE || f.state === S.BLOCK;
+    if (this.theaterMode !== "none" && this.theaterT > 0) {
+      this.theaterT = Math.max(0, this.theaterT - dt);
+      if (free && this.sideT <= 0 && this.blockWait < 0 && this.blockHold <= 0) {
+        const preferred = this.theaterMode === "back" ?
+          toward.clone().negate().addScaledVector(lateral, this.theaterSide * 0.3) :
+          this.theaterMode === "circle" ? lateral.clone().multiplyScalar(this.theaterSide)
+            .addScaledVector(toward, gap > style.range ? 0.27 : -0.15) : toward;
+        const safe = this.theaterDirection(f, o, preferred);
+        f.intent.move.copy(safe);
+        if (this.theaterJump && f.onGround) {
+          f.intent.jump = true;
+          this.theaterJump = false;
+        }
+        if (this.theaterDash && f.onGround && f.dashCd <= 0 &&
+            f.state === S.IDLE && this.theaterT > 0.10) {
+          f.intent.dash.copy(safe);
+          this.theaterDash = false;
+        }
+      }
+      if (this.theaterT <= 0) this.theaterMode = "none";
+      return;
+    }
+    this.theaterMode = "none";
+    if (!free || !f.onGround || this.sideT > 0 || this.blockHold > 0 ||
+        this.blockWait >= 0 || this.theaterCd > 0 || this.theaterFollow) return;
+
+    const hp = f.hp / Math.max(f.maxHp, 1);
+    // Characters with low health aren't all cowards: Kira/Rook/Veyr keep pushing.
+    const aggressive = id === "kira" || id === "rook" || id === "veyr";
+    const caution = hp < 0.35 && !aggressive;
+    const intensity = 0.65 + this.p.block * 0.65;
+    const intent = (prob: number) => Math.random() < prob * intensity;
+    // A little randomness is desirable, but the follow-up itself is deliberate.
+    this.theaterCd = rand(1.35, 3.05) * this.p.think;
+    switch (id) {
+      case "aster":
+        if (gap < 2.75 && (o.state === S.BLOCK || hostileSwing) && intent(0.68))
+          this.theaterPlan("back", 0.30, "Shield Bash", false, false);
+        else if (punish && gap < 3.3) this.theaterPlan("chase", 0.26, "Rising Slash", false, false);
+        break;
+      case "vesper":
+        if (gap < 2.8 && !punish && intent(0.78))
+          this.theaterPlan("back", 0.26, "combo3", false, false);
+        else if (punish && gap < 4.1) this.theaterPlan("chase", 0.24, "combo3", false, true);
+        break;
+      case "garrick":
+        if (gap < 3.2 && (hostileSwing || o.state === S.BLOCK) && intent(0.80))
+          this.theaterPlan("back", 0.35, "charge", false, false);
+        else if (punish && gap < 3.6) this.theaterPlan("chase", 0.32, "Titan Cleave", false, false);
+        break;
+      case "kaede":
+        if (hostileSwing && gap < 2.7 && intent(0.85))
+          this.theaterPlan("circle", 0.14, "Counter Stance", false, false);
+        else if (punish && gap < 3.1) this.theaterPlan("chase", 0.26, "Thousand Cuts", false, false);
+        else if (gap < 2.8 && o.state === S.BLOCK) this.theaterPlan("circle", 0.34, "charge");
+        break;
+      case "ember":
+        if (gap < 5.0 && (chased || hostileSwing || caution) && intent(0.85))
+          this.theaterPlan("back", 0.36, "Fireball Volley", gap < 2.7, gap < 2.3);
+        else if (gap > 3.7 && punish) this.theaterPlan("circle", 0.25, "charge");
+        break;
+      case "marina":
+        if (gap < 4.4 && (chased || caution) && intent(0.80))
+          this.theaterPlan("back", 0.34, "Tidal Ring", false, gap < 2.1);
+        else if (gap < 2.6 && hostileSwing) this.theaterPlan("circle", 0.23, "Bubble Ward");
+        break;
+      case "nyx":
+        // Signature: leap backwards, bait pursuit, then teleport back with Smoke Step.
+        if (gap < 3.55 && this.theaterKey(f, "Smoke Step") &&
+            (chased || hostileSwing || o.state === S.IDLE) && intent(0.93))
+          this.theaterPlan("back", 0.44, "Smoke Step", true, false);
+        else if (punish && gap < 3.8) this.theaterPlan("chase", 0.22, "Phantom Rush", false, true);
+        break;
+      case "rook":
+        // Rook hates dead air and uses real forward dashes to keep punches flowing.
+        if (gap > 1.85 && gap < 5.3 && intent(0.90))
+          this.theaterPlan("chase", 0.29, "Rush", false, gap > 2.7);
+        else if (gap < 2.2 && o.state === S.BLOCK && intent(0.50))
+          this.theaterPlan("back", 0.18, "combo4");
+        break;
+      case "gale":
+        if (gap < 4.4 && intent(0.80))
+          this.theaterPlan(gap > 2.5 ? "chase" : "circle", 0.41,
+            "Wind Step", true, gap > 3.5);
+        break;
+      case "bob":
+        if (gap < 5.0 && (chased || caution || o.state === S.IDLE) && intent(0.90))
+          this.theaterPlan("back", 0.35, "Land Mine", gap < 2.5, gap < 2.0);
+        else if (gap > 3.3) this.theaterPlan("circle", 0.27, "Paralyze Bomb");
+        break;
+      case "kira":
+        // The opposite of Nyx: advance immediately after knockback/recovery.
+        if (gap > 1.7 && gap < 6.8 && intent(0.96))
+          this.theaterPlan("chase", 0.36, punish ? "combo4" : "Cyclone Kick",
+            false, f.dashCd <= 0 && gap > 2.65);
+        else if (gap < 2.5 && punish) this.theaterPlan("chase", 0.19, "combo4");
+        break;
+      case "raven":
+        if (gap < 4.0 && (chased || hostileSwing || caution) && intent(0.88))
+          this.theaterPlan("back", 0.27, "Blink", false, false);
+        else if (gap > 3.1 && punish) this.theaterPlan("circle", 0.23, "Thunderstorm");
+        break;
+      case "ash":
+        if (gap < 5.1 && (chased || hostileSwing || caution) && intent(0.88))
+          this.theaterPlan("back", 0.37, "Hunter's Snare", gap < 3.2, gap < 2.4);
+        else if (gap > 3.5 && punish) this.theaterPlan("circle", 0.20, "charge");
+        break;
+      case "veyr":
+        if (hostileSwing && gap < 2.7 && intent(0.79))
+          this.theaterPlan("circle", 0.14, "Death Feint");
+        else if (gap > 1.9 && gap < 4.6 && intent(0.88))
+          this.theaterPlan("chase", 0.26, f.bloodFestivalT > 0 ? "combo4" : "Blood Festival",
+            false, f.dashCd <= 0 && gap > 3);
+        break;
+      case "zarek":
+        if (punish && gap < 4.0) this.theaterPlan("chase", 0.27, "Phantom Spiral", false, gap > 2.9);
+        else if (o.state === S.BLOCK && gap < 3.2) this.theaterPlan("circle", 0.31, "Serpent Wheel");
+        break;
+      case "kaizen":
+        // Remain at chain range: retreat from fists, then hook escaping prey.
+        if (gap < 2.2 && (hostileSwing || chased) && intent(0.86))
+          this.theaterPlan("back", 0.33, "Predator's Hook", false, false);
+        else if (gap > 2.5 && gap < 4.7 && !hostileSwing && intent(0.68))
+          this.theaterPlan("circle", 0.26, "Predator's Hook");
+        else if (punish && gap < 3.6) this.theaterPlan("chase", 0.22, "Thousand Cuts: Death Spiral");
+        break;
+      case "nesa":
+        if (gap < 3.0 && hostileSwing && intent(0.83))
+          this.theaterPlan("circle", 0.26, "Pink Heart Smash");
+        else if (gap > 2.7 && gap < 6.3 && intent(0.83))
+          this.theaterPlan("chase", 0.31, "Upsie Daisie", false, gap > 4.5);
+        else if (gap < 2.8 && (punish || o.state === S.BLOCK))
+          this.theaterPlan("circle", 0.20, "Pink Heart Smash");
+        break;
+    }
+  }
+
+  /** Follow through after the movement rather than selecting a random unrelated skill.
+   * When the equipped move is unavailable or out of range, regular offense resumes.
+   */
+  private theaterOffense(f: Fighter, o: Fighter): boolean {
+    if (f.stage || !this.theaterFollow || this.theaterFollowT <= 0) return false;
+    if (this.theaterT > 0) return true; // first actually finish the bait / chase movement
+    if (f.state !== S.IDLE || this.blockHold > 0 || this.blockWait >= 0 ||
+        this.comboParryTarget > this.threats.now() || this.queue.length || this.hold > 0) return false;
+    const gap = f.root.position.clone().setY(0)
+      .distanceTo(o.root.position.clone().setY(0));
+    let follow = this.theaterFollow;
+    const finish = () => { this.theaterFollow = ""; this.theaterFollowT = 0; };
+    // Don't spin in empty air; wait briefly for the baited enemy to reach attack range.
+    if (follow.startsWith("combo")) {
+      const reach = (f.attacks.l1?.reach || 1.8) + 0.33;
+      if (gap > reach && gap < reach + 3.0 && f.onGround &&
+          ["vesper", "rook", "kira", "veyr", "zarek"].includes(f.look.name.toLowerCase())) {
+        // Re-enter a combo at REAL dash speed, rather than swinging at empty air.
+        const to = o.root.position.clone().sub(f.root.position).setY(0);
+        const safe = this.theaterDirection(f, o, to);
+        f.intent.move.copy(safe);
+        if (f.dashCd <= 0 && gap > reach + 0.7) f.intent.dash.copy(safe);
+        return true;
+      }
+      if (gap > reach || this.theaterComboCd > 0) return false;
+      const max = Math.max(1, Math.min(this.p.combo,
+        Number(follow.replace("combo", "")) || 2,
+        Object.keys(f.attacks).filter(k => /^l\d+$/.test(k)).length));
+      for (let i = 0; i < max; i++) this.queue.push([i === 0 ? 0 : 0.18, 0.065]);
+      this.theaterComboCd = rand(0.65, 1.0);
+      finish();
+      return true;
+    }
+    if (follow === "charge") {
+      const longRange = RANGED.has(f.kit) || f.kit === "bomb";
+      if (!longRange && gap > (f.attacks.heavy?.reach || 2.3) + 0.4) return false;
+      this.queue = [[0, HOLD_T + rand(0.35, 0.66)]];
+      finish();
+      return true;
+    }
+    const key = this.theaterKey(f, follow);
+    if (!key) { finish(); return false; }
+    const a = f.attacks[key];
+    const isBlink = a.type === "blink";
+    const inRange = isBlink ? (a.mode === "behind" ? gap < 5.3 : gap < 6.4) :
+      a.name === "Upsie Daisie" ? gap <= Math.min(6.55, a.reach + a.lunge * 0.31) :
+      a.type === "melee" || a.type === "phantom" ?
+        gap <= Math.max(a.reach + Math.min(1.15, a.lunge * 0.19), a.type === "phantom" ? 4.2 : 1.8) :
+      a.type === "strike" && a.at === "self" ? gap <= a.radius + 0.35 :
+      a.type === "mine" ? gap < 5.0 :
+      a.type === "projectile" || a.type === "lob" ? gap < 9.5 : true;
+    if (!inRange) {
+      if (a.type === "melee" && gap < Math.max(5.0, a.reach + 2.7) && f.onGround &&
+          ["aster", "vesper", "rook", "kira", "zarek", "gale", "nesa"].includes(f.look.name.toLowerCase())) {
+        const safe = this.theaterDirection(f, o,
+          o.root.position.clone().sub(f.root.position).setY(0));
+        f.intent.move.copy(safe);
+        if (f.dashCd <= 0 && gap > a.reach + 1.0) f.intent.dash.copy(safe);
+        return true;
+      }
+      return false;
+    }
+    // A failed feint/counter is punishable. Don't cast it if nobody is attacking.
+    if (a.mode === "blood_feint" || a.mode === "counter") {
+      if (o.state !== S.ATTACK || o.atkPhase !== 0) return false;
+    }
+    if (a.mode === "blood_festival" && gap > 3.4) return false;
+    f.intent.skill = key;
+    this.skillCd = rand(this.p.skill[0], this.p.skill[1]);
+    finish();
+    return true;
+  }
+
   constructor(private threats: Threats, level: number) {
     this.p = PRESETS[Math.max(0, Math.min(level, PRESETS.length - 1))];
   }
@@ -144,7 +457,7 @@ export class AiBrain implements Brain {
     if (f.stage) { if (this.platform(f, o, dt)) return; }
     this.react(f, o);
     this.defendLongCombo(f, o);
-    if (!f.stage) { this.dodge(f); this.position(f, o, dt); this.tacticalFootwork(f, o, dt); }
+    if (!f.stage) { this.dodge(f); this.position(f, o, dt); this.tacticalFootwork(f, o, dt); this.theaterFootwork(f, o, dt); }
     // NESA_AI_EDGE_GIANT_KIRA_AIR_MOVE_V2: Kira can reposition between air kicks.
     // Use the same directional input and capped movement available to the player.
     if (!f.stage && f.kit === "kicks" && !f.onGround && f.state === S.ATTACK &&
@@ -186,7 +499,7 @@ export class AiBrain implements Brain {
       this.queue = [];
       this.hold = 0;
     }
-    if (!this.aiAirTap) this.offense(f, o, dt);
+    if (!this.aiAirTap && !this.theaterOffense(f, o)) this.offense(f, o, dt);
     if (f.kit === "wind" && !f.stage) this.airDive(f, o, dt);
     // Sprint to close long gaps. A direction aimed at retreat/evade is not sprinted.
     // This uses the same run animations as player Shift movement.
