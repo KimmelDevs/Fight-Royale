@@ -294,6 +294,49 @@ interface Trap {
   pos: THREE.Vector3; mesh: THREE.Group; arm: number; life: number; t: number;
 }
 
+// ROXY_SNOW_PUPPET_MASTER_V1 — persistent snow summons (host-controlled, guest visuals only).
+interface SnowPuppet {
+  id: number; owner: Fighter | null; team: number; atk: Attack | null; power: number;
+  pos: THREE.Vector3; targetId: number; life: number; age: number;
+  mesh: THREE.Group; mode: "freeze" | "slow";
+}
+
+function buildSnowPuppetMesh(mode: "freeze" | "slow"): THREE.Group {
+  const g = new THREE.Group();
+  const snow = new THREE.MeshLambertMaterial({ color: "#edfaff" });
+  const shadow = new THREE.MeshLambertMaterial({ color: "#b9d9ee" });
+  const ice = new THREE.MeshLambertMaterial({ color: mode === "freeze" ? "#6ac9ff" : "#9fe1ee" });
+  const ink = new THREE.MeshBasicMaterial({ color: "#1d446c" });
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.36, 14, 10), snow);
+  body.position.y = 0.39;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.25, 14, 10), snow);
+  head.position.y = 0.94;
+  const waist = new THREE.Mesh(new THREE.TorusGeometry(0.29, 0.048, 7, 18), ice);
+  waist.rotation.x = Math.PI / 2;
+  waist.position.y = 0.60;
+  g.add(body, head, waist);
+  for (const side of [-1, 1]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.046, 8, 6), ink);
+    eye.position.set(side * 0.10, 0.99, 0.22);
+    const arm = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.46, 6), shadow);
+    arm.position.set(side * 0.38, 0.65, 0);
+    arm.rotation.z = side * 1.1;
+    g.add(eye, arm);
+  }
+  const crown = new THREE.Mesh(new THREE.ConeGeometry(mode === "freeze" ? 0.23 : 0.18, 0.37, 5), ice);
+  crown.position.y = 1.31;
+  g.add(crown);
+  const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.10, 0), ice);
+  gem.position.set(0, 0.79, 0.32);
+  g.add(gem);
+  const aura = new THREE.Mesh(new THREE.TorusGeometry(0.43, 0.025, 5, 28), new THREE.MeshBasicMaterial({ color: "#8ddcff", transparent: true, opacity: 0.65 }));
+  aura.rotation.x = Math.PI / 2;
+  aura.position.y = 0.09;
+  g.add(aura);
+  g.scale.setScalar(mode === "freeze" ? 1.0 : 0.82);
+  return g;
+}
+
 function buildTrap(kind: string, color: string): THREE.Group {
   const g = new THREE.Group();
   if (kind === "mine") {
@@ -477,6 +520,7 @@ export class Game implements MobHost {
   projectiles: Projectile[] = [];
   /** Mines and powder kegs on the field (host simulates; guests only show them). */
   traps: Trap[] = [];
+  private snowPuppets: SnowPuppet[] = [];
   /** Blood Festival arenas. Created on host and replicated as visual events on clients. */
   private bloodFestivals: BloodFestival[] = [];
   private magicPools: MagicPool[] = [];
@@ -699,6 +743,9 @@ export class Game implements MobHost {
     this.projectiles = [];
     for (const t of this.traps) this.scene.remove(t.mesh);
     this.traps = [];
+    // ROXY_SNOW_PUPPET_MASTER_V1: clear summons on the next round/rematch.
+    for (const p of this.snowPuppets) this.disposeSnowPuppet(p);
+    this.snowPuppets = [];
     for (const festival of this.bloodFestivals) this.scene.remove(festival.visual);
     this.bloodFestivals = [];
     for (const pool of this.magicPools) this.scene.remove(pool.visual);
@@ -1020,6 +1067,7 @@ export class Game implements MobHost {
     this.garrickResolveFootsteps(dt);
     this.updateProjectiles(dt);
     this.updateTraps(dt);
+    this.updateSnowPuppets(dt);
     this.updateBloodFestivals(dt);
     this.updateMagicPools(dt);
     this.updateEmberFire(dt);
@@ -1501,6 +1549,7 @@ export class Game implements MobHost {
       case "blink": this.blink(f, a); break;
       case "phantom": this.phantom(f, a); break;
       case "lob": this.throwBombs(f, a); break;
+      case "snow_puppet": this.summonSnowPuppets(f, a); break;
       case "mine": this.plantMine(f, a); break;
       case "barrel": this.placeBarrel(f, a); break;
       default: this.melee(f, a);
@@ -2057,6 +2106,100 @@ export class Game implements MobHost {
       const an = (i / (a.repeat - 1)) * Math.PI * 2 + Math.random();
       const at = pos.clone().add(new THREE.Vector3(Math.cos(an), 0, Math.sin(an)).multiplyScalar(a.radius * 0.9));
       this.later(a.interval * i, () => one(at));
+    }
+  }
+
+  // ROXY_SNOW_PUPPET_MASTER_V1: spawn, move, and resolve real snow minions. Never damage allies.
+  private disposeSnowPuppet(p: SnowPuppet) {
+    this.scene.remove(p.mesh);
+    p.mesh.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      mesh.geometry.dispose();
+      for (const mat of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) mat.dispose();
+    });
+  }
+
+  private makeSnowPuppet(id: number, owner: Fighter | null, team: number, atk: Attack | null,
+      power: number, pos: THREE.Vector3, targetId: number, mode: "freeze" | "slow", duration: number) {
+    if (this.snowPuppets.some(p => p.id === id)) return;
+    const mesh = buildSnowPuppetMesh(mode);
+    mesh.position.copy(pos);
+    this.scene.add(mesh);
+    this.snowPuppets.push({ id, owner, team, atk, power, pos, targetId, mode, life: duration, age: 0, mesh });
+  }
+
+  private summonSnowPuppets(f: Fighter, a: Attack) {
+    const target = f.opponent && !f.opponent.isDown() ? f.opponent : this.enemiesOf(f)[0];
+    const forward = new THREE.Vector3(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
+    const right = new THREE.Vector3(forward.z, 0, -forward.x);
+    for (let i = 0; i < a.count; i++) {
+      const offset = i - (a.count - 1) / 2;
+      const pos = f.root.position.clone().addScaledVector(forward, 1.05).addScaledVector(right, this.plat ? 0 : offset * 1.05);
+      if (!this.plat) pos.y = 0; // Ground-level even when the opponent is airborne.
+      const id = this.nextId++;
+      const mode: "freeze" | "slow" = a.style === "freeze" ? "freeze" : "slow";
+      this.makeSnowPuppet(id, f, f.team, a, f.atkPower, pos, target?.id ?? -1, mode, a.duration);
+      this.emit(["snowPuppet", id, f.id, f.team, pos.toArray(), target?.id ?? -1, mode, a.duration]);
+      this.fxp("motes", pos.clone().add(new THREE.Vector3(0, 0.7, 0)), "#d6f8ff", 11);
+    }
+    this.snd("splash", 0.55);
+  }
+
+  private finishSnowPuppet(p: SnowPuppet, exploded: boolean) {
+    if (!this.snowPuppets.includes(p)) return;
+    if (exploded && this.cfg.role !== "client" && p.owner && p.atk) {
+      const mid = p.pos.clone().add(new THREE.Vector3(0, 0.7, 0));
+      this.fxp("explosion", mid, p.mode === "freeze" ? "#72caff" : "#a6eaff", p.atk.radius);
+      this.fxp("motes", mid, "#e3f9ff", 18);
+      this.fxp("ring", mid, "#b3ebff", p.atk.radius, 0.25, 0.75);
+      for (const d of this.enemiesOf(p.owner)) {
+        const to = d.root.position.clone().sub(p.pos);
+        const height = Math.abs(to.y);
+        to.y = 0;
+        if (to.length() > p.atk.radius + d.radius * 0.5 || (this.plat && height > 1.6)) continue;
+        if (!this.plat && d.airborne()) continue;
+        const dir = to.lengthSq() > 0.0001 ? to.normalize() : new THREE.Vector3(1, 0, 0);
+        // Standard receiveHit handles guarding, parrying, wards and status resistance.
+        this.applyHit(p.owner, d, p.atk, p.power, d.chest(), dir, true);
+      }
+    }
+    this.disposeSnowPuppet(p);
+    this.snowPuppets = this.snowPuppets.filter(x => x !== p);
+    if (this.cfg.role !== "client") this.emit(["snowPuppetEnd", p.id]);
+  }
+
+  private updateSnowPuppets(dt: number) {
+    for (const p of [...this.snowPuppets]) {
+      p.life -= dt;
+      p.age += dt;
+      if (this.cfg.role !== "client" && (!p.owner || p.owner.isDown() || this.roundOver)) {
+        this.finishSnowPuppet(p, false);
+        continue;
+      }
+      let target = this.entities.get(p.targetId);
+      if (!target || target.isDown() || target.team === p.team) {
+        target = p.owner ? this.enemiesOf(p.owner)[0] : undefined;
+        if (target) p.targetId = target.id;
+      }
+      if (target) {
+        const delta = target.root.position.clone().sub(p.pos);
+        if (!this.plat) delta.y = 0;
+        const distance = delta.length();
+        const speed = p.atk?.speed ?? (p.mode === "freeze" ? 3.8 : 3.0);
+        if (distance > 0.05) {
+          const direction = delta.multiplyScalar(1 / distance);
+          p.pos.addScaledVector(direction, Math.min(Math.max(0, distance - 0.45), speed * dt));
+          p.mesh.rotation.y = Math.atan2(direction.x, direction.z);
+        }
+        // On contact, this puppet explodes exactly once. Other puppets are independent.
+        if (this.cfg.role !== "client" && distance < 0.95) {
+          this.finishSnowPuppet(p, true);
+          continue;
+        }
+      }
+      p.mesh.position.copy(p.pos).add(new THREE.Vector3(0, Math.sin(p.age * 7 + p.id) * 0.06, 0));
+      if (p.life <= 0) this.finishSnowPuppet(p, this.cfg.role !== "client");
     }
   }
 
@@ -2806,6 +2949,11 @@ export class Game implements MobHost {
         : (pvp ? Math.min(a.duration, 2) : a.duration);
       f.wardT = dur;
       this.fxp("bubble", f.id, dur);
+      if (f.look.element === "frost") {
+        this.fxp("ring", f.root.position.clone().setY(this.plat ? f.root.position.y : 0), "#c2f1ff", 1.4, 0.3, 0.9);
+        this.fxp("motes", f.chest(), "#e9fcff", 24);
+        this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.75, 0)), "SNOWGLASS", "#e5f9ff", 0.8);
+      }
       this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.9, 0)), "WARD", "#8fe6ff", 0.9);
     } else if (a.mode === "heal") {
       const frac = pvp ? 0.16 : 0.25;
@@ -3682,6 +3830,8 @@ export class Game implements MobHost {
       ev.push(["spawnF", f.id, f.charIndex, f.team, f.owner, s?.name ?? f.look.name, +f.root.position.x.toFixed(2), +f.root.position.z.toFixed(2), f.root.rotation.y, s?.loadout ?? null, s?.emblem ?? null, f.bonusSkillUnlocked]);
     }
     for (const m of this.mobs) if (!m.dead) ev.push(["spawnM", m.id, m.type, m.elite ? 1 : 0, m.hpMult ?? 1, +m.root.position.x.toFixed(2), +m.root.position.z.toFixed(2)]);
+    // ROXY_SNOW_PUPPET_MASTER_V1: late joiners also see currently active snow minions.
+    for (const p of this.snowPuppets) ev.push(["snowPuppet", p.id, p.owner?.id ?? -1, p.team, p.pos.toArray(), p.targetId, p.mode, p.life]);
     this.net?.sendTo(peer, { t: "sync", e: ev, s: [this.wave, this.kills, this.phase] });
     const slot = this.cfg.players.find((p) => p.peer === peer);
     if (!slot || this.fighters.some((f) => f.owner === peer)) return;
@@ -3758,6 +3908,17 @@ export class Game implements MobHost {
         break;
       }
       case "projEnd": { const p = this.projectiles.find((x) => x.id === ev[1]); if (p) p.done = true; break; }
+      case "snowPuppet": {
+        // Guest renders a moving snowman; damage and freeze/slow are host-authoritative.
+        this.makeSnowPuppet(ev[1], null, ev[3], null, 0, v3(ev[4]), ev[5], ev[6], ev[7]);
+        break;
+      }
+      case "snowPuppetEnd": {
+        const p = this.snowPuppets.find(x => x.id === ev[1]);
+        if (p) this.finishSnowPuppet(p, false);
+        break;
+      }
+
       case "trap": {
         const t: Trap = { id: ev[1], kind: ev[2], owner: null, team: -1, atk: null as any, power: 0, pos: v3(ev[3]), mesh: buildTrap(ev[2], ev[4]), arm: 0, life: 99, t: 0 };
         t.mesh.position.copy(t.pos);

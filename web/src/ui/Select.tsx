@@ -149,7 +149,7 @@ export function InfoPanel({ index, editable }: { index: number; editable?: boole
           </div>
         ))}
       </div>
-      <div className="small">{CONTROLS[ch.look.kit]}</div>
+      <div className="small">{ch.look.element === "frost" ? "Tap: ice bolts - Hold: charged ice spell - Z: Snowglass Shield - X: Freezing Puppet - C: Glacier Meteor - V: Three slowing puppets" : CONTROLS[ch.look.kit]}</div>
       <div className="small">HP {Kits.STATS[ch.look.kit].hp}</div>
       {(() => {
         const slots = ["z", "x", "c", "v"];

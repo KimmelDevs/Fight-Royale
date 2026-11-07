@@ -314,6 +314,10 @@ function bonusSkill(kit: string, element: string): Attack {
   switch (kit) {
     case "mage":
       // ASTER_EMBER_LATEST_20261106: fire is consumed to amplify the beam.
+      if (element === "frost") return a({ name: "Snowfall Parade", desc: "Summon three snow puppets. Each chases an enemy and explodes in slowing frost (no freezing).", cd: 17,
+        type: "snow_puppet", style: "slow", wind: 0.30, recover: 0.45, dmg: 58, guard: 16, knock: 1.2, stun: 0.1,
+        count: 3, speed: 3.0, radius: 1.05, duration: 5.0, effect: "slow", effect_t: 2.8, effect_p: 0.55,
+        pose_w: "mh_w", pose_s: "m3_s" });
       if (element === "fire") return a({ name: "Absolute Combustion",
         desc: "Condense nearby fire patches and active burns into a white-hot beam. Each consumed patch and burn amplifies the damage.",
         cd: 16, type: "buff", mode: "ember_ignition", wind: 0.50, active: 0.06,
@@ -389,6 +393,22 @@ function mage(element: string): Record<string, Attack> {
     l2: a({ type: "projectile", wind: 0.16, active: 0.05, recover: 0.28, dmg: 60 * mul, guard: 15, knock: 1.8, stun: 0.3, speed, pose_w: "m2_w", pose_s: "m2_s", next: "l3" }),
     l3: a({ type: "projectile", wind: 0.24, active: 0.05, recover: 0.42, dmg: 42 * mul, guard: 14, knock: 3, stun: 0.4, speed, count: 3, spread: 0.22, pose_w: "m3_w", pose_s: "m3_s" }),
   };
+  // ROXY_SNOW_PUPPET_MASTER_V1: the snow summons are persistent arena objects, not generic circle FX.
+  if (element === "frost") {
+    t.heavy = a({ type: "projectile", wind: 0.22, active: 0.05, recover: 0.5, dmg: 170, guard: 47, knock: 4.5, stun: 0.48, heavy: true,
+      speed: 12, size: 1.7, style: "bolt", pose_w: "mh_w", pose_s: "mh_s" });
+    t.z = a({ name: "Snowglass Shield", desc: "Create a protective ice shield for 2 seconds in PvP (4 seconds in survival).", cd: 11,
+      type: "buff", mode: "ward", duration: 4, wind: 0.12, recover: 0.28, pose_w: "mh_w", pose_s: "m3_s" });
+    t.x = a({ name: "Frost Marionette", desc: "Summon one snow puppet that chases an enemy and bursts, freezing on a successful hit.", cd: 9,
+      type: "snow_puppet", style: "freeze", wind: 0.26, recover: 0.42, dmg: 77, guard: 24, knock: 0.9, stun: 0.2,
+      count: 1, speed: 3.8, radius: 0.95, duration: 5.5, effect: "paralyze", effect_t: 1.35,
+      pose_w: "m2_w", pose_s: "m2_s" });
+    t.c = a({ name: "Glacier Meteor", desc: "A large ice meteor falls onto the marked position, damaging and slowing anyone caught beneath it.", cd: 15,
+      type: "strike", style: "meteor", wind: 0.36, recover: 0.65, dmg: 245, guard: 65, knock: 5.5, stun: 0.65,
+      heavy: true, delay: 0.85, radius: 2.1, effect: "slow", effect_t: 2.0, effect_p: 0.65,
+      pose_w: "mh_w", pose_s: "mh_s" });
+    return t;
+  }
   if (element === "fire") {
     // Charged basic (heavy) leaves a 20-second fire patch at its impact.
     t.heavy = a({ type: "strike", wind: 0.15, active: 0.05, recover: 0.55, dmg: 155, guard: 60, knock: 6, stun: 0.7, heavy: true, delay: 0.5, radius: 1.05, style: "explosion", pose_w: "mh_w", pose_s: "mh_s" });

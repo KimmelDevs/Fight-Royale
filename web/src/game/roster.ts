@@ -145,6 +145,15 @@ export const CHARACTERS: Character[] = [
       hair: "#5a3427", hair_shade: "#b78368", iris_top: "#6f4a39", iris_bottom: "#b69072", eye_dark: "#2c1a15",
       tunic: "#f1d0da", band: "#c17696", pants: "#6d4956", boots: "#5a3541", metal: "#d9d1dd", trim: "#ffb3d0",
       cape: "#8e617b", cape_bottom: "#f5c3d7", glow: "#ffd5e5", shield: "#6f5361", emblem: "#ffd5ea" } },
+  // ROXY_SNOW_PUPPET_MASTER_V1: Roxy VRM, optimized at 1024px textures.
+    { id: "roxy", title: "Snow Puppet Master", role: "Mage - Ice Puppeteer",
+      desc: "Commands living snow puppets: an ice shield, a freezing marionette, a falling ice meteor, and three slowing explosive puppets.",
+      stats: { power: 4, speed: 3, range: 5, defense: 3 },
+      look: { name: "Roxy", body: "f", vrm: "roxy", kit: "mage", element: "frost", outfit: "mage", style: "long", hat: "witch",
+        hair: "#e6f5ff", hair_shade: "#8abfe2", iris_top: "#3276af", iris_bottom: "#b4efff", eye_dark: "#163c6a",
+        tunic: "#244b86", band: "#e6f8ff", pants: "#d8eefa", boots: "#25365d", metal: "#bedce7", trim: "#e4faff",
+        cape: "#85bce1", cape_bottom: "#e9fcff", glow: "#9cddff", shield: "#9cddff", emblem: "#e8f8ff" } },
+
 ];
 
 export function resolveEnemy(player: number, pick: number): number {
