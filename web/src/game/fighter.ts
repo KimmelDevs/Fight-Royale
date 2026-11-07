@@ -1488,6 +1488,25 @@ export class Fighter implements Entity {
         style: "nesa_air_spin", no_parry: true, next: "" };
       this.nesaAirChargedSeconds = 0;
     }
+    // ASTER_JUDGMENT_BLADE_SPEED_WEAKEN_V1_20261108
+    // During Judgment, every real blade swing/cut executes at 1.5x speed.
+    // Clone the active attack only: do not permanently speed up the kit data,
+    // change cooldowns, or affect shield bashes and non-Aster characters.
+    // Successful hits use the existing 50s, max-5-stack Weaken status system.
+    if (this.kit === "knight" && this.look.element === "light" &&
+        this.judgmentT > 0 && this.atk &&
+        (/^(?:l\d+|air_l\d+|heavy|air_heavy|pc)$/.test(id) || id === "x" || id === "c")) {
+      const judgmentSpeed = 1.5;
+      this.atk = {
+        ...this.atk,
+        wind: this.atk.wind / judgmentSpeed,
+        active: this.atk.active / judgmentSpeed,
+        recover: this.atk.recover / judgmentSpeed,
+        // This is one application on confirmed damage, not another application
+        // layered over the X/C skills which already apply Weaken normally.
+        effect: "weaken", effect_t: 50, effect_p: 0.8,
+      };
+    }
     this.atkPhase = 0;
     this.buffered = false;
     this.comboDamageMult = 1;

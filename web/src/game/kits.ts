@@ -354,7 +354,7 @@ function bonusSkill(kit: string, element: string): Attack {
       return a({ name: "Hundred Kicks", desc: "Visible, immobile casting pose with six phantom strikes. Casting duration reduced by 25%, damage remains 30 per hit. Still vulnerable to attacks.", cd: 10, type: "strike", wind: 0.1125, active: 0.06, recover: 0.45, dmg: 30, guard: 10, knock: 0.8, stun: 0.3, delay: 0.15, radius: 1.5, repeat: 6, interval: 0.045, style: "slashes", pose_w: "kira_hundred_cast_w", pose_s: "kira_hundred_cast_s" });
     default:
       if (element === "light") return a({ name: "Judgment",
-        desc: "Raise your sword, receive harmless lightning, and merge your sword and shield for 10s. Defense converts to power, missing HP adds damage, and health drains while blocking weakens.",
+        desc: "Raise your sword, receive harmless lightning, and merge your sword and shield for 10s. Defense converts to power, missing HP adds damage, and health drains while blocking weakens. While Judgment is active, sword attacks are 1.5x faster and successful blade hits add 1 Weaken stack (50s, max 5).",
         cd: 16, type: "buff", mode: "judgment", duration: 10,
         wind: 0.62, active: 0.06, recover: 0.30,
         pose_w: "judgment_raise", pose_s: "judgment_raise" });
