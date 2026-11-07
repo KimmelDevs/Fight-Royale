@@ -1,5 +1,4 @@
 // ROXY_V7_5PCT_LIGHT_CHARGED_BIRD_NO_WIND_20261108: remove unavailable Frostwing wind sound.
-// AI_LOW_HEALTH_SURVIVAL_V1_20261108
 // AI_ROOK_NESA_KIRA_MERGED_V1_20261108
 // KAIZEN_PARRY_SPEED_MINUS_10_PERCENT_20261107_V1
 // BALANCE_KIRA_KAEDE_PATTERN_AI_AIR_ICON_20261107_V1
@@ -466,6 +465,22 @@ function buildProjectile(g: THREE.Group, style: string, element: string, size: n
     edge.position.z = 0.16 * size; g.add(edge);
     return;
   }
+  // ZENITH_IRON_SOVEREIGN_V1_20261108 — metal spear, not a lightning bolt.
+  if (style === "zenith_rail" || style === "zenith_heavy" || style === "zenith_construct") {
+    const steel = new THREE.MeshLambertMaterial({ color: "#c7d1de" });
+    const ink = new THREE.MeshLambertMaterial({ color: "#263e61" });
+    const core = new THREE.Mesh(new THREE.CylinderGeometry(0.035*size,0.035*size,0.95*size,10), ink);
+    core.rotation.x = Math.PI/2; g.add(core);
+    for (const side of [-1,1]) {
+      const tip = new THREE.Mesh(new THREE.ConeGeometry(0.12*size,0.48*size,6), steel);
+      tip.rotation.x = side*Math.PI/2; tip.position.z=side*0.66*size; g.add(tip);
+      const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.055*size,0.055*size,0.09*size,8), steel);
+      collar.rotation.x=Math.PI/2; collar.position.z=side*0.44*size; g.add(collar);
+    }
+    const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.085*size,0), glow);
+    g.add(gem);
+    return;
+  }
   if (style === "clusterbomb") {
     // Bright segmented four-pod canister, intentionally NOT the round black bomb.
     const shell = new THREE.MeshLambertMaterial({ color: "#f3a72f", emissive: "#6b2500", emissiveIntensity: 0.24 });
@@ -602,6 +617,7 @@ export class Game implements MobHost {
   mobs: Mob[] = [];
   entities = new Map<number, Entity>();
   projectiles: Projectile[] = [];
+  private zenithMarks = new Map<number, {sign: number; ttl: number; team: number}>();
   /** Mines and powder kegs on the field (host simulates; guests only show them). */
   traps: Trap[] = [];
   private frostAegisVisuals = new Map<number, THREE.Group>();
@@ -1113,6 +1129,7 @@ export class Game implements MobHost {
     f.root.position.copy(pos);
     f.root.rotation.y = rotY;
     f.onSwing = (x) => this.onSwing(x);
+    f.onZenithRecall = (x) => this.zenithRecall(x);
     f.onChainBindResolve = (x, dir, kind) => this.resolveChainBind(x, dir, kind);
     f.onKo = (x) => this.onFighterKo(x);
     f.onLanded = (x) => { this.fx.ring(x.root.position, "#ffffff", 0.8, 0.25, 0.5); this.snd("land", 0.35); };
@@ -1347,14 +1364,13 @@ export class Game implements MobHost {
       style: p.atk?.style ?? "", size: p.size, atkType: p.atk?.type ?? "",
       heavy: p.atk?.heavy ?? false,
     })),
+    magneticMark: (self: Fighter, enemy: Fighter): -1 | 0 | 1 => {
+      const mark = this.zenithMarks.get(enemy.id);
+      return !mark || mark.team !== self.team || mark.ttl <= 0 ? 0 : mark.sign > 0 ? 1 : -1;
+    },
     strikes: () => this.strikeMarks,
     fields: (f: Fighter) => this.magicPools.filter(p => p.kind === "static_field" && p.team !== f.team && p.time > 0)
       .map(p => ({ id: p.id, center: p.center, radius: p.radius })),
-    // AI_LOW_HEALTH_SURVIVAL: visible, friendly Healing Water zones; no hidden enemy info.
-    healingPools: (f: Fighter) => this.magicPools
-      .filter(p => p.kind === "healing_water" && p.team === f.team && p.time > 0.48 &&
-        p.owner && !p.owner.isDown())
-      .map(p => ({ center: p.center, radius: p.radius, remaining: p.time })),
     ignitions: (f: Fighter) => this.emberIgnitions
       .filter(i => i.round === this.round && i.land > this.time &&
         i.caster.team !== f.team && !i.caster.isDown())
@@ -1557,35 +1573,31 @@ export class Game implements MobHost {
     });
   }
 
-  /** Carnival high striker: opening bonk -> grow hammer 4x -> giant finishing blow; no long stun. */
+  /** NESA_FORWARD_HEART_PARRY_V_20261108: vertical V counter, giant only on real parry. */
   private nesaHighStriker(f: Fighter, a: Attack) {
     const round = this.round, serial = f.swingSerial, power = f.atkPower;
-    const foes = this.enemiesOf(f);
-    const first: Attack = { ...a, type: "melee", dmg: 125, knock: 0.7,
-      stun: 0.18, heavy: false, no_parry: true, reach: 2.65 };
-    for (const d of foes) {
-      const diff = d.root.position.clone().sub(f.root.position).setY(0);
-      const distance = diff.length();
-      if (distance > 2.65 + d.radius * 0.3 || Math.abs(d.root.position.y - f.root.position.y) > 1.3) continue;
-      const facing = new THREE.Vector3(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
-      if (distance > 0.65 && diff.dot(facing) < distance * 0.20) continue;
-      const dir = distance > 0.001 ? diff.normalize() : facing;
-      const hit = this.applyHit(f, d, first, power, d.chest(), dir, false);
-      if (hit === "hit" || hit === "crit") {
-        // NESA_V5_LOADOUT_AIR_SPIN_UPRIGHT: no 3-second stun on High Striker.
-        // Keep the ordinary short hit reaction and the 4x follow-up spectacle.
-        this.fxp("num", d.chest().add(new THREE.Vector3(0, 0.75, 0)), "BONK!", "#ffd1e5", 0.84);
+    // The first vertical stroke is a parry attempt, NOT an unconditional hit.
+    const tip = f.model.bladeTip.getWorldPosition(new THREE.Vector3());
+    this.fxp("slashes", tip, "#ffabd9");
+    this.fxp("sparks", tip, "#ffd5ec", 18, 5);
+    this.fxp("flash", tip, "#fff1fa", 0.30, 0.14, 0.78);
+    this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.83, 0)), "PARRY SWING!", "#ffbce2", 0.75);
+    // Wait until the complete real contact window closes before committing.
+    this.laterCombo(f, 0.64, () => {
+      if (round !== this.round || f.isDown() || f.swingSerial !== serial) return;
+      if (!f.nesaHighStrikerParried) {
+        f.finishNesaStrikerWhiff(serial); // 40% cooldown refund; no giant hammer.
+        this.fxp("motes", f.chest(), "#ffd2e8", 8);
+        this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.83, 0)), "V COOLDOWN -40%", "#ffe1ed", 0.67);
       }
-    }
-    // Visual growth uses the synced model.nesaHammerScale timeline in fighter.ts.
-    this.fxp("flash", f.chest(), "#ffb5df", 0.8, 0.22, 0.8);
-    this.laterCombo(f, 1.90, () => {
-      if (round !== this.round || f.isDown() || f.state !== S.ATTACK ||
-          f.swingSerial !== serial || f.atk?.style !== "nesa_high_striker") return;
-      const center = f.root.position.clone().setY(0);
+    });
+    this.laterCombo(f, 1.78, () => {
+      if (round !== this.round || f.isDown() || f.swingSerial !== serial ||
+          f.state !== S.ATTACK || f.atk?.style !== "nesa_high_striker" || !f.nesaHighStrikerParried) return;
+      const center = f.root.position.clone().setY(this.plat ? f.root.position.y : 0);
       this.fxp("rocks", center, 28, 1.5);
       this.fxp("ring", center, "#ffb0db", 3.6, 0.35, 0.95);
-      this.fxp("flash", center.clone().setY(0.45), "#ffffff", 1.8, 0.23, 0.95);
+      this.fxp("flash", center.clone().add(new THREE.Vector3(0, 0.45, 0)), "#ffffff", 1.8, 0.23, 0.95);
       this.snd("swing_heavy", 1.0);
       this.add_trauma(0.7);
       const finisher: Attack = { ...a, type: "strike", dmg: 365, guard: 105,
@@ -1603,6 +1615,12 @@ export class Game implements MobHost {
   }
 
   private onSwing(f: Fighter) {
+    if (f.look.element === "metal") {
+      const za = f.atk!;
+      if (za.style === "zenith_rail") { this.zenithLaunch(f, za); return; }
+      if (za.style === "zenith_barrage") { this.zenithBarrage(f, za); return; }
+      if (za.style === "zenith_arsenal") { this.zenithArsenal(f, za); return; }
+    }
     const a = f.atk!;
     this.swingSound(f, a);
     if (a.style === "parry_counter") {
@@ -1694,7 +1712,8 @@ export class Game implements MobHost {
         else this.fireProjectiles(f, a);
         break;
       case "strike": if (f.kit === "kicks" && a.style === "cyclone_kick_v2") this.cycloneKick(f, a, f.atkPower); else if (f.kit === "greatsword" && a.style === "iron_tempest") this.ironTempest(f, a, f.atkPower); else this.runStrike(f, a, f.atkPower); break;
-      case "buff": this.applyBuff(f, a); break;
+      case "buff": if (a.mode === "zenith_magnet") this.zenithDominion(f,a); else this.applyBuff(f,a); break;
+
       case "blink": this.blink(f, a); break;
       case "phantom": this.phantom(f, a); break;
       case "lob": this.throwBombs(f, a); break;
@@ -2783,13 +2802,142 @@ export class Game implements MobHost {
     if (bombB) this.bombBlast(b.shooter, b.atk, b.power, contact, b.team);
   }
 
+  // ZENITH_IRON_SOVEREIGN_V1_20261108: metallic field physics, bounded displacements.
+  private zenithLaunch(f: Fighter, a: Attack) {
+    // One independently simulated spear, which can be slashed/parried/clashed.
+    if (f.zenithSpearOut) return;
+    const origin = f.chest();
+    const target = f.opponent && !f.opponent.isDown() ? f.opponent : this.enemiesOf(f)[0] ?? null;
+    const aim = target ? target.chest().sub(origin) : new THREE.Vector3(Math.sin(f.root.rotation.y),0,Math.cos(f.root.rotation.y));
+    const speed = Math.max(19,a.speed);
+    const p = this.spawnProjectile(f,f.team,a,f.atkPower,origin,aim.normalize().multiplyScalar(speed),
+      "zenith_rail","metal",a.size,"#b6d4ee",true,target);
+    p.life=3.2;
+    f.zenithSpearOut=true;
+    f.zenithSpearAnchor.copy(p.pos);
+    f.model.setZenithSpearHeld(false);
+    this.fxp("flash",origin,"#acbfd9",0.38,0.14,0.72);
+  }
+  private zenithRecall(f: Fighter) {
+    const p=this.projectiles.find(x=>!x.done && x.style==="zenith_rail" && x.shooter===f);
+    if (!p || p.returnTo) return;
+    p.returnTo=f; p.hitIds.clear(); p.life=Math.max(p.life,0.85);
+    if (this.cfg.role!=="client") this.emit(["zenithRecall",p.id,f.id]);
+    this.fxp("ring",p.pos.clone(),"#b1cae6",0.85,0.16,0.65);
+  }
+  private zenithDominion(f: Fighter, a: Attack) {
+    const owned = this.projectiles.find(p=>!p.done && p.shooter===f && p.style==="zenith_rail");
+    if (owned) {
+      const start=f.root.position.clone();
+      const to=owned.pos.clone().sub(start);
+      if (!this.plat) to.y=0;
+      const dist=to.length();
+      if (dist>0.75) {
+        const amt=Math.min(3.1,dist-0.75);
+        const dest=start.addScaledVector(to.normalize(),amt);
+        if (!this.plat) {
+          const radial=Math.hypot(dest.x,dest.z);
+          if (radial>f.arenaRadius-0.5) dest.multiplyScalar((f.arenaRadius-0.5)/radial);
+        } else dest.x=THREE.MathUtils.clamp(dest.x,STAGE.blast.l+1.5,STAGE.blast.r-1.5);
+        f.teleport(dest);
+        this.fxp("ring",f.chest(),"#a4bedb",0.85,0.23,0.74);
+      }
+      return;
+    }
+    const foes=this.enemiesOf(f).filter(e=>!e.isDown());
+    const hold=f.zenithDominionRepel;
+    for (const e of foes) {
+      const offset=e.root.position.clone().sub(f.root.position).setY(0);
+      const dist=offset.length();
+      const mark=this.zenithMarks.get(e.id);
+      if (dist<0.35 || dist>(hold?3.5:5.3) || (!hold && (!mark || mark.team!==f.team))) continue;
+      // A negative charge repels on a tap; positive attracts. Holding always repels.
+      const repel=hold || (mark?.sign === -1 && mark.team === f.team);
+      const amt=(repel?1.0:Math.min(1.2,Math.max(0,dist-1.2)))*(1+0.12*f.zenithMagnetCharges);
+      const dir=offset.normalize();
+      const dest=e.root.position.clone().addScaledVector(dir,repel?amt:-amt);
+      if (!this.plat) {
+        const radius=(e instanceof Fighter?e.arenaRadius:11)-0.4;
+        const flat=Math.hypot(dest.x,dest.z);
+        if (flat>radius) {dest.x*=radius/flat;dest.z*=radius/flat;}
+      } else dest.x=THREE.MathUtils.clamp(dest.x,STAGE.blast.l+1.5,STAGE.blast.r-1.5);
+      // Short displacement only: not a guaranteed bind, no stun.
+      e.root.position.x=dest.x;
+      if (!this.plat) e.root.position.z=dest.z;
+      this.fxp("ring",e.chest(),repel?"#c3d0e3":"#869fc8",0.85,0.20,0.58);
+    }
+    f.zenithMagnetCharges = 0;
+    this.fxp("motes",f.chest(),"#a6bddc",17);
+  }
+  private zenithBarrage(f: Fighter,a:Attack) {
+    const round=this.round;
+    // Five standard, blockable/parryable melee checks in a short tempo.
+    for(let i=0;i<5;i++) this.later(0.10*i,()=>{
+      if(this.round!==round || f.isDown())return;
+      this.melee(f,{...a,id:`zx${i}`,style:"zenith_barrage",dmg:25,knock:i===4?1.8:0.3,stun:0.13});
+      this.fxp("sparks",f.model.bladeTip.getWorldPosition(new THREE.Vector3()),"#a6c8de",10,4);
+    });
+    // Independent extra thrusts: their projectile objects keep flying if she dodges.
+    for(let i=0;i<3;i++) this.later(0.68+i*0.17,()=>{
+      if(this.round!==round || f.isDown()) return;
+      const origin=f.chest().add(new THREE.Vector3((i-1)*0.3,0.25,0));
+      const target=f.opponent && !f.opponent.isDown()? f.opponent:this.enemiesOf(f)[0]??null;
+      const aim=target?target.chest().sub(origin):new THREE.Vector3(Math.sin(f.root.rotation.y),0,Math.cos(f.root.rotation.y));
+      const part={...a,id:`zxfloat${i}`,type:"projectile",style:"zenith_construct",dmg:28,pierce:false,heavy:false,speed:20,size:0.85};
+      this.spawnProjectile(f,f.team,part,f.atkPower,origin,aim.normalize().multiplyScalar(20),"zenith_construct","metal",0.85,"#a5bfe0",false,target);
+    });
+  }
+  private zenithArsenal(f:Fighter,a:Attack) {
+    const round=this.round;
+    const target=f.opponent&&!f.opponent.isDown()?f.opponent:this.enemiesOf(f)[0]??null;
+    if(!target) return;
+    const point=target.root.position.clone();
+    // Visible, dodgeable open: attack directions are committed before each shot.
+    this.fxp("ring",point.clone(),"#a6bcd6",2.7,0.52,0.55);
+    this.fxp("motes",point.clone().add(new THREE.Vector3(0,1,0)),"#b5cbdd",22);
+    for(let i=0;i<7;i++) this.later(0.30+i*0.22,()=>{
+      if(this.round!==round||f.isDown())return;
+      const angle=(i%6)*Math.PI/3+0.18;
+      const center=target.root.position.clone();
+      const origin = i===6 ? f.chest() : center.clone().add(new THREE.Vector3(Math.sin(angle)*4.2,1.1,Math.cos(angle)*4.2));
+      const toward=center.clone().add(new THREE.Vector3(0,1,0)).sub(origin);
+      const power=i===6?1.28:1;
+      const part={...a,id:i===6?"v_final":`v${i}`,style:"zenith_construct",dmg:i===6?96:36,
+        knock:i===6?5.3:0.9,stun:i===6?0.45:0.15,heavy:i===6,pierce:false,
+        size:i===6?2.0:1.0};
+      const p=this.spawnProjectile(f,f.team,part,f.atkPower*power,origin,toward.normalize().multiplyScalar(i===6?26:17),
+        "zenith_construct","metal",part.size,"#b0c6dc",false,target);
+      p.life=1.25;
+      this.fxp("flash",origin,"#d0deef",0.16,0.1,0.8);
+    });
+  }
+
   private updateProjectiles(dt: number) {
+    for (const [id, mark] of this.zenithMarks) {
+      mark.ttl -= dt;
+      if (mark.ttl <= 0) this.zenithMarks.delete(id);
+    }
     // First move ALL projectiles, then resolve shot-on-shot collisions before
     // individual melee, trap, or character hits. This avoids array-order bias.
     const previous = new Map<number, THREE.Vector3>();
     for (const p of this.projectiles) {
       if (p.done) continue;
       previous.set(p.id, p.pos.clone());
+      if (p.style === "zenith_rail" && p.shooter instanceof Fighter) {
+        const owner=p.shooter;
+        // Outbound -> short magnetic anchor -> return, never an infinite spear.
+        if (!p.returnTo && p.age > 1.50) { p.returnTo=owner; p.hitIds.clear(); }
+        if (p.returnTo) {
+          const aim=owner.chest().sub(p.pos);
+          if (aim.length()<0.82) {
+            p.done=true; owner.zenithSpearOut=false;
+            owner.model.setZenithSpearHeld(true);
+            this.fxp("flash",owner.chest(),"#a5c1dc",0.25,0.1,0.7);
+          } else p.vel.copy(aim.normalize().multiplyScalar(25));
+        } else if (p.age>0.38) p.vel.set(0,0,0);
+        owner.zenithSpearAnchor.copy(p.pos);
+        if (p.done) continue;
+      }
       if (p.gravity) { p.vel.y -= p.gravity * dt; p.spin.rotation.x += dt * 9; }
       p.age += dt;
       if (p.style === "frost_shard" && p.atk?.id === "heavy" && p.target && !p.target.isDown() && p.age < 0.9) {
@@ -2871,6 +3019,10 @@ export class Game implements MobHost {
         if (!p.visualOnly && p.atk?.type !== "lob") this.fxp("sparks", p.pos.clone(), p.color, 8, 3);
         p.done = true;
       }
+    }
+    for (const p of this.projectiles) if (p.done && p.style === "zenith_rail" && p.shooter instanceof Fighter) {
+      p.shooter.zenithSpearOut=false;
+      p.shooter.model.setZenithSpearHeld(true);
     }
     for (const p of this.projectiles) if (p.done) {
       if (p.clusterMarkId !== null)
@@ -2993,18 +3145,27 @@ export class Game implements MobHost {
     // Dodging out of that area must remain possible; no automatic slice-by-slice tracking.
     const kaedeCenter = kaedeCuts
       ? (f.opponent ?? f).root.position.clone() : null;
+    // NESA_FORWARD_HEART_PARRY_V_20261108: project Heart Smash in front, fixed at cast time.
+    const heartAhead = f.kit === "hammer" && a.style === "nesa_heart_slam";
+    const heartOrigin = heartAhead ? f.root.position.clone() : null;
+    const heartFacing = heartAhead
+      ? new THREE.Vector3(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y)) : null;
+    const heartCenter = heartOrigin && heartFacing
+      ? heartOrigin.clone().addScaledVector(heartFacing, 2.05) : null;
     const one = (i: number) => {
       if (round !== this.round || f.isDown()) return;
       if (kaedeCuts && (f.swingSerial !== kaedeSerial || !f.isKaedeThousandCutsCasting())) return;
       const src: Entity = a.at === "self" || !f.opponent ? f : f.opponent;
       const center = kaedeCenter
         ? (this.plat ? kaedeCenter.clone() : kaedeCenter.clone().setY(0))
-        : (this.plat ? src.root.position.clone() : src.root.position.clone().setY(0));
+        : heartCenter
+          ? (this.plat ? heartCenter.clone() : heartCenter.clone().setY(0))
+          : (this.plat ? src.root.position.clone() : src.root.position.clone().setY(0));
       const wait = i === 0 ? a.delay : a.interval;
       const mark = {
         target: f.opponent, land: this.time + wait, id: this.nextId++,
         center: center.clone(), radius: a.radius, caster: f,
-        followsCaster: a.at === "self", style: a.style,
+        followsCaster: a.at === "self" && !heartAhead, style: a.style,
       };
       this.strikeMarks.push(mark);
       this.fxp("tele", center, color, a.radius, wait);
@@ -3015,7 +3176,7 @@ export class Game implements MobHost {
         this.strikeMarks = this.strikeMarks.filter((m) => m !== mark);
         if (round !== this.round) return;
         if (kaedeCuts && (f.swingSerial !== kaedeSerial || !f.isKaedeThousandCutsCasting())) return;
-        const at = a.at === "self" ? (this.plat ? f.root.position.clone() : f.root.position.clone().setY(0)) : center;
+        const at = a.at === "self" && !heartAhead ? (this.plat ? f.root.position.clone() : f.root.position.clone().setY(0)) : center;
         this.impactFx(a, at, color, a.radius);
         if (f.kit === "greatsword" && a.name === "Ground Slam" && i === 0)
           this.garrickBreakWeakProjectiles(f, at, a.radius + 0.35);
@@ -3029,7 +3190,10 @@ export class Game implements MobHost {
           const to = d.root.position.clone().sub(at);
           const dy = Math.abs(to.y);
           to.setY(0);
-          if (to.length() <= a.radius + d.radius * 0.5 && (this.plat ? dy < 1.6 : !d.airborne())) {
+          // Nesa C is a FORWARD ground impact, not an AoE centered on her feet.
+          const inFront = !heartAhead || !heartFacing || !heartOrigin ||
+            d.root.position.clone().sub(heartOrigin).setY(0).dot(heartFacing) > 0.12;
+          if (inFront && to.length() <= a.radius + d.radius * 0.5 && (this.plat ? dy < 1.6 : !d.airborne())) {
             const dir = to.length() > 0.05 ? to.normalize() : d.root.position.clone().sub(f.root.position).setY(0).normalize();
             const outcome = this.applyHit(f, d, a, power, d.chest(), dir, true);
             // Titan Cleave: only confirmed HP damage unlocks a follow-up rush.
@@ -3044,7 +3208,7 @@ export class Game implements MobHost {
             }
             if (kaedeCuts && (outcome === "hit" || outcome === "crit" || outcome === "ko"))
               realDamageThisSlice = true;
-          } else if (d instanceof Fighter && to.length() <= a.radius + 1) {
+          } else if (inFront && d instanceof Fighter && to.length() <= a.radius + 1) {
             this.fxp("num", d.chest().add(new THREE.Vector3(0, 0.8, 0)), "DODGE", "#c9d3e6", 0.7);
           }
         }
@@ -3610,7 +3774,25 @@ export class Game implements MobHost {
       { ...scaledAttack, knock: Math.min(9.5, scaledAttack.knock * knockFactor) };
     if (d instanceof Fighter && attacker) d.setImpactSource(attacker.root.position);
     const wasFrozen = (d instanceof Fighter || d instanceof Mob) && d.status.has("freeze");
-    const result = d.receiveHit(attacker, weightedAttack, riposte ? power * 1.15 : power);
+    // Do not mutate shared Attack objects or permanently weaken future swings.
+    const zenithAttack = attacker instanceof Fighter && attacker.look.element === "metal" &&
+      attacker.zenithSpearOut && a.type === "melee" && /^l\d+$/.test(a.id)
+      ? { ...weightedAttack, dmg: weightedAttack.dmg * 0.57, reach: weightedAttack.reach * 0.72 }
+      : weightedAttack;
+    const result = d.receiveHit(attacker, zenithAttack, riposte ? power * 1.15 : power);
+    if (d instanceof Fighter && d.look.element === "metal" && result === "parry" && a.type === "projectile") {
+      d.zenithMagnetCharges = Math.min(3,d.zenithMagnetCharges+1);
+      this.fxp("num",d.chest().add(new THREE.Vector3(0,0.8,0)),`MAGNETIC CHARGE ${d.zenithMagnetCharges}/3`,"#a0bbde",0.65);
+    }
+    // Polarity applies on confirmed hits (not on dodges, shields, blocks or parries).
+    if (attacker instanceof Fighter && attacker.look.element === "metal" &&
+        (result === "hit" || result === "crit" || result === "ko") &&
+        (a.style === "zenith_basic" || a.style === "zenith_rail" ||
+         a.style === "zenith_heavy" || a.style === "zenith_construct" || a.style === "zenith_barrage")) {
+      const sign = (a.style === "zenith_rail" || a.style === "zenith_heavy" || a.style === "zenith_construct") ? -1 : 1;
+      this.zenithMarks.set(d.id, { sign, ttl: 7, team: attacker.team });
+      this.fxp("num", d.chest().add(new THREE.Vector3(0,0.83,0)), sign > 0 ? "MAGNET +" : "MAGNET -", sign > 0 ? "#a1c8ff" : "#dce3ef", 0.54);
+    }
     if (a.effect === "freeze" && !wasFrozen && (d instanceof Fighter || d instanceof Mob) &&
         d.status.has("freeze") && ["hit", "crit", "ko"].includes(result)) this.roxyFreezeBurst(d);
     if (attacker instanceof Fighter && attacker.look.element === "frost" && a.style === "frost_shard" &&
@@ -3733,6 +3915,13 @@ export class Game implements MobHost {
         break;
       case "parry": {
         const df = d as Fighter;
+        // NESA_FORWARD_HEART_PARRY_V_20261108: a V parry stuns the attacker,
+        // but the giant hammer still obeys the normal finisher timeline.
+        if (df.kit === "hammer" && df.atk?.style === "nesa_high_striker" && df.nesaHighStrikerParried) {
+          if (attacker instanceof Fighter) attacker.stagger(1.15);
+          this.fxp("num", df.chest().add(new THREE.Vector3(0, 1.20, 0)),
+            "HEARTBREAKER COUNTER!", "#ffb0df", 1.0);
+        }
         if (ranged && a.type === "projectile" && df.look.name === "Garrick") {
           this.fxp("num", df.chest().add(new THREE.Vector3(0, 1.1, 0)),
             `RESOLVE ${df.garrickResolve}/3`, "#ffd49a", 0.86);
@@ -3848,7 +4037,7 @@ export class Game implements MobHost {
   }
 
   private awardZarekClash(f: Fighter) {
-    if (f.kit !== "glaive") return;
+    if (f.kit !== "glaive" || f.look.element === "metal") return;
     f.clashMomentum += 1;
     this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.9, 0)),
       `CLASH ${f.clashMomentum} • ${Math.min(2, 1 + Math.min(5, f.clashMomentum) * .2).toFixed(1)}x BASIC SPD`, "#a6efff", 0.8);
@@ -4276,6 +4465,11 @@ export class Game implements MobHost {
       case "bloodFestivalEnd": {
         const ring = this.bloodFestivals.find(x => x.id === ev[1]);
         if (ring) { this.scene.remove(ring.visual); this.bloodFestivals = this.bloodFestivals.filter(x => x !== ring); }
+        break;
+      }
+      case "zenithRecall": {
+        const p=this.projectiles.find(q=>q.id===ev[1]);
+        if (p) {p.returnTo=this.entities.get(ev[2]) as Fighter || null; p.hitIds.clear();}
         break;
       }
       case "projEnd": { const p = this.projectiles.find((x) => x.id === ev[1]); if (p) p.done = true; break; }

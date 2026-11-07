@@ -153,6 +153,14 @@ export const CHARACTERS: Character[] = [
         hair: "#e6f5ff", hair_shade: "#8abfe2", iris_top: "#3276af", iris_bottom: "#b4efff", eye_dark: "#163c6a",
         tunic: "#244b86", band: "#e6f8ff", pants: "#d8eefa", boots: "#25365d", metal: "#bedce7", trim: "#e4faff",
         cape: "#85bce1", cape_bottom: "#e9fcff", glow: "#9cddff", shield: "#9cddff", emblem: "#e8f8ff" } },
+  // ZENITH_IRON_SOVEREIGN_V1_20261108 — borrows Zarek's VRM until Zenith receives her own.
+  { id: "zenith", title: "The Iron Sovereign", role: "Duelist - Magnetic Double Spear",
+    desc: "A rapid spear martial artist who commands her double-ended weapon from afar. Opposite magnetic marks attract; matching ones repel.",
+    stats: { power: 4, speed: 5, range: 4, defense: 3 },
+    look: { name: "Zenith", body: "f", vrm: "zarek", kit: "glaive", element: "metal", outfit: "assassin", style: "ponytail", hat: "none",
+      hair: "#d8e1ec", hair_shade: "#7891b0", iris_top: "#7388ae", iris_bottom: "#c3e6ff", eye_dark: "#1a294a",
+      tunic: "#18243b", band: "#304b70", pants: "#151b2c", boots: "#16233a", metal: "#d3dde9", trim: "#7899ce",
+      cape: "#202d48", cape_bottom: "#425a85", glow: "#8dbce3", shield: "#22364f", emblem: "#c5d8f1" } },
 
 ];
 

@@ -149,7 +149,7 @@ export function InfoPanel({ index, editable }: { index: number; editable?: boole
           </div>
         ))}
       </div>
-      <div className="small">{ch.look.element === "frost" ? "Tap: breakable ice shards - Hold: 4 gently homing shards - Z: 4-hit ice shield - X: Auto-freezing Snowpuff - C: Glacier Meteor - V: 3 stationary Frostwings (25s)" : CONTROLS[ch.look.kit]}</div>
+      <div className="small">{ch.look.element === "metal" ? "Tap: 5-hit Steel Fang - Hold: Magnetic Lance - Z: Rail Spear (press Z to recall) - X: Phantom Barrage - C: Magnetic Dominion (hold to repel) - V: Sovereign Arsenal" : ch.look.element === "frost" ? "Tap: breakable ice shards - Hold: 4 gently homing shards - Z: 4-hit ice shield - X: Auto-freezing Snowpuff - C: Glacier Meteor - V: 3 stationary Frostwings (25s)" : CONTROLS[ch.look.kit]}</div>
       <div className="small">HP {Kits.STATS[ch.look.kit].hp}</div>
       {(() => {
         const slots = ["z", "x", "c", "v"];

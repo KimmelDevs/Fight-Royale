@@ -172,6 +172,12 @@ export class Fighter implements Entity {
   poseSpeed = 14;
 
   onSwing: (f: Fighter) => void = () => {};
+  // ZENITH_IRON_SOVEREIGN_V1_20261108 — pure game-side spear state.
+  zenithSpearOut = false;
+  zenithSpearAnchor = new THREE.Vector3();
+  zenithMagnetCharges = 0;
+  zenithDominionRepel = false;
+  onZenithRecall: (f: Fighter) => void = () => {};
   onKo: (f: Fighter) => void = () => {};
   /** Status effects (burn, poison, paralyze...). Damage-over-time ticks queue in `dots` for the game. */
   status = new StatusSet();
@@ -232,6 +238,22 @@ export class Fighter implements Entity {
   private nesaChargeSeconds = 0;
   private nesaSpinYaw = 0;
   private nesaSpinT = 0;
+  // NESA_FORWARD_HEART_PARRY_V_20261108: only a confirmed incoming parry unlocks giant V.
+  nesaHighStrikerParried = false;
+  /** Whiff refunds 40% of V cooldown and interrupts the long giant-hammer animation. */
+  finishNesaStrikerWhiff(serial: number) {
+    if (this.kit !== "hammer" || this.swingSerial !== serial || this.nesaHighStrikerParried) return;
+    const move = this.attacks.v;
+    if (move?.style !== "nesa_high_striker") return;
+    // Only 60% of the ordinary cooldown remains, even if the swing was interrupted.
+    this.cooldowns.v = Math.min(this.cooldowns.v ?? move.cd * this.cdMult, move.cd * this.cdMult * 0.60);
+    if (this.state === S.ATTACK && this.atk?.style === "nesa_high_striker") {
+      this.atk = null; this.atkId = ""; this.atkPhase = 0;
+      this.holding = false; this.buffered = false;
+      this.comboTimer = 0; this.comboNext = "l1";
+      this.setState(S.IDLE);
+    }
+  }
   // NESA_HEART_SMASH_V4: three individual C charges; recovery is one charge at a time.
   nesaCCharges = 3;
   nesaCRechargeT = 0;
@@ -962,6 +984,7 @@ export class Fighter implements Entity {
       this.model.nesaSpinHorizontal = (attack?.style === "nesa_spin" || attack?.style === "nesa_air_spin" || attack?.style === "parry_counter") ?
         THREE.MathUtils.clamp(this.stateT / Math.max(0.01, attack.wind), 0, 1) : 0;
       this.model.nesaHammerScale = attack?.style === "nesa_high_striker" &&
+        this.nesaHighStrikerParried &&
         this.stateT >= attack.wind + 0.24 && this.stateT < attack.wind + attack.active + 0.12
         ? 4 : 1;
     } else { this.nesaSpinYaw = 0; this.model.nesaSpinHorizontal = 0; }
@@ -1310,6 +1333,11 @@ export class Fighter implements Entity {
       if (![S.HITSTUN, S.STAGGER, S.KO, S.WIN].includes(this.state)) this.onSickleRecast(this);
       return;
     }
+    // A second Z recalls the SAME spear without ignoring the original cooldown.
+    if (this.look.element === "metal" && this.zenithSpearOut && k === "z") {
+      if (![S.HITSTUN,S.STAGGER,S.KO,S.WIN].includes(this.state)) this.onZenithRecall(this);
+      return;
+    }
     // Garrick C second press: legal ONLY after the first eruption really hit.
     if (this.kit === "greatsword" && this.attacks[k]?.name === "Titan Cleave" &&
         this.garrickFollowT > 0 && this.garrickFollowTarget &&
@@ -1353,6 +1381,7 @@ export class Fighter implements Entity {
     } else this.cooldowns[k] = this.attacks[k].type === "barrel" ? 0.6 :
       bobMine ? (this.bobMineCharges > 0 ? 0 : this.bobMineRechargeT) : this.attacks[k].cd * this.cdMult;
     // Cast in the air, a skill with an air version uses it instead.
+    if (this.look.element === "metal" && k === "c") this.zenithDominionRepel = this.intent.skillHeld === "c";
     this.startAttack(!this.onGround && this.attacks[k + "_air"] ? k + "_air" : k);
   }
 
@@ -1460,6 +1489,7 @@ export class Fighter implements Entity {
     }
     this.atkId = id;
     this.atk = this.attacks[id];
+    if (this.kit === "hammer" && this.atk?.style === "nesa_high_striker") this.nesaHighStrikerParried = false;
     if (this.kit === "katana" && this.atk?.name === "Thousand Cuts" && this.atk.style === "slashes") {
       this.atk = { ...this.atk, lunge: 0, recover: Math.max(this.atk.recover,
         this.atk.delay + Math.max(0, this.atk.repeat - 1) * this.atk.interval + 0.23) };
@@ -1890,7 +1920,23 @@ export class Fighter implements Entity {
     // Extended combos can be parried to soften their following strikes, even
     // if the move was once flagged no_parry. Blood Festival's dedicated immunity
     // remains intact; unrelated single-hit no_parry moves stay unparryable.
-    const parryableContinuous = attacker instanceof Fighter && attacker.isContinuousComboActive();
+    const parryableContinuous = attacker instanceof Fighter && attacker.isContinuousComboActive() &&
+      a.style !== "nesa_heart_slam";
+    // NESA_FORWARD_HEART_PARRY_V_20261108: actual incoming contact during her vertical V.
+    // The first 0.78s is the only parry opportunity; unparryable attacks remain dangerous.
+    if (this.kit === "hammer" && this.state === S.ATTACK && this.atk?.style === "nesa_high_striker" &&
+        !this.nesaHighStrikerParried && this.stateT >= 0.10 && this.stateT <= 0.79 &&
+        attacker && attacker.team !== this.team && (!a.no_parry || parryableContinuous) && !festivalUnparryable) {
+      const face = new THREE.Vector3(Math.sin(this.root.rotation.y), 0, Math.cos(this.root.rotation.y));
+      const incoming = attacker.root.position.clone().sub(this.root.position).setY(0);
+      // Don't catch attacks from directly behind. Projectiles use their shooter direction.
+      if (incoming.lengthSq() < 0.15 || incoming.normalize().dot(face) > 0.0) {
+        this.nesaHighStrikerParried = true;
+        this.model.flash("#ffb7e3", 0.20);
+        this.guard = Math.min(this.maxGuard, this.guard + 15);
+        return "parry";
+      }
+    }
     if (this.state === S.BLOCK && this.stateT >= this.shieldRaise) {
       if (this.stateT - this.shieldRaise <= this.parryWindow &&
           (!a.no_parry || parryableContinuous) && !festivalUnparryable) {
@@ -1936,7 +1982,7 @@ export class Fighter implements Entity {
       }
       // NESA_WEIGHT_PASSIVE_V1: late hammer swings crush block into chip damage.
       const hammerCrushBlock = attacker instanceof Fighter && attacker.hammerWeightArmor &&
-        (a.type === "melee" || a.type === "strike");
+        a.style !== "nesa_heart_slam" && (a.type === "melee" || a.type === "strike");
       if (hammerCrushBlock) {
         this.lastDamage = dmg * 0.50;
         this.lastCrit = false;

@@ -1,6 +1,4 @@
-// AI_LOW_HEALTH_LAST_STAND_V2_20261108
 // AI_CHARACTER_FIGHTING_STYLES_V1_20261108
-// AI_LOW_HEALTH_SURVIVAL_V1_20261108
 // AI_ADVANCED_FOOTWORK_V1_20261108
 // AI_ROOK_NESA_KIRA_MERGED_V1_20261108
 //AI_PROJECTILE_CLASH_IQ_V1_20261108
@@ -34,6 +32,7 @@
 // Duel CPU. Presses the same virtual buttons a player would, with human-ish reaction times:
 // reacts once per enemy swing / projectile / ground marker (block, parry, jump, sidestep),
 // keeps its preferred range (ranged kits kite), and picks attacks and skills when idle.
+// NESA_ZENITH_AGGRESSIVE_AI_V8_20261108: V1/V2 low-HP logic removed, Nesa/Zenith tactics updated.
 import * as THREE from "three";
 import { Fighter, S, HOLD_T, type Brain } from "./fighter";
 
@@ -49,8 +48,6 @@ export interface Threats {
   projectiles(): { target: any; pos: THREE.Vector3; vel: THREE.Vector3; id: number; team?: number; style?: string; size?: number; atkType?: string; heavy?: boolean }[];
   /** Real telegraphed damage circles, not guessed from enemy animation. */
   fields(f: Fighter): { id: number; center: THREE.Vector3; radius: number }[];
-  /** Visible friendly healing circles; only legitimate water pulse heals. */
-  healingPools?(f: Fighter): { center: THREE.Vector3; radius: number; remaining: number }[];
   strikes(): {
     target: any; land: number; id: number;
     center?: THREE.Vector3; radius?: number; caster?: Fighter;
@@ -63,20 +60,14 @@ export interface Threats {
   /** Live enemy Ember fire patches; friendly flames are filtered out by Game. */
   firePatches(f: Fighter): { pos: THREE.Vector3; radius: number }[];
   now(): number;
+  /** Zenith can reason about the polarity she actually applied to this opponent. */
+  magneticMark?(self: Fighter, enemy: Fighter): -1 | 0 | 1;
 }
 
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
 const RANGED = new Set(["mage", "bow", "bomb"]);
 
-// LOW_HEALTH_SURVIVAL: recognition is sampled once per planned decision, never
-// re-rolled every frame. No added health, invincibility or cooldown reductions.
-const SURVIVAL_IQ = [
-  { notice: 0.12, hp: 0.18, guard: 0.13, react: [0.62, 0.90], hold: [0.34, 0.52], heal: 0.32 },
-  { notice: 0.46, hp: 0.30, guard: 0.22, react: [0.39, 0.62], hold: [0.42, 0.68], heal: 0.57 },
-  { notice: 0.77, hp: 0.38, guard: 0.29, react: [0.22, 0.39], hold: [0.51, 0.84], heal: 0.82 },
-  { notice: 0.95, hp: 0.43, guard: 0.34, react: [0.11, 0.22], hold: [0.60, 0.96], heal: 0.98 },
-] as const;
-
+// Removed: low-health retreat / last-stand personality overrides.
 
 // AI_ADVANCED_FOOTWORK: movement choices are made in short plans, not every
 // frame. Reaction delays and imperfect reads scale with the selected difficulty.
@@ -167,6 +158,7 @@ const FIGHT_STYLES: Readonly<Record<string, FightStyle>> = {
   kaizen: { range: 2.65, heavy: 0.33, combo: 0.78, bait: 0.51, pressure: 0.71, skillBias: [1.2, 1.45, 1.15] },
   nesa: { range: 2.38, heavy: 0.43, combo: 0.64, bait: 0.62, pressure: 0.52, skillBias: [1.05, 1.15, 1.2] },
   roxy: { range: 5.45, heavy: 0.36, combo: 0.52, bait: 0.24, pressure: 0.32, skillBias: [1.45, 1.60, 1.20] },
+  zenith: { range: 2.20, heavy: 0.30, combo: 0.90, bait: 0.34, pressure: 0.92, skillBias: [1.15, 1.65, 1.10] },
 };
 
 // CHARACTER_STYLES_V1: existing FIGHT_STYLES already holds base preferences.
@@ -203,6 +195,7 @@ const CHARACTER_PERSONALITY: Readonly<Record<string, PersonalityProfile>> = {
   kaizen:  { role: "grappler",    pressure: 0.97, probe: 1.22, reset: 0.39, vReserve: 0.78, spacing:  0.10 },
   nesa:    { role: "bruiser",     pressure: 1.03, probe: 1.04, reset: 0.45, vReserve: 0.85, spacing:  0.19 },
   roxy:    { role: "controller",  pressure: 0.60, probe: 1.16, reset: 0.90, vReserve: 0.52, spacing:  0.26 },
+  zenith:  { role: "glaive", pressure: 1.42, probe: 0.95, reset: 0.35, vReserve: 0.92, spacing: -0.04 },
 };
 // Difficulty affects how often bots make informed, committed personality reads.
 const CHARACTER_IQ = [
@@ -764,25 +757,7 @@ export class AiBrain implements Brain {
   private advancedSampleAt = -1;
   private advancedSamplePos = new THREE.Vector3();
 
-  // LOW_HEALTH_SURVIVAL: decisions stay committed for brief, human-like windows.
-  // LAST_STAND_V2: track *observable HP changes*, never hidden opponent inputs.
-  private lastStandOpponent: Fighter | null = null;
-  private lastStandObservedAt = -1;
-  private lastStandSelfHp = 0;
-  private lastStandEnemyHp = 0;
-  private lastStandLastDamageAt = -1;
-  private lastStandUntil = -1;
-  private survivalPressureUntil = -1;
-  private survivalRetreatStartedAt = -1;
-  private survivalRetreatOrigin = new THREE.Vector3();
-
-  private survivalEnemy: Fighter | null = null;
-  private survivalMode: "none" | "retreat" | "recover" | "heal" | "lastStand" | "pressure" = "none";
-  private survivalObserveAt = -1;
-  private survivalUntil = -1;
-  private survivalSide = Math.random() < 0.5 ? -1 : 1;
-  private survivalHealConsumed = false;
-  private survivalDashConsidered = false;
+  // V8: no automatic low-health retreat, recover, heal, or edge stalling.
 
   private rangeOrbitCd = 0;
   private rangeOrbitSign = Math.random() < 0.5 ? -1 : 1;
@@ -829,6 +804,7 @@ export class AiBrain implements Brain {
   // NESA_DODGE_KIRA_AIR_3_V1: dodge Nesa's dangerous hammer swings rather than merely guarding them.
   private nesaThreatSerial = -1;
   private nesaEvadeChosen = false;
+  private nesaHeartBlockChosen = false;
   private nesaEvadeUsed = false;
   private nesaEvadeTrigger = 0;
   private nesaRetreatT = 0;
@@ -1248,6 +1224,10 @@ export class AiBrain implements Brain {
   private readySkillPoll = 0;
   // Roxy uses a short, difficulty-scaled plan that is evaluated before
   // ordinary attack IQ can keep her locked into endless light-attack queues.
+  private nesaVThreat = -1;
+  private nesaVReactAt = 0;
+  private nesaVChose = false;
+  private nesaVUsed = false;
   private roxySkillReadAt = 0;
   private roxyTarget = -1;
 
@@ -1257,6 +1237,99 @@ export class AiBrain implements Brain {
    * Samples visible opportunities and issues ONE legal skill press. No free
    * cooldowns, HP, hits, extra summons or fourth-skill unlocks.
    */
+  // Zenith isn't Zarek. She makes distinct in-hand, thrown-spear, and recall plans.
+  private nesaTimedVParry(f: Fighter, o: Fighter): boolean {
+    if (f.kit !== "hammer" || !f.bonusSkillUnlocked || f.isDown() || o.isDown() ||
+        !f.onGround || f.status.has("freeze") ||
+        !f.attacks.v || f.attacks.v.style !== "nesa_high_striker" ||
+        (f.cooldowns.v ?? 1) > 0 || ![S.IDLE,S.BLOCK,S.CHARGE].includes(f.state)) return false;
+    const now = this.threats.now();
+    const dist = f.root.position.clone().setY(0).distanceTo(o.root.position.clone().setY(0));
+    const current = o.atk;
+    const meleeIncoming = o.state === S.ATTACK && !!current && current.type === "melee" &&
+      (!current.no_parry || o.isContinuousComboActive()) &&
+      o.atkPhase === 0 && dist < (current.reach || 1.7) + 0.6;
+    const shot = this.threats.projectiles().find(pr => pr.target === f && pr.team !== f.team &&
+      pr.pos.distanceTo(f.chest()) < 7.5);
+    const shotETA = shot ? this.projectileTimeToContact(f, shot) : 99;
+    const actionableShot = !!shot && shotETA > 0.14 && shotETA < 0.62;
+    if (!meleeIncoming && !actionableShot) return false;
+    const serial = meleeIncoming ? o.id * 100000 + o.swingSerial : shot!.id * -1;
+    if (serial !== this.nesaVThreat) {
+      this.nesaVThreat = serial;
+      this.nesaVUsed = false;
+      this.nesaVChose = Math.random() < [0.13,0.40,0.72,0.90][this.iqLevel];
+      this.nesaVReactAt = now + [0.26,0.19,0.11,0.065][this.iqLevel] + Math.random()*0.05;
+    }
+    if (!this.nesaVChose || this.nesaVUsed || now < this.nesaVReactAt) return false;
+    const eta = meleeIncoming ? Math.max(0, current!.wind - o.stateT) : shotETA;
+    if (eta < 0.13 || eta > 0.70) return false; // swing's actual 0.10..0.79 parry window
+    this.nesaVUsed = true;
+    this.queue=[]; this.hold=0; this.blockWait=-1; this.blockHold=0;
+    f.intent.block=false; f.intent.attack=false; f.intent.skill="v";
+    return true;
+  }
+
+  private zenithSkillNextAt = 0;
+  private zenithSpearObservedAt = -1;
+  private zenithSpearWasOut = false;
+  private zenithEnemyId = -1;
+  private zenithSkillOpportunity(f: Fighter, o: Fighter, dt: number): boolean {
+    if (f.look.element !== "metal" || f.kit !== "glaive" || f.isDown() || o.isDown()) return false;
+    const now = this.threats.now();
+    if (this.zenithEnemyId !== o.id || now < this.zenithSkillNextAt - 120) {
+      this.zenithEnemyId = o.id; this.zenithSpearWasOut = false;
+      this.zenithSpearObservedAt = -1; this.zenithSkillNextAt = now + 0.20;
+    }
+    if (f.zenithSpearOut && !this.zenithSpearWasOut) this.zenithSpearObservedAt = now;
+    this.zenithSpearWasOut = f.zenithSpearOut;
+    if (f.chainBindT > 0 || !f.onGround || f.status.has("freeze") ||
+        now < this.zenithSkillNextAt || f.intent.skill) return false;
+    const free = f.state === S.IDLE || f.state === S.BLOCK || f.state === S.CHARGE ||
+      (f.state === S.ATTACK && f.atkPhase === 2 && !!f.atk);
+    if (!free) return false;
+    const gap = f.root.position.clone().setY(0).distanceTo(o.root.position.clone().setY(0));
+    const marked = this.threats.magneticMark?.(f, o) ?? 0;
+    const ready = (key: "z"|"x"|"c"|"v") => !!f.attacks[key] &&
+      (f.cooldowns[key] ?? 1) <= 0 && (key !== "v" || f.bonusSkillUnlocked);
+    const pressure = o.state === S.HITSTUN || o.state === S.STAGGER || this.hasPunishWindow(o);
+    const opportunity = [0.24, 0.54, 0.79, 0.94][this.iqLevel];
+    let key: "z"|"x"|"c"|"v"|"" = "";
+    if (f.zenithSpearOut) {
+      const held = now - Math.max(0, this.zenithSpearObservedAt);
+      const anchorDist = f.zenithSpearAnchor.clone().setY(0).distanceTo(f.root.position.clone().setY(0));
+      // Don't instantly recall every Z! Attack from two positions or reposition by C first.
+      if (ready("c") && anchorDist > 2.3 && gap > 2.1 && gap < 8 &&
+          (marked === -1 || anchorDist > 4.2) && held > 0.36) key = "c";
+      else if (held > (this.iqLevel >= 2 ? 1.0 : 1.5) &&
+          (gap < 3.3 || held > 2.4 || anchorDist > 7.5)) key = "z";
+    } else if (ready("v") && gap >= 2.3 && gap < 7.3 && pressure && this.iqLevel >= 2) {
+      key = "v";
+    } else if (ready("c") && marked === 1 && gap >= 2.3 && gap <= 5.2 &&
+          (ready("x") || pressure || gap >= 3.5)) {
+      // Positive -> attract into close-range rapid thrusts.
+      key = "c";
+    } else if (ready("x") && gap > 0.65 && gap < 2.8 &&
+          (pressure || marked === 1 || this.iqLevel >= 2)) {
+      key = "x";
+    } else if (ready("z") && gap >= 3.5 && gap <= 9.2 &&
+          (marked !== -1 || pressure)) {
+      key = "z";
+    } else if (ready("c") && marked === -1 && gap < 2.5 && !f.stage) {
+      // Negative -> repel as a defensive reset (normal cooldown and collision still apply).
+      f.intent.skillHeld = "c"; key = "c";
+    } else if (ready("x") && gap < 2.5 && pressure) {
+      key = "x";
+    }
+    if (!key) { this.zenithSkillNextAt=now+0.20; return false; }
+    this.zenithSkillNextAt=now+[1.1,0.74,0.45,0.27][this.iqLevel];
+    if (Math.random() > opportunity) return false;
+    f.intent.skill=key;
+    f.intent.attack=false;
+    this.queue=[]; this.hold=0;
+    return true;
+  }
+
   private roxySkillOpportunity(f: Fighter, o: Fighter, dt: number): boolean {
     if (f.look.element !== "frost" || f.kit !== "mage" || f.isDown() || o.isDown()) return false;
     if (!f.attacks.z || f.attacks.z.mode !== "frost_aegis") return false;
@@ -1331,6 +1404,7 @@ export class AiBrain implements Brain {
 
   private readySkillOpportunity(f: Fighter, o: Fighter, dt: number): boolean {
     this.readySkillPoll = Math.max(0, this.readySkillPoll - dt);
+    if (f.look.element === "metal" && f.kit === "glaive") return false;
     if (this.readySkillPoll > 0 || f.isDown()) return false;
     // Veyr cannot cast skills during Blood Festival. His light combo takes over.
     if (f.kit === "sickle" && f.bloodFestivalT > 0) return false;
@@ -1941,9 +2015,6 @@ export class AiBrain implements Brain {
     if (this.handleKaizenBindFollowup(f, dt)) return;
     this.iqObserve(f, o);
     this.observePatterns(f, o, dt);
-    // LAST_STAND_V2: run this before any early defensive returns so a real
-    // parry/dodge doesn't erase observation of prolonged inactivity.
-    this.observeLastStand(f, o);
     this.personalityRead(f, o); // sample tactics; does not send an input
     // Marked ground impacts outrank defensive guard plans and ordinary offense.
     if (this.evadeGroundStrikes(f)) return;
@@ -1956,6 +2027,8 @@ export class AiBrain implements Brain {
     if (this.counterThreatDefense(f, o, dt)) return;
     if (this.zarekShieldResponse(f, o, dt)) return;
     if (f.chainBoundBy && f.chainBoundBy.chainBindT > 0) return;
+    // A real approaching attack gives Nesa time to wind up her timed V counter.
+    if (this.nesaTimedVParry(f, o)) return;
     // During Blood Festival Veyr chases with basics rather than blocking.
     if (this.veyrFestivalPressure(f, o, dt)) return;
     if (f.stage) { if (this.platform(f, o, dt)) return; }
@@ -1993,8 +2066,6 @@ export class AiBrain implements Brain {
     // NESA_DODGE_KIRA_AIR_3_V1: opponent dodges Nesa's real wind-up; leave
     // Nesa's own AI and every fighter's damage, guard and parry rules untouched.
     if (!f.stage && this.evadeNesa(f, o, dt)) return;
-    // LOW_HEALTH_SURVIVAL: all immediate threat reactions already ran.
-    const survivalActed = this.lowHealthSurvival(f, o);
     this.antiAirCd = Math.max(0, this.antiAirCd - dt);
     this.airSliceCd = Math.max(0, this.airSliceCd - dt);
     this.aiAirTap = false;
@@ -2003,14 +2074,14 @@ export class AiBrain implements Brain {
     // Airborne CPUs swing toward an opponent's current elevation, just like players.
     const flatGap = f.root.position.clone().setY(0)
       .distanceTo(o.root.position.clone().setY(0));
-    if (!survivalActed && !f.stage && f.onGround && f.state === S.IDLE && !RANGED.has(f.kit) &&
+    if (!f.stage && f.onGround && f.state === S.IDLE && !RANGED.has(f.kit) &&
         this.antiAirCd <= 0 && flatGap > 0.65 && flatGap < 2.3 &&
         (this.shouldAerialJump(f, o, flatGap) ||
           (o.onGround && Math.random() < dt * 0.12))) {
       f.intent.jump = true;
       this.antiAirCd = rand(2.2, 3.8);
     }
-    if (!survivalActed && !f.stage && !f.onGround &&
+    if (!f.stage && !f.onGround &&
         (f.state === S.IDLE || (f.state === S.ATTACK &&
           (f.kit === "kicks" ? /^air_l[1-3]$/.test(f.atkId) :
             f.kit === "assassin" && f.atkId === "air_l1"))) &&
@@ -2029,32 +2100,31 @@ export class AiBrain implements Brain {
       (f.cooldowns.x ?? 1) <= 0 && !f.chainBindT && o.state !== S.BLOCK &&
       flatGap > 1.3 && flatGap <= f.attacks.x_air.reach - 0.4 &&
       Math.abs(o.root.position.y - f.root.position.y) <= 2.7;
-    if (!survivalActed && !this.aiAirTap && airHook && this.skillCd <= 0) {
+    if (!this.aiAirTap && airHook && this.skillCd <= 0) {
       f.intent.skill = "x";
       this.skillCd = rand(this.p.skill[0], this.p.skill[1]);
     }
     // Combat IQ runs after emergency dodges and ordinary footwork, before
     // opportunistic skills, scripted personality follow-ups and random offense.
-    const landedActed = !survivalActed && !this.aiAirTap && !f.intent.skill &&
+    const landedActed = !this.aiAirTap && !f.intent.skill &&
       this.aerialLandingPunish(f, o);
     // Roxy's kit plan runs BEFORE normal combo/pattern reads starve her skills.
-    const roxyActed = !survivalActed && !landedActed && !this.aiAirTap && !f.intent.skill &&
+    const roxyActed = !landedActed && !this.aiAirTap && !f.intent.skill &&
       this.roxySkillOpportunity(f, o, dt);
-    const iqActed = !survivalActed && !landedActed && !roxyActed && !this.aiAirTap && !f.intent.skill &&
+    const zenithActed = !landedActed && !roxyActed && !this.aiAirTap && !f.intent.skill &&
+      this.zenithSkillOpportunity(f, o, dt);
+    const iqActed = !landedActed && !roxyActed && !zenithActed && !this.aiAirTap && !f.intent.skill &&
       this.projectileSwordCommit <= 0 && this.combatIQAction(f, o, dt);
-    const patternActed = !survivalActed && !landedActed && !roxyActed && !iqActed && !this.aiAirTap && !f.intent.skill &&
+    const patternActed = !landedActed && !roxyActed && !zenithActed && !iqActed && !this.aiAirTap && !f.intent.skill &&
       this.projectileSwordCommit <= 0 && this.patternFootwork(f, o);
-    if (!survivalActed && !landedActed && !roxyActed && !this.aiAirTap && !f.intent.skill && !iqActed && !patternActed &&
+    if (!landedActed && !roxyActed && !zenithActed && !this.aiAirTap && !f.intent.skill && !iqActed && !patternActed &&
         this.projectileSwordCommit <= 0 &&
         !this.readySkillOpportunity(f, o, dt) && !this.theaterOffense(f, o))
       this.offense(f, o, dt);
     // AI_ADVANCED_FOOTWORK: positioning refinement only after combat decisions.
     // Fire avoidance stays last so later pattern IQ never steers into fire.
     if (!f.stage) {
-      if (!survivalActed) {
-        this.advancedFootwork(f, o, dt);
-        this.lastStandFootwork(f, o);
-      }
+      this.advancedFootwork(f, o, dt);
       this.avoidFireGround(f);
     }
     // Sprint to close long gaps. A direction aimed at retreat/evade is not sprinted.
@@ -2165,11 +2235,21 @@ export class AiBrain implements Brain {
     // Do not override moves that the fighter cannot cancel into a real dash.
     const available = f.state === S.IDLE || f.state === S.BLOCK || f.state === S.CHARGE;
     if (!available) { this.nesaRetreatT = 0; return false; }
+    // NESA_FORWARD_HEART_PARRY_V_20261108: parry sweep itself is not a damaging area.
+    if (a!.style === "nesa_high_striker" && !o.nesaHighStrikerParried) {
+      this.nesaRetreatT = 0;
+      return false;
+    }
     const giant = a!.style === "nesa_high_striker";
     const spin = a!.style === "nesa_spin" || a!.style === "nesa_air_spin";
     const heart = a!.style === "nesa_heart_slam";
     const area = giant || spin || heart || a!.type === "strike";
-    const gap = f.root.position.clone().setY(0).distanceTo(o.root.position.clone().setY(0));
+    // Avoid a C heart smash only if its forward-facing danger zone reaches us.
+    const heartDir = new THREE.Vector3(Math.sin(o.root.rotation.y), 0, Math.cos(o.root.rotation.y));
+    const fromNesa = f.root.position.clone().sub(o.root.position).setY(0);
+    if (heart && fromNesa.dot(heartDir) <= 0.12) { this.nesaRetreatT = 0; return false; }
+    const heartCenter = o.root.position.clone().addScaledVector(heartDir, 2.05).setY(0);
+    const gap = f.root.position.clone().setY(0).distanceTo(heart ? heartCenter : o.root.position.clone().setY(0));
     // Actual source hitboxes: first high-striker bonk reaches 2.65, giant 3.6.
     // Normal hammer attacks may advance during the telegraphed wind-up.
     const firstRadius = giant ? 2.65 + f.radius * 0.45 + 0.22 :
@@ -2184,18 +2264,32 @@ export class AiBrain implements Brain {
       this.nesaGiantEvadeUsed = false;
       // Keep difficulty scaling: easy is less consistent, master more alert.
       this.nesaEvadeChosen = Math.random() < Math.min(0.94, 0.13 + this.p.block * 1.18);
+      // C is blockable (never parryable). Some bots guard instead of fleeing.
+      this.nesaHeartBlockChosen = heart && f.guard > a!.guard * 1.35 &&
+        Math.random() < [0.20, 0.37, 0.48, 0.62][this.iqLevel];
       this.nesaGiantEvadeChosen = Math.random() < Math.min(0.97, 0.38 + this.p.block * 0.88);
       const lead = 0.105 + this.p.react[1] * 0.28 + Math.random() * 0.025;
       this.nesaEvadeTrigger = Math.max(0.04, a!.wind - lead);
       this.nesaRetreatT = 0;
     }
     const t = o.stateT;
-    const giantImpact = a!.wind + 1.90; // actual scheduled giant-smash callback
+    // Raise guard before the visible hammer impact. Holding guard isn't a perfect parry:
+    // nesa_heart_slam is explicitly no_parry, so regular guard drains guard only.
+    if (heart && this.nesaHeartBlockChosen && gap < firstRadius + 0.35 &&
+        t >= Math.max(0.05, a!.wind - 0.31) && t < a!.wind + 0.16) {
+      this.nesaRetreatT = 0;
+      this.blockWait=-1; this.blockHold=0; this.blockDur=0;
+      this.queue=[]; this.hold=0;
+      f.intent.attack=false; f.intent.skill=""; f.intent.dash.set(0,0,0);
+      f.intent.move.set(0,0,0); f.intent.block=true;
+      return true;
+    }
+    const giantImpact = a!.wind + 1.78; // conditional giant, only after confirmed V parry
     const giantDue = giant && !this.nesaGiantEvadeUsed && this.nesaGiantEvadeChosen &&
       gap < bigRadius + 0.65 &&
       t >= giantImpact - (0.44 + this.p.react[1] * 0.15) &&
       t < giantImpact + 0.08;
-    const firstDue = !this.nesaEvadeUsed && this.nesaEvadeChosen &&
+    const firstDue = !giant && !this.nesaEvadeUsed && this.nesaEvadeChosen &&
       gap < firstRadius + 0.65 && t >= this.nesaEvadeTrigger &&
       t < a!.wind + (spin ? Math.max(0.26, a!.active - 0.08) : 0.18);
 
@@ -2585,7 +2679,7 @@ export class AiBrain implements Brain {
         dist < (f.attacks.l1.reach + 0.35);
       // Zarek deliberately meets a real enemy blade occasionally to earn Clash Momentum.
       // Unlike a forced clash this is a normal light input with genuine wind-up timing.
-      if (f.kit === "glaive" && f.onGround && f.state === S.IDLE &&
+      if (f.kit === "glaive" && f.look.element !== "metal" && f.onGround && f.state === S.IDLE &&
           o.atk?.type === "melee" && !o.atk.no_parry &&
           dist < f.attacks.l1.reach + 0.15 && tth >= f.attacks.l1.wind * 0.50 &&
           this.seenClashSwing !== o.swingSerial &&
@@ -2615,7 +2709,7 @@ export class AiBrain implements Brain {
         o.isContinuousComboActive() ? Math.max(0.35, o.atk.wind + o.atk.active + o.atk.recover) : 0.3);
       else if (r < this.p.parry + bc) this.schedule(rand(this.p.react[0], this.p.react[1]) * 0.45,
         o.isContinuousComboActive() ? Math.max(0.5, o.atk.wind + o.atk.active + o.atk.recover) : tth + 0.45);
-      else if (r < this.p.parry + bc + 0.15) this.trySkill(f, "z", true);
+      else if (r < this.p.parry + bc + 0.15 && f.look.element !== "metal") this.trySkill(f, "z", true);
     }
     const charging = o.state === S.CHARGE;
     if (charging && !this.seenCharge) {
@@ -2990,6 +3084,7 @@ export class AiBrain implements Brain {
     for (const m of marks) {
       if (!m.center || !m.radius || m.radius <= 0 || m.land <= now) continue;
       if (m.caster && (m.caster.team === f.team || m.caster.isDown())) continue;
+      if (m.style === "nesa_heart_slam") continue; // handled at windup by evadeNesa: dodge OR block
       // The circle around a caster follows that caster until its actual impact.
       const center = (m.followsCaster && m.caster ? m.caster.root.position : m.center).clone();
       if (Math.abs(center.y - f.root.position.y) > 1.55) continue;
@@ -3380,318 +3475,6 @@ export class AiBrain implements Brain {
     this.advancedLastDir.copy(best);
   }
 
-  /** Track elapsed time without damage even when an urgent dodge/parry has
-   *  returned early. Last Stand is based only on visible HP and positions.
-   *  A new opponent or restarted round resets every observation.
-   */
-  private observeLastStand(f: Fighter, o: Fighter) {
-    const now = this.threats.now();
-    const freshRound = this.lastStandOpponent !== o ||
-      now < this.lastStandObservedAt - 0.15 ||
-      (f.hp >= f.maxHp * 0.98 && this.lastStandSelfHp < f.maxHp * 0.40 &&
-        f.hp - this.lastStandSelfHp > f.maxHp * 0.50) ||
-      (o.hp >= o.maxHp * 0.98 && this.lastStandEnemyHp < o.maxHp * 0.40 &&
-        o.hp - this.lastStandEnemyHp > o.maxHp * 0.50);
-    if (freshRound) {
-      this.lastStandOpponent = o;
-      this.lastStandLastDamageAt = now;
-      this.lastStandUntil = -1;
-      this.survivalPressureUntil = -1;
-      this.survivalRetreatStartedAt = -1;
-      this.survivalMode = "none";
-    } else if (f.hp < this.lastStandSelfHp - 0.05 ||
-               o.hp < this.lastStandEnemyHp - 0.05) {
-      this.lastStandLastDamageAt = now;
-    }
-    this.lastStandSelfHp = f.hp;
-    this.lastStandEnemyHp = o.hp;
-    this.lastStandObservedAt = now;
-    if (f.stage || f.isDown() || o.isDown()) return;
-
-    const bothLow = f.hp / Math.max(1, f.maxHp) < 0.30 &&
-      o.hp / Math.max(1, o.maxHp) < 0.30;
-    if (!bothLow || now < this.lastStandUntil) return;
-    // Lower difficulties take longer to realize the fight has stalled.
-    const delay = [6.0, 5.2, 4.5, 4.0][this.iqLevel] ?? 4.0;
-    const quiet = now - this.lastStandLastDamageAt;
-    if (quiet < delay) return;
-    const gap = f.root.position.clone().setY(0).distanceTo(
-      o.root.position.clone().setY(0));
-    const desired = this.effectiveRangeBand(f, o).far;
-    const nearEdge = f.root.position.clone().setY(0).length() > f.arenaRadius - f.radius - 1.5 ||
-      o.root.position.clone().setY(0).length() > o.arenaRadius - o.radius - 1.5;
-    // Also break a face-to-face defensive standoff after another 2.5 seconds.
-    if (gap > Math.max(3.0, desired + 1.25) || nearEdge || quiet > delay + 2.5) {
-      this.lastStandUntil = now + 5.5; // committed 5+ seconds, never frame toggling
-      this.survivalRetreatStartedAt = -1;
-    }
-  }
-
-  /** During pressure or Last Stand, advance only when outside effective range.
-   * Keep regular attacks, parries, blocks, real cooldowns and fire avoidance.
-   * This runs AFTER regular footwork, BEFORE the final fire safety veto.
-   */
-  private lastStandFootwork(f: Fighter, o: Fighter) {
-    if (this.survivalMode !== "lastStand" && this.survivalMode !== "pressure") return;
-    if (f.stage || !f.onGround || f.state !== S.IDLE || f.intent.block ||
-        f.intent.jump || f.intent.skill || f.intent.dash.lengthSq() > 0.001 ||
-        this.blockHold > 0 || this.projectileSwordCommit > 0) return;
-    const from = f.root.position.clone().setY(0);
-    const enemy = o.root.position.clone().setY(0);
-    const toward = enemy.sub(from);
-    const gap = toward.length();
-    if (gap < 0.001) return;
-    toward.divideScalar(gap);
-    const band = this.effectiveRangeBand(f, o);
-    const cap = f.arenaRadius - f.radius - 0.28;
-    const edge = from.length() > cap - 0.8;
-    // For ranged fighters, close to casting distance, not melee face-hugging.
-    if (gap <= band.ideal + 0.75 && !edge) return;
-    let dir = toward.clone();
-    if (edge) {
-      const inward = from.clone().negate().normalize();
-      // Prevent the old retreat/orbit planner from continuing to press the wall.
-      if (dir.dot(inward) < 0.15) dir.addScaledVector(inward, 0.70).normalize();
-    }
-    const projected = from.clone().addScaledVector(dir, Math.min(1.35, f.moveSpeed * 0.30));
-    if (projected.length() > cap && projected.length() >= from.length()) return;
-    for (const patch of this.threats.firePatches(f)) {
-      if (Math.abs(patch.pos.y - f.root.position.y) > 1.6) continue;
-      const radius = patch.radius + f.radius * 0.35 + 0.25;
-      const here = Math.hypot(from.x - patch.pos.x, from.z - patch.pos.z);
-      const next = Math.hypot(projected.x - patch.pos.x, projected.z - patch.pos.z);
-      if (next < radius && next < here + 0.08) return;
-    }
-    // Don't force the fighter into the active range of an incoming melee hit.
-    if (o.state === S.ATTACK && o.atk?.type === "melee" &&
-        gap < o.atk.reach + 0.55) return;
-    f.intent.move.copy(dir);
-  }
-
-  /** Low-health survival is a *choice of normal inputs*, not a defensive buff.
-   * The AI sees its own HP/guard, visible enemy recovery and real friendly
-   * healing circles. Reactive block/dodge/parry, grabs and committed attacks
-   * take priority; a critically injured bot can still punish a clear whiff.
-   */
-  private lowHealthSurvival(f: Fighter, o: Fighter): boolean {
-    const now = this.threats.now();
-    if (this.survivalEnemy !== o) {
-      this.survivalEnemy = o;
-      this.survivalMode = "none";
-      this.survivalObserveAt = now + rand(SURVIVAL_IQ[this.iqLevel].react[0],
-        SURVIVAL_IQ[this.iqLevel].react[1]);
-      this.survivalUntil = -1;
-      this.survivalHealConsumed = false;
-      this.survivalDashConsidered = false;
-    }
-    // LAST_STAND_V2: a mutual low-HP standoff beats voluntary retreat, but
-    // reactive defense and legal offense still run in their existing order.
-    if (this.lastStandUntil > now &&
-        f.hp / Math.max(1, f.maxHp) < 0.35 &&
-        o.hp / Math.max(1, o.maxHp) < 0.35) {
-      this.survivalMode = "lastStand";
-      return false;
-    }
-    // After a capped retreat, force several seconds of regular combat logic.
-    if (this.survivalPressureUntil > now) {
-      this.survivalMode = "pressure";
-      return false;
-    }
-    if (this.survivalPressureUntil > 0 && now >= this.survivalPressureUntil) {
-      this.survivalPressureUntil = -1;
-      this.survivalRetreatStartedAt = -1;
-      this.survivalMode = "none";
-    }
-    if (f.stage || f.isDown() || o.isDown() || !f.onGround ||
-        f.state !== S.IDLE || f.intent.block || f.intent.skill ||
-        f.intent.jump || f.intent.dash.lengthSq() > 0.01 ||
-        this.blockWait >= 0 || this.blockHold > 0 || this.sideT > 0 ||
-        this.queue.length > 0 && this.hold > 0 ||
-        this.chainDecisionT > 0 && f.chainBindT > 0 || f.chainBoundBy ||
-        this.projectileSwordCommit > 0 ||
-        this.comboParryTarget > now || this.iqBaitPhase !== "none") return false;
-
-    const profile = SURVIVAL_IQ[this.iqLevel];
-    const hpRatio = f.hp / Math.max(1, f.maxHp);
-    const guardRatio = f.guard / Math.max(1, f.maxGuard);
-    const wounded = hpRatio <= profile.hp;
-    const guardCritical = guardRatio <= profile.guard;
-    const fullGuard = guardRatio > Math.min(0.70, profile.guard + 0.27);
-    const healedEnough = hpRatio > profile.hp + 0.16;
-    if (healedEnough && fullGuard) this.survivalMode = "none";
-    if (!wounded && !guardCritical && this.survivalMode !== "heal") {
-      this.survivalMode = "none";
-      return false;
-    }
-
-    const from = f.root.position.clone().setY(0);
-    const foe = o.root.position.clone().setY(0);
-    const toFoe = foe.clone().sub(from);
-    const gap = toFoe.length();
-    if (gap < 0.001) toFoe.set(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
-    else toFoe.divideScalar(gap);
-    const reach = o.attacks.l1?.reach ?? 1.8;
-    const rangedEnemy = RANGED.has(o.kit);
-    const threatened = o.state === S.ATTACK && o.atkPhase <= 1 &&
-      gap < (o.atk?.type === "melee" ? (o.atk.reach + 0.8) : 5.0);
-    // Real threat handling happens earlier; do not override a combat reaction.
-    if (threatened) return false;
-    // Desperation is NOT cowardice: a visible punish window against a near-KO
-    // opponent is a rational chance to win. Normal hitboxes still decide.
-    if (this.hasPunishWindow(o) &&
-        o.hp / Math.max(1, o.maxHp) < 0.20 &&
-        gap < (f.attacks.l1?.reach ?? 1.8) + 0.45) {
-      this.survivalMode = "none";
-      this.survivalObserveAt = now + 0.45;
-      return false;
-    }
-
-    const pools = (this.threats.healingPools?.(f) ?? []).filter(pool =>
-      pool.remaining > 0.48 &&
-      Math.abs(pool.center.y - f.root.position.y) < 1.65);
-    const inside = pools.find(pool =>
-      from.distanceTo(pool.center.clone().setY(0)) < pool.radius * 0.78);
-    const safeToHeal = gap > reach + (rangedEnemy ? 2.7 : 1.5) &&
-      o.state !== S.ATTACK;
-    // Refresh decisions only after the next observable, difficulty-scaled read.
-    if (now >= this.survivalUntil && now >= this.survivalObserveAt) {
-      const choose = Math.random() < profile.notice;
-      this.survivalObserveAt = now + rand(profile.react[0], profile.react[1]);
-      this.survivalUntil = now + rand(profile.hold[0], profile.hold[1]);
-      this.survivalSide = Math.random() < 0.5 ? -1 : 1;
-      this.survivalHealConsumed = false;
-      this.survivalDashConsidered = false;
-      this.survivalMode = choose ?
-        wounded && (inside || pools.length > 0 || safeToHeal) ? "heal" :
-          guardCritical && !wounded ? "recover" : "retreat"
-        : "none";
-    }
-    if (this.survivalMode === "none") return false;
-
-    // LAST_STAND_V2: survival is tactical, not an endless retreat loop.
-    // Retreatment may last at most 2 seconds, travel at most 5 meters, and
-    // cannot continue outward at the edge of the arena.
-    if (this.survivalMode === "retreat" || this.survivalMode === "recover") {
-      if (this.survivalRetreatStartedAt < 0) {
-        this.survivalRetreatStartedAt = now;
-        this.survivalRetreatOrigin.copy(from);
-      }
-      const elapsed = now - this.survivalRetreatStartedAt;
-      const moved = from.distanceTo(this.survivalRetreatOrigin);
-      const boundary = f.arenaRadius - f.radius - 1.0;
-      const nearWall = from.length() >= boundary;
-      const maxSeconds = this.survivalMode === "recover" ? 1.4 : 2.0;
-      if (elapsed >= maxSeconds || moved >= 5.0 || nearWall) {
-        this.survivalMode = "pressure";
-        this.survivalPressureUntil = now + (this.iqLevel >= 2 ? 3.4 : 2.7);
-        this.survivalUntil = -1;
-        return false; // let whiff punish, combo and normal offense run
-      }
-    }
-
-    if (this.survivalMode === "heal" && wounded) {
-      // Only attempt a legitimately equipped and ready healing skill. Guests
-      // cannot use V, and AI below Master cannot sneak in a fourth skill.
-      if (!this.survivalHealConsumed && safeToHeal && !inside) {
-        const healKey = ["z", "x", "c", ...(f.bonusSkillUnlocked ? ["v"] : [])]
-          .find(key => {
-            const skill = f.attacks[key];
-            return skill && (f.cooldowns[key] ?? 1) <= 0 &&
-              skill.type === "buff" &&
-              (skill.mode === "healing_water" || skill.mode === "heal");
-          });
-        if (healKey && Math.random() < profile.heal) {
-          f.intent.skill = healKey;
-          f.intent.attack = false;
-          this.queue = [];
-          this.hold = 0;
-          this.survivalHealConsumed = true;
-          return true;
-        }
-      }
-      if (inside && safeToHeal) {
-        // Standing in the WATER is necessary for the legitimate 0.6s heal
-        // pulses; do not wander out to continue orbiting for no reason.
-        f.intent.move.set(0, 0, 0);
-        f.intent.attack = false;
-        this.queue = [];
-        this.hold = 0;
-        return true;
-      }
-      // Seek a reachable friendly healing pool, but never rush through an
-      // opponent in order to reach it. Nearby ground fire is handled last.
-      if (!inside && pools.length > 0 && !threatened) {
-        const pool = pools.slice().sort((a, b) =>
-          from.distanceToSquared(a.center.clone().setY(0)) -
-          from.distanceToSquared(b.center.clone().setY(0)))[0];
-        const towardPool = pool.center.clone().setY(0).sub(from);
-        if (towardPool.length() > 0.15 && towardPool.length() < 6.5) {
-          const move = towardPool.normalize();
-          const next = from.clone().addScaledVector(move, Math.min(1.2, f.moveSpeed * 0.33));
-          if (next.distanceTo(foe) > reach + 0.75 &&
-              next.length() < f.arenaRadius - f.radius - 0.18) {
-            f.intent.move.copy(move);
-            f.intent.attack = false;
-            this.queue = [];
-            this.hold = 0;
-            return true;
-          }
-        }
-      }
-    }
-
-    // Choose between retreat and diagonal orbit by comparing actual walk
-    // destinations. Don't repeatedly walk into the same arena wall.
-    const away = toFoe.clone().negate();
-    const tangent = new THREE.Vector3(-toFoe.z, 0, toFoe.x)
-      .multiplyScalar(this.survivalSide);
-    const inward = from.lengthSq() > 0.01 ? from.clone().negate().normalize() : away.clone();
-    const candidates = [away.clone(),
-      away.clone().addScaledVector(tangent, 0.70),
-      away.clone().addScaledVector(tangent, -0.70),
-      tangent.clone(), tangent.clone().negate(),
-      inward.clone(), inward.clone().addScaledVector(tangent, 0.45),
-      inward.clone().addScaledVector(tangent, -0.45)];
-    const arena = f.arenaRadius - f.radius - 0.25;
-    const look = Math.min(1.75, Math.max(0.95, f.moveSpeed * 0.35));
-    const fire = this.threats.firePatches(f);
-    let best: THREE.Vector3 | null = null;
-    let score = -1e10;
-    for (const candidate of candidates) {
-      if (candidate.lengthSq() < 0.01) continue;
-      const dir = candidate.normalize();
-      const next = from.clone().addScaledVector(dir, look);
-      if (next.length() > arena && next.length() >= from.length() - 0.02) continue;
-      let value = next.distanceTo(foe) - gap;
-      if (this.survivalMode === "recover") value *= 0.80;
-      value += dir.dot(tangent) * 0.23;
-      if (next.length() < from.length()) value += 0.16;
-      for (const patch of fire) {
-        if (Math.abs(patch.pos.y - f.root.position.y) > 1.6) continue;
-        const nextDist = Math.hypot(next.x - patch.pos.x, next.z - patch.pos.z);
-        const hereDist = Math.hypot(from.x - patch.pos.x, from.z - patch.pos.z);
-        const limit = patch.radius + f.radius * 0.35 + 0.28;
-        if (nextDist < limit && nextDist < hereDist + 0.08)
-          value -= 15 + (limit - nextDist) * 5;
-      }
-      if (value > score) { score = value; best = dir.clone(); }
-    }
-    if (!best || score < -8) return false;
-    f.intent.move.copy(best).multiplyScalar(this.survivalMode === "recover" ? 0.75 : 1);
-    f.intent.attack = false;
-    this.queue = [];
-    this.hold = 0;
-    // Critical HP can spend a REAL dash on separation; no invulnerability or
-    // cooldown cheating. A clear whiff instead encourages a counterattack.
-    if (!this.survivalDashConsidered && hpRatio < 0.14 &&
-        gap < reach + 0.65 && f.dashCd <= 0 && this.iqLevel >= 2 &&
-        this.survivalMode === "retreat") {
-      this.survivalDashConsidered = true; // one chance per plan, not per frame
-      if (Math.random() < profile.notice * 0.46) f.intent.dash.copy(best);
-    }
-    return true;
-  }
-
   private position(f: Fighter, o: Fighter, dt: number) {
     const d = o.root.position.clone().sub(f.root.position);
     d.y = 0;
@@ -3818,7 +3601,7 @@ export class AiBrain implements Brain {
  * stand; dodge, guard, parry, hazard and stage movement take precedence. */
   /** Fighter-specific tactical *intent*: no hidden enemy inputs or cooldowns.
    * Decisions are sampled once per plan, with longer gaps on easier settings.
-   * The previous emergency dodge/parry and survival AI still have priority.
+   * Normal emergency dodge/parry reactions still have priority.
    */
   private personalityRead(f: Fighter, o: Fighter) {
     const now = this.threats.now();
@@ -4089,6 +3872,12 @@ private personalizedSkill(f: Fighter, o: Fighter, distance: number): string | nu
         if (name === "Fireball Volley" && distance > 3) points += 1.1;
         if (name === "Meteor" && punish) points += 1.1;
         break;
+      case "zenith":
+        if (name === "Rail Spear") points += distance > 3.0 && !f.zenithSpearOut ? 2.3 : -1.0;
+        if (name === "Phantom Spear Barrage") points += punish && close ? 2.3 : 0.2;
+        if (name === "Magnetic Dominion") points += f.zenithSpearOut ? 2.5 : distance < 4.5 ? 1.5 : 0.0;
+        if (name === "Sovereign Arsenal") points += punish && distance < 7.5 ? 1.8 : -0.1;
+        break;
       case "roxy":
         if (a.mode === "frost_aegis") points += attackComing ? 3.0 : 0.2;
         if (name === "Frost Marionette") points += punish ? 2.0 : 1.2;
@@ -4169,15 +3958,22 @@ private personalizedSkill(f: Fighter, o: Fighter, distance: number): string | nu
         }
         // Spend a stored heart charge on a near, punishable target—not empty air.
         if (name === "Pink Heart Smash") {
-          if (distance > 2.82) viable = false;
-          points += punish || blocking ? 2.4 : distance < 2.10 ? 1.0 : 0.0;
+          // True hit zone is in front of Nesa, centered 2.05m ahead, radius 2.72m.
+          const heading = new THREE.Vector3(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
+          const aim = o.root.position.clone().sub(f.root.position).setY(0);
+          const heartCenter = f.root.position.clone().addScaledVector(heading, 2.05).setY(0);
+          if (aim.dot(heading) <= 0.12 || o.root.position.clone().setY(0).distanceTo(heartCenter) > 2.72 + o.radius * 0.5) viable = false;
+          points += punish || blocking ? 2.4 : distance < 3.65 ? 1.0 : 0.0;
           if (f.nesaCCharges === 1 && !punish) points -= 0.7;
         }
         if (name === "Side Swipe") points += close && blocking ? 2.0 : punish ? 1.7 : 0.1;
-        // Large second bonk needs a target likely to stay in radius.
+        // V is a defensive vertical parry now: cast against a real incoming attack,
+        // never waste the giant-hammer setup on an idle opponent.
         if (name === "Heartbreaker High Striker") {
-          if (distance > 3.0) viable = false;
-          points += punish && distance < 2.4 ? 2.75 : 0.0;
+          const threatening = o.state === S.ATTACK && o.atkPhase <= 1 && !!o.atk &&
+            (!o.atk.no_parry || o.isContinuousComboActive());
+          if (!threatening || distance > 3.45 || distance < 0.2) viable = false;
+          points += threatening && distance < 2.95 ? 4.5 : 0.0;
         }
         break;
     }
@@ -4228,7 +4024,7 @@ private offense(f: Fighter, o: Fighter, dt: number) {
       (1 - cdIntel.pressure * 0.22 + cdIntel.caution * 0.22);
     // Festival disables all Veyr skills until it expires; pressure with basics.
     const skill = this.personalizedSkill(f, o, distance);
-    if (skill && (punish || Math.random() < 0.80) && this.trySkill(f, skill, true)) return;
+    if (id !== "zenith" && skill && (punish || Math.random() < 0.80) && this.trySkill(f, skill, true)) return;
   }
   if (distance > reach) return;
   if (danger && !punish && id !== "zarek" && id !== "aster" && Math.random() < 0.80) return;

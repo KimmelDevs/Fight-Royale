@@ -684,13 +684,16 @@ export class FighterModel extends THREE.Group {
 
   /** ZAREK_STORM_V1: double-ended conductive glaive; meshes follow the VRM's hands. */
   private buildGlaive() {
+    // Metal uses the same hand rig, new material palette and a longer leaner spear.
+    const zenithMetal = this.look.element === "metal";
     const staff = pivot(this.hand_r, [0, 0, 0], [PI / 2, 0, 0]);
     this.glaivePivot = staff;
+    if (zenithMetal) staff.name = "zenithMagneticSpear";
     // ZAREK_PROPORTIONATE_GLAIVE_V1: shorten shaft, blades, tip, and offhand grip together.
     // -22% on procedural bodies; the VRoid hand mount is adjusted separately below.
-    staff.scale.setScalar(0.78);
-    mesh(staff, cyl(0.019, 0.022, 1.53, 12), this.tn("#233449"));
-    mesh(staff, cyl(0.028, 0.028, 0.42, 12), this.tn("#101a2a"), [0, 0, 0]);
+    staff.scale.setScalar(zenithMetal ? 0.86 : 0.78);
+    mesh(staff, cyl(0.019, 0.022, 1.53, 12), this.tn(zenithMetal ? "#8795ac" : "#233449"));
+    mesh(staff, cyl(0.028, 0.028, 0.42, 12), this.tn(zenithMetal ? "#263955" : "#101a2a"), [0, 0, 0]);
     for (const s of [-1, 1]) {
       mesh(staff, cyl(0.047, 0.035, 0.12, 12), this.tn(this.look.trim), [0, s * 0.73, 0]);
       // Broad at the base, narrow at the end: thin diamond-edged blade, not a round club.
@@ -715,6 +718,11 @@ export class FighterModel extends THREE.Group {
     this.bladeTip = pivot(staff, [0, 1.38, 0]);
     this.shieldNode = staff;
     this.castPoint = this.bladeTip;
+  }
+
+  /** The game hides the held metal spear when its projectile is flying. */
+  setZenithSpearHeld(held: boolean) {
+    if (this.look.element === "metal" && this.glaivePivot) this.glaivePivot.visible = held;
   }
 
   /** KAIZEN_BIND_ZAREK_COUNTER_V4: forked short blade in right hand, long chain gripped by left. */

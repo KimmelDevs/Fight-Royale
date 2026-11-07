@@ -186,6 +186,37 @@ export function attacks(kit: string, element: string): Record<string, Attack> {
   // AIR_COMBAT_V1: shared air commands keep each kit's existing Z/X/C untouched.
   Object.assign(t, airCombatMoves(kit, element, t));
   t.v = bonusSkill(kit, element);
+  // ZENITH_IRON_SOVEREIGN_V1_20261108: Metal spear kit is independent of Zarek.
+  if (kit === "glaive" && element === "metal") {
+    const base = (key: string, value: Partial<Attack>) => { t[key] = a(value); };
+    const combo: [number, number, string, string][] = [
+      [43, 0.14, "gl1_w", "gl1_s"], [46, 0.14, "gl2_w", "gl2_s"],
+      [49, 0.15, "gl3_w", "gl3_s"], [51, 0.16, "gl4_w", "gl4_s"],
+      [68, 0.24, "gl5_w", "gl5_s"] ];
+    for (let i=0;i<5;i++) base(`l${i+1}`, { name: `Steel Fang ${i+1}`, type: "melee",
+      wind: 0.085 + 0.014 * i, active: 0.075, recover: combo[i][1],
+      dmg: combo[i][0], guard: 13+i*2, reach: 2.14, lunge: 2.35, knock: i===4?3.0:0.65,
+      stun: i===4?0.32:0.16, style: "zenith_basic", pose_w: combo[i][2], pose_s: combo[i][3],
+      next: i<4?`l${i+2}`:"" });
+    base("heavy", { name: "Magnetic Lance", type: "projectile", wind: 0.28, recover: 0.56,
+      dmg: 100, guard: 35, knock: 3.0, stun: 0.35, heavy: true, speed: 23, size: 1.5, pierce: true,
+      style: "zenith_heavy", pose_w: "glh_w", pose_s: "glh_s" });
+    base("z", { name: "Rail Spear", desc: "Throw your spear in a piercing metal line (Negative). Press Z again to recall through foes. If not recalled, it returns automatically.",
+      cd: 12, type: "projectile", wind: 0.19, recover: 0.29, dmg: 92, guard: 25,
+      knock: 3.2, stun: 0.27, speed: 24, size: 1.8, pierce: true,
+      style: "zenith_rail", pose_w: "glz_w", pose_s: "glz_s" });
+    base("x", { name: "Phantom Spear Barrage", desc: "Five fast held thrusts, then three independently flying spear thrusts while Zenith can reposition.",
+      cd: 10, type: "melee", wind: 0.12, active: 0.75, recover: 0.33,
+      dmg: 25, guard: 9, reach: 2.35, knock: 0.35, stun: 0.13,
+      style: "zenith_barrage", pose_w: "glx_w", pose_s: "glz_s" });
+    base("c", { name: "Magnetic Dominion", desc: "Tap to draw a positively marked enemy toward you, hold to repel nearby foes. With your spear thrown, zip toward its magnetic anchor instead.",
+      cd: 14, type: "buff", mode: "zenith_magnet", wind: 0.12, active: 0.08, recover: 0.36,
+      radius: 4.5, pose_w: "glc_w", pose_s: "glc_s" });
+    base("v", { name: "Sovereign Arsenal", desc: "Summon six magnetic spear constructs for dodgeable directional strikes, ending in one heavy rail spear.",
+      cd: 53, type: "projectile", wind: 0.55, active: 1.35, recover: 0.70,
+      dmg: 43, guard: 15, knock: 1.4, stun: 0.18, speed: 17, size: 1.2,
+      style: "zenith_arsenal", pose_w: "glc_w", pose_s: "glc_s" });
+  }
   // ASTER_KNIGHT_COMBAT_ANIM_V2: only animation pose keys change, never skill values.
   if (kit === "knight" && element === "light") {
     const asterMoves: Record<string, [string, string]> = {
@@ -214,6 +245,11 @@ export function attacks(kit: string, element: string): Record<string, Attack> {
       dmg: basic.dmg, guard: basic.guard, knock: basic.knock, stun: basic.stun,
       heavy: false, count: 1, spread: 0, next: "", pierce: false,
       pose_w: basic.pose_w, pose_s: basic.pose_s };
+  }
+  if (kit === "glaive" && element === "metal") {
+    t.pc = { ...t.l2, name: "Iron Reversal", desc: "A perfect parry opens the guard for a fast magnetic counter-thrust.",
+      id: "pc", type: "melee", style: "zenith_basic", wind: 0.12, active: 0.08, recover: 0.29,
+      dmg: 70, guard: 20, knock: 1.4, stun: 0.28, next: "", pose_w: "gl2_w", pose_s: "gl2_s" };
   }
   // BULLET_SWORDPLAY_V1: Aster's X now sweeps forward instead of jumping.
   // Keep its existing name, damage and cooldown; each Weaken stack reduces outgoing damage 20% multiplicatively for 50s, up to x5.
@@ -344,7 +380,12 @@ function bonusSkill(kit: string, element: string): Attack {
     case "greatsword":
       return a({ name: "Berserk", desc: "Deal 20% more damage for 6 seconds.", cd: 14, type: "buff", mode: "rage", duration: 6, wind: 0.2, recover: 0.4, pose_w: "charge", pose_s: "win" });
     case "hammer":
-      return a({ name: "Heartbreaker High Striker", desc: "Carnival strength-test double smash: first bonk, a 4x heart hammer, then an enormous second blow. No long stun.", cd: 26, type: "strike", at: "self", wind: 0.66, active: 2.20, recover: 0.90, dmg: 145, guard: 85, knock: 12.5, stun: 0.26, heavy: true, radius: 3.50, style: "nesa_high_striker", pose_w: "charge", pose_s: "heavy_s" });
+      // NESA_FORWARD_HEART_PARRY_V_20261108: first a vertical swing with an honest parry window.
+      return a({ name: "Heartbreaker High Striker",
+        desc: "A vertical hammer counter-swing that parries one incoming attack. A successful parry stuns the attacker and unlocks the 4x giant hammer finishing blow. If no parry occurs, no giant hammer appears and 40% of this skill's cooldown is refunded.",
+        cd: 26, type: "strike", at: "self", wind: 0.24, active: 2.15, recover: 0.55,
+        dmg: 145, guard: 85, knock: 12.5, stun: 0.26, heavy: true,
+        radius: 3.50, style: "nesa_high_striker", pose_w: "nesa_parry_w", pose_s: "nesa_parry_s" });
     case "katana":
       return a({ name: "Iaido Flash", desc: "An instant cross-arena draw cut.", cd: 8, wind: 0.08, active: 0.16, recover: 0.45, dmg: 200, guard: 50, reach: 2.2, lunge: 18, knock: 5, stun: 0.7, heavy: true, pose_w: "charge", pose_s: "heavy_s" });
     case "bow":
@@ -500,9 +541,9 @@ function hammer(): Record<string, Attack> {
     heavy: a({ name: "Momentum Cyclone", desc: "Hold left-click to control spin duration; each turn hits, the final turn launches.", wind: 0.45, active: 0.48, recover: 0.43, dmg: 36, guard: 15, reach: 2.58, lunge: 2.10, knock: 1.5, stun: 0.20, heavy: false, style: "nesa_spin", pose_w: "charge", pose_s: "l3_s" }),
     z: a({ name: "Side Swipe", desc: "Huge sideways strike. Block reduces damage but cannot nullify its push.", cd: 7, wind: 0.36, active: 0.11, recover: 0.42, dmg: 180, guard: 72, reach: 2.69, lunge: 1.75, knock: 9.6, stun: 0.70, heavy: true, pose_w: "nx_w", pose_s: "nx_s" }),
     x: a({ name: "Upsie Daisie", desc: "Plant the hammer as a pole, keep a firm grip, then swing sideways into a long-reaching flying kick.", cd: 9, wind: 0.40, active: 0.16, recover: 0.50, dmg: 170, guard: 36, reach: 2.62, lunge: 7.8, knock: 7.3, stun: 0.57, heavy: true, self_jump: 6.6, pose_w: "kick_w", pose_s: "kick_s" }),
-    c: a({ name: "Pink Heart Smash", desc: "Three stored charges. One grounded heart-hammer smash per press with a bright pink heart shockwave; charges regenerate separately.",
+    c: a({ name: "Pink Heart Smash", desc: "Three forward heart-smash charges. Regular blocking negates HP damage (unless guard breaks); cannot be parried. Dodge or guard the telegraphed impact.",
       cd: 7.5, type: "strike", at: "self", wind: 0.36, active: 0.13, recover: 0.36,
-      dmg: 172, guard: 57, knock: 8.7, stun: 0.62, heavy: true,
+      dmg: 156, guard: 42, knock: 7.4, stun: 0.56, heavy: true, no_parry: true,
       delay: 0.035, radius: 2.72, style: "nesa_heart_slam", pose_w: "charge", pose_s: "heavy_s" }),
   };
 }
@@ -1092,6 +1133,11 @@ const CHAINBLADE: Record<string, Pose> = {
 
 // NESA_HEART_HAMMER_V2: weapon-weight poses, distinct from Garrick.
 const NESA_SWINGS: Record<string, Pose> = {
+  // NESA_FORWARD_HEART_PARRY_V_20261108: raise the hammer vertically, then sweep it downward.
+  nesa_parry_w: K(P([-0.14, -0.30, 0], [0.06, 0.16, 0], [-2.65, -0.27, -0.12], [0.55, 0, 0],
+    [-2.43, -0.19, 0.10], [0.50, 0, 0], [-0.30, 0, 0.08], [0.26, 0, -0.08], -0.11), 0.15, 0.19),
+  nesa_parry_s: K(P([0.42, 0.14, 0], [-0.12, -0.08, 0], [-0.68, 0.42, -0.08], [0.16, 0, 0],
+    [-0.81, -0.15, 0.11], [0.16, 0, 0], [-0.77, 0, 0.10], [0.51, 0, -0.09], -0.27), 0.70, 0.82),
   // NESA_V5_LOADOUT_AIR_SPIN_UPRIGHT: Nesa STANDS on straight, relaxed legs; the hammer weight pulls at her shoulders and wrists, not her knees.
   idle: P([0.11, -0.20, 0.03], [-0.04, 0.13, 0], [-1.04, -0.29, -0.15], [-0.16, 0, 0], [-1.03, 0.21, 0.14], [-0.16, 0, 0], [-0.06, 0, 0.05], [0.06, 0, -0.05], 0.0),
   l1_w: P([0.18, -1.12, -0.08], [0.04, 0.55, 0], [-1.03, -1.0, -0.20], [0.72, 0, 0], [-1.06, -0.72, 0.12], [0.65, 0, 0], [-0.56, 0, 0.13], [0.4, 0, -0.1], -0.22),
