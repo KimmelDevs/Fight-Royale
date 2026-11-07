@@ -402,6 +402,7 @@ export class Fighter implements Entity {
   barrelPos = new THREE.Vector3();
   /** Pressing the keg's skill while it is out asks the arena to detonate it. */
   onTrigger: (f: Fighter) => void = () => {};
+  onSnowCommand: (f: Fighter, key: string) => boolean = () => false;
   /** Blood Hunter: steering recast and 0.30s feint window. */
   sickleOut = false;
   bloodFeintT = 0;
@@ -1321,6 +1322,9 @@ export class Fighter implements Entity {
     }
     if (this.kit === "hammer" && this.attacks[k]?.style === "nesa_heart_slam" &&
         (!this.nesaCArmed || this.nesaCCharges <= 0)) return;
+    if (this.look.element === "frost" && this.attacks[k]?.type === "snow_puppet") {
+      if (![S.HITSTUN, S.STAGGER, S.KO, S.WIN].includes(this.state) && this.onSnowCommand(this, k)) return;
+    }
     if ((this.cooldowns[k] ?? 1) > 0) return;
     const free = [S.IDLE, S.BLOCK, S.CHARGE].includes(this.state) || (this.state === S.ATTACK && this.atkPhase === 2);
     if (!free) return;
