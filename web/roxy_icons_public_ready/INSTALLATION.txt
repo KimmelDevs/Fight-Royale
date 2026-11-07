@@ -1,0 +1,20 @@
+ROXY ICON PACK — FIGHT ROYALE
+
+Copy the public/icons/ folder from this archive into your game's web/public/icons/ folder.
+Keep the chars/ and skills/ subfolders exactly as named; overwriting files with the same name is OK.
+
+Auto-used by the game:
+  public/icons/chars/roxy.webp               Character portrait
+  public/icons/skills/mage-frost-z.webp       Z: Snowglass Aegis (4 orbiting shield shards)
+  public/icons/skills/mage-frost-x.webp       X: Frost Marionette (Snowpuff)
+  public/icons/skills/mage-frost-c.webp       C: Glacier Meteor
+  public/icons/skills/mage-frost-v.webp       V: Frostwing Choir (3 stationary frost birds)
+
+Bonus icons, for later UI use if desired:
+  public/icons/skills/mage-frost-basic.webp   Roxy's basic ice shot
+  public/icons/skills/mage-frost-heavy.webp   Charged 4 gently homing ice shards
+  public/icons/skills/mage-frost-passive.webp  4 shard hits = Freeze passive
+
+All 8 icons are 128x128 transparent-corner WebP icons.
+The 5 core icons match src/ui/icons.tsx's existing path naming.
+These files are images only — no Python installer and no TS changes needed.

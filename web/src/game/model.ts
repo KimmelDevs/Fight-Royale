@@ -97,6 +97,7 @@ export class FighterModel extends THREE.Group {
   hairSway: THREE.Group[] = [];
   /** Two-handed weapons: the left hand is pulled onto this point of the grip every frame. */
   private gripL: THREE.Object3D | null = null;
+  private roxyFloatingBook: THREE.Group | null = null;
   private glaivePivot: THREE.Group | null = null;
   /** Nesa's heart hammer root, isolated so the carnival finisher can grow it 4x. */
   private nesaHammerPivot: THREE.Group | null = null;
@@ -199,7 +200,7 @@ export class FighterModel extends THREE.Group {
     const before = new Set<THREE.Object3D>();
     this.traverse((o) => { if ((o as THREE.Mesh).isMesh) before.add(o); });
     switch (look.kit) {
-      case "mage": this.buildStaff(); break;
+      case "mage": this.look.element === "frost" ? this.buildRoxySpellbook() : this.buildStaff(); break;
       case "sickle": this.buildSickles(); break;
       case "glaive": this.buildGlaive(); break;
       case "chainblade": this.buildChainblade(); break;
@@ -1340,6 +1341,43 @@ export class FighterModel extends THREE.Group {
     this.shieldNode = this.hand_l;
   }
 
+  // ROXY_FROSTWING_SPELLBOOK_V3_20261108: three-dimensional enchanted spellbook.
+  // Gold bindings, deep sapphire leather, pale layered pages and a cyan crystal crest.
+  private buildRoxySpellbook() {
+    const L = this.look;
+    // Floating grimoire, not a gun: torso-mounted keeps it from following the casting hand.
+    // Local -X is her right side; the book hovers beside her shoulder, spine upright.
+    const b = pivot(this.torso, [-0.62, 0.20, 0.43], [-0.08, -0.28, 0.10]);
+    this.roxyFloatingBook = b;
+    const cover = this.tn("#17254b"), gold = this.tn("#e5ac69"), inset = this.tn("#275e88");
+    const pages = this.tn("#f1f1df"), edge = this.tn("#a5dffd");
+    const back = mesh(b, box(0.53, 0.66, 0.095), cover, [0, 0, 0]);
+    back.rotation.y = -0.10;
+    mesh(b, box(0.49, 0.62, 0.068), pages, [0.018, 0, 0.056]);
+    mesh(b, box(0.51, 0.64, 0.027), cover, [0.018, 0, 0.105]);
+    for (const s of [-1, 1]) {
+      mesh(b, box(0.51, 0.022, 0.023), gold, [0, s * 0.303, 0.126]);
+      mesh(b, box(0.023, 0.61, 0.026), gold, [s * 0.239, 0, 0.126]);
+      for (const v of [-1, 1]) mesh(b, box(0.09, 0.09, 0.032), gold, [s * 0.222, v * 0.284, 0.137]);
+    }
+    mesh(b, box(0.085, 0.64, 0.11), inset, [-0.25, 0, 0.0]);
+    for (const y of [-0.23,-0.13,0.13,0.23]) mesh(b, box(0.087, 0.018, 0.13), gold, [-0.25,y,0]);
+    const seal = pivot(b, [0.018, 0.0, 0.145], [0,0,Math.PI / 4]);
+    mesh(seal, box(0.23, 0.23, 0.026), gold);
+    mesh(seal, box(0.16, 0.16, 0.039), inset, [0, 0, 0.02]);
+    mesh(seal, sphere(0.075, 12), this.glowMat, [0, 0, 0.06]);
+    for (const a of [-1,1]) mesh(b, box(0.08, 0.018, 0.025), edge, [a * 0.11, -0.22, 0.153]);
+    this.bladeBase = pivot(b, [0,0.2,0.18]);
+    this.bladeTip = pivot(b, [0.0,0.33,0.20]);
+    this.castPoint = pivot(b, [0.0,0.33,0.27]);
+    this.shieldNode = pivot(this.hand_l, [0, -0.05, 0]);
+    this.barrier = pivot(this.shieldNode);
+    const disc = mesh(this.barrier, cyl(0.42, 0.42, 0.012, 32), M.water(new THREE.Color(L.glow), 0.3, 1.4));
+    disc.castShadow = false;
+    mesh(this.barrier, torus(0.4,0.43), M.additive(L.glow,0.9)).castShadow = false;
+    this.barrier.visible = false;
+  }
+
   private buildStaff() {
     const L = this.look;
     const s = pivot(this.hand_r, [0, 0, 0]);
@@ -1396,6 +1434,11 @@ export class FighterModel extends THREE.Group {
     this.knee[0] += (kn[0] - this.knee[0]) * k;
     this.knee[1] += (kn[1] - this.knee[1]) * k;
     this.t += dt;
+    if (this.roxyFloatingBook) {
+      this.roxyFloatingBook.position.y = 0.20 + Math.sin(this.t * 2.4) * 0.042;
+      this.roxyFloatingBook.rotation.y = -0.28 + Math.sin(this.t * 1.7) * 0.11;
+      this.roxyFloatingBook.rotation.z = 0.10 + Math.sin(this.t * 2.1) * 0.035;
+    }
     // 0.64 = ordinary walking; 1 = full sprint; each kit uses its own gait rate.
     const running = THREE.MathUtils.clamp((this.walk - 0.66) / 0.34, 0, 1);
     const moving = Math.min(1, this.walk / 0.64);
@@ -1680,7 +1723,7 @@ export class FighterModel extends THREE.Group {
     this.vrmRig.grip = { left: !["mage", "kicks"].includes(this.kit), right: this.kit !== "kicks" };
     // Staffs and bows follow the arm a lot (natural tilt); blades less, to keep swing arcs.
     this.vrmRig.followArm = this.kit === "chainblade" ? 0.14 : this.kit === "glaive" ? 0.24 : this.kit === "sickle" ? 0.18 : this.kit === "mage" ? 0.4 : this.kit === "bow" ? 0.5 : 0.3;
-    this.vrmRig.staff = this.kit === "mage";
+    this.vrmRig.staff = this.kit === "mage" && this.look.element !== "frost";
     this.vrmRig.glaive = this.kit === "glaive";
     this.vrmRig.style = this.kit === "knight" && this.look.element === "light" ? "aster" : this.kit === "chainblade" ? "chainblade" : this.kit === "glaive" ? "storm" : this.kit === "sickle" ? "feral" : this.kit === "hammer" ? "nesa" : this.kit === "greatsword" ? "greatsword" : this.look.body === "m" ? "heavy" : "light";
     if (this.kit === "knight") { this.buildHeaterShield(); this.vrmRig.shield = true; }

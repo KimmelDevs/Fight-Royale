@@ -141,6 +141,10 @@ export class Fighter implements Entity {
   private stunChain = 0;
   onGround = true;
   velY = 0;
+  // ROXY_FROSTWING_SPELLBOOK_V3_20261108: actual 4-hit barrier and shard-hit freeze meter.
+  frostShieldCharges = 0;
+  frostShieldT = 0;
+  frostShardStacks = 0;
   wardT = 0;
   counterT = 0;
   invulnT = 0;
@@ -685,7 +689,10 @@ export class Fighter implements Entity {
     // Only the CURRENT circular chainblade skill is slowed, never other attacks.
     const slowedKaizenSpin = this.kit === "chainblade" && this.state === S.ATTACK &&
       (this.atk?.style === "chain_razor_cyclone" || this.atk?.style === "chain_death_spiral");
-    this.stateT += advancing * (slowedKaizenSpin ? this.kaizenSpinSpeed : 1);
+    // Roxy Freeze V4: Slow changes combat clocks, not cooldown timers or hitstun recovery.
+    const frostActionScale = (this.state === S.ATTACK || this.state === S.CHARGE)
+      ? this.status.actionSpeedMult() : 1;
+    this.stateT += advancing * (slowedKaizenSpin ? this.kaizenSpinSpeed : 1) * frostActionScale;
     for (const k in this.cooldowns) this.cooldowns[k] = Math.max(this.cooldowns[k] - dt, 0);
     if (this.kit === "hammer") {
       // NESA_HEART_SMASH_V4: one charge returns every 7.5 seconds, max three.
@@ -730,6 +737,8 @@ export class Fighter implements Entity {
     this.dashT = Math.max(this.dashT - dt, 0);
     this.readDash();
     this.wardT = Math.max(this.wardT - dt, 0);
+    this.frostShieldT = Math.max(0, this.frostShieldT - dt);
+    if (this.frostShieldT === 0) this.frostShieldCharges = 0;
     this.rageT = Math.max(this.rageT - dt, 0);
     if (this.judgmentT > 0) {
       this.judgmentT = Math.max(0, this.judgmentT - dt);
@@ -1322,9 +1331,6 @@ export class Fighter implements Entity {
     }
     if (this.kit === "hammer" && this.attacks[k]?.style === "nesa_heart_slam" &&
         (!this.nesaCArmed || this.nesaCCharges <= 0)) return;
-    if (this.look.element === "frost" && this.attacks[k]?.type === "snow_puppet") {
-      if (![S.HITSTUN, S.STAGGER, S.KO, S.WIN].includes(this.state) && this.onSnowCommand(this, k)) return;
-    }
     if ((this.cooldowns[k] ?? 1) > 0) return;
     const free = [S.IDLE, S.BLOCK, S.CHARGE].includes(this.state) || (this.state === S.ATTACK && this.atkPhase === 2);
     if (!free) return;
@@ -1822,6 +1828,13 @@ export class Fighter implements Entity {
   private tickStatus(dt: number) {
     if (this.state === S.KO || this.state === S.WIN || this.stage) { this.status.clear(); return; }
     const st = this.status.tick(dt, this.model.walk > 0.3);
+    if (this.status.has("freeze")) {
+      this.intent.attack = false; this.intent.skill = ""; this.intent.block = false; this.intent.jump = false;
+      this.intent.move.set(0, 0, 0); this.intent.dash.set(0, 0, 0);
+      if (this.state !== S.HITSTUN) { this.stun = 2; this.setState(S.HITSTUN); }
+      this.stun = Math.max(this.stun, this.stateT + 0.09);
+      this.velY = 0; this.knock = 0;
+    }
     for (const d of st.dots) {
       this.hp = Math.max(this.hp - d.dmg, 0);
       // Damage-over-time counts as taking damage for guard recovery.
@@ -1852,6 +1865,11 @@ export class Fighter implements Entity {
         return "perfect_dodge";
       }
       return "miss";
+    }
+    if (this.look.element === "frost" && this.frostShieldT > 0 && this.frostShieldCharges > 0) {
+      this.frostShieldCharges -= 1;
+      this.model.recoil = 0.4;
+      return "warded"; // zero HP AND guard damage, exactly one crystal spent per hit
     }
     if (this.wardT > 0) { this.model.recoil = 0.4; return "warded"; }
     if (this.counterT > 0 && !a.no_parry) { this.counterT = 0; return "counter"; }

@@ -8,14 +8,15 @@
 //   weaken   - deals less damage
 // The host runs them; online clients only see which ones are active (a bitmask in snapshots).
 
-export type StatusKind = "burn" | "poison" | "bleed" | "paralyze" | "slow" | "weaken";
+export type StatusKind = "burn" | "poison" | "bleed" | "paralyze" | "slow" | "weaken" | "freeze";
 
 export const STATUS: Record<StatusKind, { label: string; color: string; bit: number; text: (t: number, p: number) => string }> = {
   burn: { label: "BURN", color: "#ff7a2e", bit: 1, text: (t, p) => `Burn: ${p} dmg/s for ${t}s` },
   poison: { label: "POISON", color: "#8ee05a", bit: 2, text: (t, p) => `Poison: ${p} dmg/s for ${t}s, stacks x3` },
   bleed: { label: "BLEED", color: "#e0303e", bit: 4, text: (t, p) => `Bleed: ${p} dmg/s for ${t}s (x1.5 while moving)` },
   paralyze: { label: "PARALYZED", color: "#ffe066", bit: 8, text: (t) => `Paralyze: ${t}s (slowed, jolted every second)` },
-  slow: { label: "SLOWED", color: "#7fc8ff", bit: 16, text: (t, p) => `Slow: -${Math.round((1 - p) * 100)}% speed for ${t}s` },
+  slow: { label: "SLOWED", color: "#7fc8ff", bit: 16, text: (t, p) => `Slow: -${Math.round((1 - p) * 100)}% movement, attack and cast speed for ${t}s` },
+  freeze: { label: "FROZEN", color: "#c5f7ff", bit: 64, text: (t) => `Freeze: immobilized and unable to attack for ${t}s` },
   weaken: { label: "WEAKENED", color: "#fff2b0", bit: 32, text: (t, p) => `Weaken: -${Math.round((1 - p) * 100)}% outgoing damage per stack (multiplicative); up to 5 stacks (${Math.round((1 - Math.pow(p, 5)) * 100)}% max). Lasts ${t}s; each hit adds a stack and refreshes the timer.` },
 };
 
@@ -29,12 +30,17 @@ interface Active { t: number; p: number; stacks: number; tick: number; jolt: num
 
 export class StatusSet {
   private m = new Map<StatusKind, Active>();
+  // ROXY_FLOATING_BOOK_FROSTWING_FREEZE_V4_20261108: immunity starts AFTER thawing.
+  private freezeImmuneT = 0;
+  freezeImmunityRemaining() { return this.freezeImmuneT; }
   /** Bitmask of active effects (also set directly on online puppets). */
   mask = 0;
   /** Who applied the most recent effect (credited for damage-over-time kills). */
   src: unknown = null;
 
-  apply(kind: StatusKind, t: number, p: number, src: unknown = null) {
+  apply(kind: StatusKind, t: number, p: number, src: unknown = null): boolean {
+    // Incoming Freeze may damage, but cannot refresh, chain, or bypass thaw immunity.
+    if (kind === "freeze" && (this.m.has("freeze") || this.freezeImmuneT > 0)) return false;
     if (src) this.src = src;
     const cur = this.m.get(kind);
     if (cur) {
@@ -49,12 +55,19 @@ export class StatusSet {
       this.m.set(kind, { t, p, stacks: 1, tick: DOT_TICK, jolt: JOLT_EVERY * 0.5 });
     }
     this.syncMask();
+    return true;
   }
 
   has(kind: StatusKind) { return (this.mask & STATUS[kind].bit) !== 0; }
   stacks(kind: StatusKind) { return this.m.get(kind)?.stacks ?? 0; }
   consume(kind: StatusKind) { const n = this.stacks(kind); this.m.delete(kind); this.syncMask(); return n; }
-  clear() { this.m.clear(); this.mask = 0; this.src = null; }
+  clear() { this.m.clear(); this.mask = 0; this.src = null; this.freezeImmuneT = 0; }
+
+  /** Slow also affects attack animation and the casting/wind-up of skills. */
+  actionSpeedMult() {
+    if (this.m.has("freeze")) return 0;
+    return this.m.get("slow")?.p ?? 1;
+  }
 
   /** Movement multiplier (slow, paralyze). */
   speedMult() {
@@ -62,6 +75,7 @@ export class StatusSet {
     const s = this.m.get("slow");
     if (s) k *= s.p;
     if (this.m.has("paralyze")) k *= PARALYZE_SPEED;
+    if (this.m.has("freeze")) return 0;
     return k;
   }
 
@@ -78,6 +92,8 @@ export class StatusSet {
   tick(dt: number, moving: boolean): { dots: { kind: StatusKind; dmg: number }[]; jolt: boolean } {
     const dots: { kind: StatusKind; dmg: number }[] = [];
     let jolt = false;
+    let thawed = false;
+    this.freezeImmuneT = Math.max(0, this.freezeImmuneT - dt);
     for (const [kind, s] of this.m) {
       s.t -= dt;
       if (kind === "burn" || kind === "poison" || kind === "bleed") {
@@ -91,7 +107,15 @@ export class StatusSet {
         s.jolt -= dt;
         if (s.jolt <= 0) { s.jolt += JOLT_EVERY; jolt = true; }
       }
-      if (s.t <= 0) this.m.delete(kind);
+      if (s.t <= 0) {
+        this.m.delete(kind);
+        if (kind === "freeze") thawed = true;
+      }
+    }
+    if (thawed) {
+      // 4s total re-freeze lockout, beginning at thaw; 2s of 35% slow.
+      this.freezeImmuneT = 4.0;
+      this.apply("slow", 2.0, 0.65, this.src);
     }
     this.syncMask();
     return { dots, jolt };

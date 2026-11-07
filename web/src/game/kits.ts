@@ -314,9 +314,9 @@ function bonusSkill(kit: string, element: string): Attack {
   switch (kit) {
     case "mage":
       // ASTER_EMBER_LATEST_20261106: fire is consumed to amplify the beam.
-      if (element === "frost") return a({ name: "Snowfall Parade", desc: "Summon three white snowbirds that wait for your command. Press V again to release one bird; each bird fires an ice shard every 3 seconds for 5 shots, then disappears.", cd: 17,
-        type: "snow_puppet", style: "bird", wind: 0.30, recover: 0.45, dmg: 38, guard: 12, knock: 1.8, stun: 0.18,
-        count: 3, speed: 5.1, radius: 1.0, duration: 16.0, effect: "slow", effect_t: 1.4, effect_p: 0.45,
+      if (element === "frost") return a({ name: "Frostwing Choir", desc: "Summon 3 stationary Frostwings. Each keeps facing an enemy and fires one ice shard every 2 seconds for 25 seconds.",
+        cd: 25, type: "snow_puppet", style: "bird", wind: 0.35, recover: 0.45,
+        dmg: 26, guard: 8, knock: 0.55, stun: 0.08, count: 3, speed: 0, radius: 0.7, duration: 25,
         pose_w: "mh_w", pose_s: "m3_s" });
       if (element === "fire") return a({ name: "Absolute Combustion",
         desc: "Condense nearby fire patches and active burns into a white-hot beam. Each consumed patch and burn amplifies the damage.",
@@ -393,22 +393,28 @@ function mage(element: string): Record<string, Attack> {
     l2: a({ type: "projectile", wind: 0.16, active: 0.05, recover: 0.28, dmg: 60 * mul, guard: 15, knock: 1.8, stun: 0.3, speed, pose_w: "m2_w", pose_s: "m2_s", next: "l3" }),
     l3: a({ type: "projectile", wind: 0.24, active: 0.05, recover: 0.42, dmg: 42 * mul, guard: 14, knock: 3, stun: 0.4, speed, count: 3, spread: 0.22, pose_w: "m3_w", pose_s: "m3_s" }),
   };
-  // ROXY_MANUAL_SUMMONS_BIRD_V2_20261108: manual-command frost summons.
+  // ROXY_FROSTWING_SPELLBOOK_V3_20261108: Roxy's 4-button spellbook kit.
   if (element === "frost") {
-    t.heavy = a({ type: "projectile", wind: 0.22, active: 0.05, recover: 0.5, dmg: 170, guard: 47, knock: 4.5, stun: 0.48, heavy: true,
-      speed: 12, size: 1.7, style: "bolt", pose_w: "mh_w", pose_s: "mh_s" });
-    t.z = a({ name: "Snowglass Shield", desc: "Create a protective ice shield for 7 seconds.", cd: 11,
-      type: "buff", mode: "ward", duration: 7, wind: 0.12, recover: 0.28, pose_w: "mh_w", pose_s: "m3_s" });
-    t.x = a({ name: "Frost Marionette", desc: "Summon a light-blue snow marionette. Press X again to command it to rush and freeze the enemy.", cd: 9,
-      type: "snow_puppet", style: "freeze", wind: 0.26, recover: 0.42, dmg: 77, guard: 24, knock: 0.9, stun: 0.2,
-      count: 1, speed: 4.2, radius: 0.95, duration: 9.5, effect: "paralyze", effect_t: 1.35,
-      pose_w: "m2_w", pose_s: "m2_s" });
-    t.c = a({ name: "Glacier Meteor", desc: "A large ice meteor falls onto the marked position, damaging and slowing anyone caught beneath it.", cd: 15,
-      type: "strike", style: "meteor", wind: 0.36, recover: 0.65, dmg: 245, guard: 65, knock: 5.5, stun: 0.65,
+    // All light bolts are individually destructible projectiles. No piercing or homing.
+    for (const key of ["l1", "l2", "l3"]) {
+      t[key] = { ...t[key], style: "frost_shard", pierce: false, size: 0.82 };
+    }
+    t.heavy = a({ name: "Seeking Frost", type: "projectile", wind: 0.24, active: 0.05, recover: 0.55,
+      dmg: 57, guard: 16, knock: 1.2, stun: 0.16, speed: 13.0, size: 0.85, count: 4, spread: 0.33,
+      style: "frost_shard", pose_w: "mh_w", pose_s: "mh_s" });
+    t.z = a({ name: "Snowglass Aegis", desc: "Four orbiting ice crystals. Each incoming damaging hit destroys one shard and deals zero damage; lasts up to 7 seconds.",
+      cd: 13, type: "buff", mode: "frost_aegis", duration: 7, wind: 0.13, recover: 0.25, pose_w: "mh_w", pose_s: "m3_s" });
+    t.x = a({ name: "Frost Marionette", desc: "Summon a light-blue snow marionette that automatically rushes an enemy and FREEZES it for 2 seconds on contact.",
+      cd: 10, type: "snow_puppet", style: "freeze", wind: 0.26, recover: 0.42,
+      dmg: 65, guard: 20, knock: 0.7, stun: 0.08, count: 1, speed: 4.5, radius: 0.9, duration: 8.5,
+      effect: "freeze", effect_t: 2.0, pose_w: "m2_w", pose_s: "m2_s" });
+    t.c = a({ name: "Glacier Meteor", desc: "A huge icy meteor falls on the marked enemy position, damaging and slowing enemies in the impact area.",
+      cd: 15, type: "strike", style: "meteor", wind: 0.36, recover: 0.65, dmg: 245, guard: 65, knock: 5.5, stun: 0.65,
       heavy: true, delay: 0.85, radius: 2.1, effect: "slow", effect_t: 2.0, effect_p: 0.65,
       pose_w: "mh_w", pose_s: "mh_s" });
     return t;
   }
+
   if (element === "fire") {
     // Charged basic (heavy) leaves a 20-second fire patch at its impact.
     t.heavy = a({ type: "strike", wind: 0.15, active: 0.05, recover: 0.55, dmg: 155, guard: 60, knock: 6, stun: 0.7, heavy: true, delay: 0.5, radius: 1.05, style: "explosion", pose_w: "mh_w", pose_s: "mh_s" });

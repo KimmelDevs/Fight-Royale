@@ -294,7 +294,9 @@ interface Trap {
   pos: THREE.Vector3; mesh: THREE.Group; arm: number; life: number; t: number;
 }
 
+// ROXY_FLOATING_BOOK_FROSTWING_FREEZE_V4_20261108
 // ROXY_MANUAL_SUMMONS_BIRD_V2_20261108 — manual frost summons with handcrafted procedural meshes.
+// ROXY_FROSTWING_SPELLBOOK_V3_20261108
 interface SnowPuppet {
   id: number; owner: Fighter | null; team: number; atk: Attack | null; power: number;
   pos: THREE.Vector3; home: THREE.Vector3; targetId: number; life: number; age: number;
@@ -344,42 +346,67 @@ function buildSnowPuppetMesh(): THREE.Group {
 }
 
 function buildSnowBirdMesh(): THREE.Group {
-  const g = new THREE.Group();
-  const white = new THREE.MeshLambertMaterial({ color: "#ffffff" });
-  const brown = new THREE.MeshLambertMaterial({ color: "#b88963" });
-  const dark = new THREE.MeshLambertMaterial({ color: "#283142" });
-  const ice = new THREE.MeshLambertMaterial({ color: "#dffbff" });
-  const beak = new THREE.MeshLambertMaterial({ color: "#e6b65d" });
-  const glow = new THREE.MeshBasicMaterial({ color: "#e9ffff", transparent: true, opacity: 0.65 });
-
-  const body = new THREE.Mesh(new THREE.SphereGeometry(0.22, 14, 10), white);
-  body.scale.set(1.6, 0.95, 1.0);
-  body.position.set(0, 1.02, 0);
-  const neck = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.18, 4, 8), brown);
-  neck.position.set(-0.22, 1.05, 0.02); neck.rotation.z = -0.75;
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.11, 12, 8), white);
-  head.position.set(-0.34, 1.06, 0.04);
-  const cap = new THREE.Mesh(new THREE.SphereGeometry(0.07, 10, 8), brown);
-  cap.position.set(-0.37, 1.10, 0.04); cap.scale.set(1.0, 0.7, 1.0);
-  const beakMesh = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.12, 6), beak);
-  beakMesh.position.set(-0.48, 1.04, 0.04); beakMesh.rotation.z = Math.PI / 2;
-  const wingL = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.05, 0.22), white);
-  const wingR = wingL.clone();
-  wingL.position.set(0.03, 1.08, 0.24); wingR.position.set(0.03, 1.08, -0.24);
-  wingL.rotation.z = 0.28; wingR.rotation.z = -0.28;
-  const tipL = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.035, 0.18), dark);
-  const tipR = tipL.clone();
-  tipL.position.set(0.22, 1.08, 0.26); tipR.position.set(0.22, 1.08, -0.26);
-  tipL.rotation.z = 0.28; tipR.rotation.z = -0.28;
-  const tail = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.04, 0.12), ice);
-  tail.position.set(0.33, 1.0, 0); tail.rotation.z = 0.15;
-  const eyeDot = new THREE.Mesh(new THREE.SphereGeometry(0.016, 6, 5), new THREE.MeshBasicMaterial({ color: "#171f2d" }));
-  eyeDot.position.set(-0.38, 1.07, 0.11);
-  const eyeDot2 = eyeDot.clone(); eyeDot2.position.z = -0.03;
-  const halo = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.014, 5, 24), glow);
-  halo.rotation.x = Math.PI / 2; halo.position.y = 0.76;
-  g.add(body, neck, head, cap, beakMesh, wingL, wingR, tipL, tipR, tail, eyeDot, eyeDot2, halo);
-  return g;
+  // ROXY_FROSTWING_SPELLBOOK_V3_20261108: layered primaries, crest, tail, talons, glowing frost diamonds.
+  const b = new THREE.Group();
+  const white = new THREE.MeshLambertMaterial({ color: "#f8f8ff", side: THREE.DoubleSide });
+  const cream = new THREE.MeshLambertMaterial({ color: "#d7b48e", side: THREE.DoubleSide });
+  const black = new THREE.MeshLambertMaterial({ color: "#52566d", side: THREE.DoubleSide });
+  const ice = new THREE.MeshBasicMaterial({ color: "#adf0ff", side: THREE.DoubleSide });
+  const purple = new THREE.MeshLambertMaterial({ color: "#8b73d5" });
+  const beakMat = new THREE.MeshLambertMaterial({ color: "#efb73f" });
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.21, 18, 14), white);
+  body.position.y = 0.88; body.scale.set(0.92, 1.15, 1.27); b.add(body);
+  const mantle = new THREE.Mesh(new THREE.SphereGeometry(0.18, 14, 12), cream);
+  mantle.position.set(0, 1.07, -0.05); mantle.scale.set(0.82, 0.72, 0.87); b.add(mantle);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.17, 16, 12), white);
+  head.position.set(0, 1.18, 0.15); b.add(head);
+  const cap = new THREE.Mesh(new THREE.SphereGeometry(0.145, 14, 10), cream);
+  cap.position.set(0, 1.23, 0.12); cap.scale.set(1.02,0.60,1.05); b.add(cap);
+  for (const s of [-1,1]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.035, 10, 8), purple);
+    eye.position.set(s * 0.128, 1.205, 0.235); b.add(eye);
+    const glint = new THREE.Mesh(new THREE.SphereGeometry(0.012, 8, 6), ice);
+    glint.position.set(s * 0.13 + 0.008, 1.216, 0.259); b.add(glint);
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.016, 0.13, 6), black);
+    leg.position.set(s*0.09,0.62,0.03); b.add(leg);
+    for (let j=-1;j<=1;j++) {
+      const claw = new THREE.Mesh(new THREE.ConeGeometry(0.016, 0.10, 6), black);
+      claw.position.set(s*0.09+j*0.025,0.51,0.065); claw.rotation.x = Math.PI/2; b.add(claw);
+    }
+  }
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.047, 0.17, 7), beakMat);
+  nose.rotation.x = Math.PI/2; nose.position.set(0,1.13,0.337); b.add(nose);
+  const diamond = new THREE.Mesh(new THREE.OctahedronGeometry(0.085,0), ice);
+  diamond.scale.set(0.75, 1.25, 0.5); diamond.position.set(0,0.91,0.21); b.add(diamond);
+  for (const s of [-1,1]) {
+    const wing = new THREE.Group(); wing.name = s < 0 ? "frostWingL" : "frostWingR";
+    wing.position.set(s*0.16,1.05,0); b.add(wing);
+    const arm = new THREE.Mesh(new THREE.SphereGeometry(0.13,12,10),white);
+    arm.position.set(s*0.16,0,-0.06); arm.scale.set(2.1,0.48,0.7); wing.add(arm);
+    for (let i=0;i<11;i++) {
+      const length = 0.38 + (1-i/10)*0.28;
+      const feather = new THREE.Mesh(new THREE.SphereGeometry(0.1,10,6), i<5?black:white);
+      feather.scale.set(0.42, 0.25, length/0.2);
+      feather.position.set(s*(0.22+i*0.038),0,-0.12+i*0.029);
+      feather.rotation.y = s*(0.13+i*0.055); wing.add(feather);
+    }
+    for (let i=0;i<4;i++) {
+      const covert=new THREE.Mesh(new THREE.SphereGeometry(0.095,10,7),white);
+      covert.scale.set(1.25,0.35,1.35); covert.position.set(s*(0.15+i*0.12),0.035,0.0); wing.add(covert);
+    }
+    const wingGem=new THREE.Mesh(new THREE.OctahedronGeometry(0.064,0),ice);
+    wingGem.position.set(s*0.48,0.05,-0.07); wing.add(wingGem);
+  }
+  for (let i=-3;i<=3;i++) {
+    const tail=new THREE.Mesh(new THREE.SphereGeometry(0.11,10,6),Math.abs(i)<=1?black:white);
+    tail.scale.set(0.3,0.23,3.2-Math.abs(i)*0.15);
+    tail.position.set(i*0.043,0.79,-0.40); tail.rotation.y = i*0.13; b.add(tail);
+  }
+  for (let i=0;i<3;i++) {
+    const crest=new THREE.Mesh(new THREE.ConeGeometry(0.036,0.13+i*0.03,5),white);
+    crest.position.set((i-1)*0.05,1.36+i*0.02,0.06); crest.rotation.x=-0.3; b.add(crest);
+  }
+  return b;
 }
 
 function buildTrap(kind: string, color: string): THREE.Group {
@@ -427,6 +454,16 @@ function animateTrap(t: Trap, dt: number) {
 
 function buildProjectile(g: THREE.Group, style: string, element: string, size: number, color: string) {
   const glow = new THREE.MeshBasicMaterial({ color });
+  if (style === "frost_shard") {
+    const ice = new THREE.MeshPhongMaterial({ color: "#c6f3ff", emissive: "#4a9bd3", emissiveIntensity: 0.34,
+      transparent: true, opacity: 0.94, shininess: 120, flatShading: true });
+    const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.19 * size, 0), ice);
+    crystal.scale.set(0.64, 0.64, 1.85);
+    g.add(crystal);
+    const edge = new THREE.Mesh(new THREE.OctahedronGeometry(0.10 * size, 0), glow);
+    edge.position.z = 0.16 * size; g.add(edge);
+    return;
+  }
   if (style === "clusterbomb") {
     // Bright segmented four-pod canister, intentionally NOT the round black bomb.
     const shell = new THREE.MeshLambertMaterial({ color: "#f3a72f", emissive: "#6b2500", emissiveIntensity: 0.24 });
@@ -565,6 +602,8 @@ export class Game implements MobHost {
   projectiles: Projectile[] = [];
   /** Mines and powder kegs on the field (host simulates; guests only show them). */
   traps: Trap[] = [];
+  private frostAegisVisuals = new Map<number, THREE.Group>();
+  private roxyFrozenVisuals = new Map<number, THREE.Group>();
   private snowPuppets: SnowPuppet[] = [];
   /** Blood Festival arenas. Created on host and replicated as visual events on clients. */
   private bloodFestivals: BloodFestival[] = [];
@@ -791,6 +830,15 @@ export class Game implements MobHost {
     // ROXY_SNOW_PUPPET_MASTER_V1: clear summons on the next round/rematch.
     for (const p of this.snowPuppets) this.disposeSnowPuppet(p);
     this.snowPuppets = [];
+    for (const x of this.frostAegisVisuals.values()) this.scene.remove(x);
+    this.frostAegisVisuals.clear();
+    for (const x of this.roxyFrozenVisuals.values()) {
+      this.scene.remove(x);
+      x.traverse(obj => { const m = obj as THREE.Mesh; if (m.isMesh) { m.geometry.dispose();
+        for (const mat of Array.isArray(m.material) ? m.material : [m.material]) mat.dispose(); } });
+    }
+    this.roxyFrozenVisuals.clear();
+    for (const clone of [...this.iceClones]) this.finishIceClone(clone, false);
     for (const festival of this.bloodFestivals) this.scene.remove(festival.visual);
     this.bloodFestivals = [];
     for (const pool of this.magicPools) this.scene.remove(pool.visual);
@@ -918,6 +966,55 @@ export class Game implements MobHost {
       this.fx.arenaReaction(foot, "crack", 0.76);
     }
   }
+  // Roxy Freeze V4: frozen effect is synced via StatusSet bitmask and reuses its meshes.
+  private roxyFreezeBurst(e: Fighter | Mob) {
+    const at = e.chest();
+    this.fxp("num", at.clone().add(new THREE.Vector3(0, 0.70, 0)), "FROZEN", "#e0faff", 1.0);
+    this.fxp("flash", at, "#d6f8ff", 0.6, 0.18, 0.8);
+    this.fxp("motes", at, "#ddfcff", 20);
+    this.fxp("ring", e.root.position.clone(), "#aceeff", 1.15, 0.30, 0.9);
+  }
+
+  private updateRoxyFreezeVisuals(dt: number) {
+    const alive = new Set<number>();
+    for (const e of [...this.fighters, ...this.mobs] as (Fighter | Mob)[]) {
+      if (!e.status.has("freeze") || e.isDown() || !e.root.visible) continue;
+      alive.add(e.id);
+      let g = this.roxyFrozenVisuals.get(e.id);
+      if (!g) {
+        g = new THREE.Group();
+        const ice = new THREE.MeshPhongMaterial({ color: "#c5f6ff", emissive: "#3c87bf",
+          emissiveIntensity: 0.24, transparent: true, opacity: 0.36, shininess: 90,
+          depthWrite: false, flatShading: true, side: THREE.DoubleSide });
+        const core = new THREE.Mesh(new THREE.CylinderGeometry(0.43, 0.57, 1.6, 7, 2), ice);
+        core.position.y = 0.89;
+        g.add(core);
+        const shardMat = new THREE.MeshPhongMaterial({ color: "#defbff", transparent: true,
+          opacity: 0.70, depthWrite: false, shininess: 110 });
+        for (let i = 0; i < 7; i++) {
+          const a = i * Math.PI * 2 / 7;
+          const shard = new THREE.Mesh(new THREE.OctahedronGeometry(0.26, 0), shardMat.clone());
+          shard.scale.set(0.52, 1.9 + (i % 3) * 0.25, 0.50);
+          shard.position.set(Math.cos(a) * 0.51, 0.33 + (i % 2) * 0.10, Math.sin(a) * 0.51);
+          g.add(shard);
+        }
+        this.scene.add(g);
+        this.roxyFrozenVisuals.set(e.id, g);
+      }
+      g.position.copy(e.root.position);
+      g.rotation.y += dt * 0.22;
+    }
+    for (const [id, g] of this.roxyFrozenVisuals) if (!alive.has(id)) {
+      const ent = this.entities.get(id);
+      if (ent && (ent instanceof Fighter || ent instanceof Mob) && ent.status.has("slow"))
+        this.fxp("num", ent.chest().add(new THREE.Vector3(0, 0.6, 0)), "THAWED - SLOW", "#a8deff", 0.69);
+      this.scene.remove(g);
+      g.traverse(obj => { const m = obj as THREE.Mesh; if (m.isMesh) { m.geometry.dispose();
+        for (const mat of Array.isArray(m.material) ? m.material : [m.material]) mat.dispose(); } });
+      this.roxyFrozenVisuals.delete(id);
+    }
+  }
+
   private statusT = new Map<Entity, number>();
   private statusLabelAt = new Map<Entity, number>();
 
@@ -938,6 +1035,7 @@ export class Game implements MobHost {
           else if (k === "poison") this.fx.motes(c.clone().add(jitter()), col, 2);
           else if (k === "bleed") this.fx.embers(c.clone().add(jitter()), col, 2);
           else if (k === "paralyze") this.fx.sparks(c.clone().add(jitter()), col, 3, 3);
+          else if (k === "freeze") { this.fx.motes(c.clone().add(jitter()), col, 4); this.fx.sparks(c, col, 2, 1.4); }
           else if (k === "slow") this.fx.motes(feet.clone().add(jitter().setY(0)), col, 2);
           else if (k === "weaken") this.fx.motes(c.clone().add(jitter()), col, 1);
         }
@@ -1110,10 +1208,13 @@ export class Game implements MobHost {
     this.bladeLight(dt);
     for (const m of this.mobs) m.update(dt);
     this.statusFx(dt);
+    this.updateRoxyFreezeVisuals(dt);
     this.garrickResolveFootsteps(dt);
     this.updateProjectiles(dt);
     this.updateTraps(dt);
     this.updateSnowPuppets(dt);
+    this.updateFrostAegis(dt);
+    // Ice clone removed from Roxy's V: no fighter models spawned for her ultimate.
     this.updateBloodFestivals(dt);
     this.updateMagicPools(dt);
     this.updateEmberFire(dt);
@@ -1596,6 +1697,7 @@ export class Game implements MobHost {
       case "phantom": this.phantom(f, a); break;
       case "lob": this.throwBombs(f, a); break;
       case "snow_puppet": this.summonSnowPuppets(f, a); break;
+      // Ice clone superseded by lightweight stationary Frostwing summons.
       case "mine": this.plantMine(f, a); break;
       case "barrel": this.placeBarrel(f, a); break;
       default: this.melee(f, a);
@@ -2156,6 +2258,113 @@ export class Game implements MobHost {
   }
 
   // ROXY_MANUAL_SUMMONS_BIRD_V2_20261108: manual-command frost summons. Never damage allies.
+  // ROXY_FROSTWING_SPELLBOOK_V3_20261108: visible 4-crystal defense orbit.
+  private updateFrostAegis(_dt: number) {
+    for (const f of this.fighters) {
+      if (f.look.element !== "frost") continue;
+      let ring = this.frostAegisVisuals.get(f.id);
+      if (f.frostShieldCharges <= 0 || f.frostShieldT <= 0 || f.isDown()) {
+        if (ring) { this.scene.remove(ring); this.frostAegisVisuals.delete(f.id); } continue;
+      }
+      if (!ring) {
+        ring = new THREE.Group();
+        const ice = new THREE.MeshPhongMaterial({ color: "#b7efff", emissive: "#5bc6ff", emissiveIntensity: 0.35,
+          transparent: true, opacity: 0.92, flatShading: true });
+        for (let i=0;i<4;i++) {
+          const crystal=new THREE.Mesh(new THREE.OctahedronGeometry(0.18,0),ice);
+          crystal.scale.set(0.68,1.7,0.68); ring.add(crystal);
+        }
+        this.scene.add(ring); this.frostAegisVisuals.set(f.id,ring);
+      }
+      ring.position.copy(f.root.position).add(new THREE.Vector3(0,1.35,0));
+      for (let i=0;i<4;i++) {
+        const sh=ring.children[i]; sh.visible=i<f.frostShieldCharges;
+        const angle=this.time*2+i*Math.PI/2;
+        sh.position.set(Math.cos(angle)*0.8,Math.sin(this.time*3+i)*0.09,Math.sin(angle)*0.8);
+        sh.rotation.set(0,this.time+i,0.22*Math.sin(this.time*2+i));
+      }
+    }
+  }
+
+  private iceClones: { fighter: Fighter; ownerId: number; netTimer: number }[] = [];
+
+  private tintIceClone(c: Fighter) {
+    const apply = () => c.model.traverse(o => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const arr = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      const tinted = arr.map(m => {
+        const copy = m.clone();
+        if ("color" in copy && (copy as THREE.MeshStandardMaterial).color) {
+          (copy as THREE.MeshStandardMaterial).color.lerp(new THREE.Color("#72cfff"),0.68);
+        }
+        if ("emissive" in copy && (copy as THREE.MeshStandardMaterial).emissive) {
+          (copy as THREE.MeshStandardMaterial).emissive.set("#235c96");
+          (copy as THREE.MeshStandardMaterial).emissiveIntensity=0.25;
+        }
+        copy.transparent=true; copy.opacity=Math.min(copy.opacity ?? 1,0.80);
+        return copy;
+      }) as THREE.Material[];
+      mesh.material = Array.isArray(mesh.material) ? tinted : tinted[0];
+    });
+    void c.model.ready.then(apply);
+  }
+
+  private spawnIceClone(owner: Fighter) {
+    if (this.cfg.role === "client") return;
+    const target=owner.opponent instanceof Fighter && !owner.opponent.isDown() ? owner.opponent :
+      this.fighters.find(e => e.team !== owner.team && !e.isDown());
+    if (!target) { this.fxp("num",owner.chest(),"NO FIGHTER TO MIRROR","#c1edff",0.75); return; }
+    for (const existing of [...this.iceClones]) if (existing.ownerId === owner.id) this.finishIceClone(existing, true);
+    const copy=new Fighter(target.look,target.charIndex,undefined,undefined,false);
+    copy.id=this.nextId++; copy.team=owner.team; copy.owner="cpu-ice-clone";
+    copy.maxHp=Math.max(1,target.maxHp*0.25); copy.hp=copy.maxHp;
+    copy.guard=copy.maxGuard*0.5; copy.arenaRadius=owner.arenaRadius;
+    copy.root.position.copy(owner.root.position).add(new THREE.Vector3(0.9,0,0.6));
+    copy.root.rotation.y=owner.root.rotation.y; copy.opponent=target;
+    copy.brain={think: (f: Fighter) => {
+      const victim=f.opponent;
+      if (!victim || victim.isDown()) return;
+      const delta=victim.root.position.clone().sub(f.root.position).setY(0);
+      const dist=delta.length();
+      if (dist>1.55) f.intent.move.copy(delta.normalize());
+      if (dist<2.10 && f.atkLock<=0) f.intent.attack=true;
+      if (dist<1.25 && victim instanceof Fighter && victim.state===S.ATTACK) f.intent.block=true;
+    }};
+    copy.onSwing=x=>this.onSwing(x);
+    copy.onKo=()=>{
+      const item=this.iceClones.find(c=>c.fighter===copy);
+      if (item) this.finishIceClone(item,true);
+    };
+    this.scene.add(copy.root,copy.trail.mesh); this.entities.set(copy.id,copy);
+    this.iceClones.push({fighter:copy,ownerId:owner.id,netTimer:0});
+    this.tintIceClone(copy);
+    this.emit(["iceCloneSpawn", copy.id,target.charIndex,owner.team,copy.hp,copy.root.position.toArray()]);
+    this.fxp("flash", copy.chest(), "#b9f5ff", 0.9, 0.25, 0.86);
+  }
+
+  private finishIceClone(item: {fighter:Fighter;ownerId:number;netTimer:number}, emit: boolean) {
+    const f=item.fighter;
+    this.scene.remove(f.root,f.trail.mesh); this.entities.delete(f.id);
+    this.iceClones=this.iceClones.filter(c=>c!==item);
+    if (emit && this.cfg.role!=="client") this.emit(["iceCloneEnd",f.id]);
+  }
+
+  private updateIceClones(dt: number) {
+    for (const item of [...this.iceClones]) {
+      const f=item.fighter;
+      if (this.roundOver || f.isDown() || (this.cfg.role!=="client" &&
+          !this.fighters.some(x=>x.id===item.ownerId && !x.isDown()))) {
+        this.finishIceClone(item,true); continue;
+      }
+      f.update(dt);
+      if (this.cfg.role!=="client") {
+        item.netTimer-=dt;
+        if (item.netTimer<=0) { item.netTimer=0.10; this.emit(["iceClonePose",f.id,f.snapshot()]); }
+      }
+    }
+  }
+
   private disposeSnowPuppet(p: SnowPuppet) {
     this.scene.remove(p.mesh);
     p.mesh.traverse((o) => {
@@ -2205,8 +2414,9 @@ export class Game implements MobHost {
         const offset = i - (a.count - 1) / 2;
         const pos = f.root.position.clone().addScaledVector(forward, 0.55).addScaledVector(right, offset * 0.8).add(new THREE.Vector3(0, 1.6 + Math.abs(offset) * 0.15, 0));
         const id = this.nextId++;
-        this.makeSnowPuppet(id, f, f.team, a, f.atkPower, pos, target?.id ?? -1, "bird", Math.max(16, a.duration), "idle", 5, i);
-        this.emit(["snowPuppet", id, f.id, f.team, pos.toArray(), target?.id ?? -1, "bird", Math.max(16, a.duration), "idle", 5, i]);
+        this.makeSnowPuppet(id, f, f.team, a, f.atkPower, pos, target?.id ?? -1, "bird", 25, "attack", 999, i);
+        const bird = this.snowPuppets.find(p => p.id === id); if (bird) bird.shotCd = 2.0;
+        this.emit(["snowPuppet", id, f.id, f.team, pos.toArray(), target?.id ?? -1, "bird", 25, "attack", 999, i]);
         this.fxp("motes", pos.clone(), "#f7ffff", 10);
       }
       this.snd("wind", 0.45);
@@ -2215,8 +2425,8 @@ export class Game implements MobHost {
     const pos = f.root.position.clone().addScaledVector(forward, 0.95);
     if (!this.plat) pos.y = 0;
     const id = this.nextId++;
-    this.makeSnowPuppet(id, f, f.team, a, f.atkPower, pos, target?.id ?? -1, "freeze", a.duration, "idle", 0, 0);
-    this.emit(["snowPuppet", id, f.id, f.team, pos.toArray(), target?.id ?? -1, "freeze", a.duration, "idle", 0, 0]);
+    this.makeSnowPuppet(id, f, f.team, a, f.atkPower, pos, target?.id ?? -1, "freeze", a.duration, "rush", 0, 0);
+    this.emit(["snowPuppet", id, f.id, f.team, pos.toArray(), target?.id ?? -1, "freeze", a.duration, "rush", 0, 0]);
     this.fxp("motes", pos.clone().add(new THREE.Vector3(0, 0.7, 0)), "#d6f8ff", 13);
     this.snd("splash", 0.55);
   }
@@ -2228,8 +2438,10 @@ export class Game implements MobHost {
     const dir = aim.lengthSq() > 0.0001 ? aim.normalize() : new THREE.Vector3(1, 0, 0);
     const shard: Attack = { ...p.atk, type: "projectile", style: "bolt", dmg: p.atk.dmg, guard: p.atk.guard, knock: p.atk.knock,
       stun: p.atk.stun, speed: 12.5, size: 0.68, count: 1, spread: 0, pierce: false, heavy: false,
+      id: "bird_shard",
       effect: p.atk.effect || "slow", effect_t: p.atk.effect_t || 1.4, effect_p: p.atk.effect_p || 0.45 };
-    this.spawnProjectile(p.owner, p.team, shard, p.power, origin, dir.multiplyScalar(shard.speed), "bolt", "frost", shard.size, "#e8ffff", false, target);
+    shard.style = "frost_shard";
+    this.spawnProjectile(p.owner, p.team, shard, p.power, origin, dir.multiplyScalar(shard.speed), "frost_shard", "frost", shard.size, "#e8ffff", false, target);
     this.fxp("flash", origin, "#f5ffff", 0.18, 0.08, 0.8);
     this.fxp("motes", origin, "#dbfdff", 7);
     this.snd("dagger", 0.35);
@@ -2293,34 +2505,29 @@ export class Game implements MobHost {
         }
         p.mesh.position.copy(p.pos).add(new THREE.Vector3(0, Math.sin(p.age * 5 + p.id) * 0.05, 0));
       } else {
-        const ownerPos = p.owner ? p.owner.root.position : p.home;
-        let desired = p.home.clone();
-        if (p.state === "idle") {
-          const ang = p.age * 0.9 + p.slot * (Math.PI * 2 / 3);
-          desired = ownerPos.clone().add(new THREE.Vector3(Math.cos(ang) * 0.85, 1.55 + Math.sin(p.age * 2 + p.slot) * 0.18, Math.sin(ang) * 0.85));
-        } else if (target) {
-          const ang = p.slot * 1.35 + p.age * 0.35;
-          desired = target.root.position.clone().add(new THREE.Vector3(Math.cos(ang) * 0.95, 1.55, Math.sin(ang) * 0.95));
-          p.shotCd -= dt;
-          if (this.cfg.role !== "client" && p.shotsLeft > 0 && p.shotCd <= 0) {
-            this.fireSnowBirdShard(p, target);
-            p.shotsLeft -= 1;
-            p.shotCd = 3.0;
-            if (p.shotsLeft <= 0) {
-              this.finishSnowPuppet(p, false);
-              continue;
-            }
+        // Frostwing holds the exact world position where it was summoned.
+        // Wings animate but the bird never pursues or orbits the enemy.
+        const left = p.mesh.getObjectByName("frostWingL");
+        const right = p.mesh.getObjectByName("frostWingR");
+        if (left) left.rotation.z = Math.sin(p.age * 9 + p.slot) * 0.43;
+        if (right) right.rotation.z = -Math.sin(p.age * 9 + p.slot) * 0.43;
+        p.mesh.position.copy(p.home).add(new THREE.Vector3(0, Math.sin(p.age * 3 + p.slot) * 0.08, 0));
+        if (target) {
+          const look = target.chest().sub(p.pos);
+          look.y = 0;
+          if (look.lengthSq() > 0.001) {
+            const yaw = Math.atan2(look.x, look.z);
+            const turn = Math.atan2(Math.sin(yaw - p.mesh.rotation.y), Math.cos(yaw - p.mesh.rotation.y));
+            p.mesh.rotation.y += turn * (1 - Math.exp(-10 * dt));
           }
         }
-        const delta = desired.sub(p.pos);
-        const dist = delta.length();
-        if (dist > 0.01) {
-          const dir = delta.multiplyScalar(1 / dist);
-          p.pos.addScaledVector(dir, Math.min(dist, (p.atk?.speed ?? 5.1) * dt));
-          p.mesh.rotation.y = Math.atan2(dir.x, dir.z);
+        p.shotCd = Math.max(0, p.shotCd - dt);
+        if (this.cfg.role !== "client" && p.shotCd <= 0 && target) {
+          this.fireSnowBirdShard(p, target);
+          p.shotCd = 2.0; // Never catch up with a rapid burst after losing a target.
         }
-        p.mesh.position.copy(p.pos).add(new THREE.Vector3(0, Math.sin(p.age * 8 + p.slot) * 0.03, 0));
       }
+
       if (p.life <= 0) this.finishSnowPuppet(p, false);
     }
   }
@@ -2539,7 +2746,11 @@ export class Game implements MobHost {
     const sa = strength(a), sb = strength(b);
     let winner: Projectile | null = null;
     let loser: Projectile | null = null;
-    if (!bombA && !bombB) {
+    // Roxy light basics are fragile: opposing projectiles shatter them on contact,
+    // including against weak shots. All other projectile strengths remain unchanged.
+    const roxyLight = (p: Projectile) => p.style === "frost_shard" &&
+      (p.atk?.id === "l1" || p.atk?.id === "l2" || p.atk?.id === "l3");
+    if (!bombA && !bombB && !roxyLight(a) && !roxyLight(b)) {
       if (sa > sb * 1.75) { winner = a; loser = b; }
       else if (sb > sa * 1.75) { winner = b; loser = a; }
     }
@@ -2579,6 +2790,20 @@ export class Game implements MobHost {
       previous.set(p.id, p.pos.clone());
       if (p.gravity) { p.vel.y -= p.gravity * dt; p.spin.rotation.x += dt * 9; }
       p.age += dt;
+      if (p.style === "frost_shard" && p.atk?.id === "heavy" && p.target && !p.target.isDown() && p.age < 0.9) {
+        const toTarget = p.target.chest().sub(p.pos);
+        if (toTarget.lengthSq() > 0.02 && p.vel.dot(toTarget) > 0) {
+          const speed = p.vel.length();
+          const forward = p.vel.clone().normalize();
+          const desired = toTarget.normalize();
+          const angle = forward.angleTo(desired);
+          // Only a mild forward curve; no chasing once the shard has passed its target.
+          if (angle < 1.05) {
+            const step = Math.min(0.85 * dt, angle);
+            p.vel.copy(forward.lerp(desired, angle > 0.001 ? step / angle : 0).normalize().multiplyScalar(speed));
+          }
+        }
+      }
       if (p.steering && p.target && !p.target.isDown() && p.age > (p.style === "bloodcrescent" ? 0.38 : 0)) {
         const aim = p.target.chest().sub(p.pos);
         if (aim.lengthSq() > 0.01) {
@@ -3063,7 +3288,12 @@ export class Game implements MobHost {
     const pvp = this.cfg.mode !== "survival";
     this.snd(a.mode === "heal" ? "heal" : a.mode === "rage" ? "rage"
       : a.mode === "judgment" ? "cast" : a.mode === "ember_ignition" ? "fireball" : "ward", 0.7);
-    if (a.mode === "healing_water" || a.mode === "static_field") {
+    if (a.mode === "frost_aegis") {
+      f.frostShieldCharges = 4;
+      f.frostShieldT = a.duration;
+      this.fxp("ring", f.chest(), "#c6f5ff", 1.2, 0.25, 0.85);
+      this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.8, 0)), "ICE SHARDS x4", "#dffbff", 0.84);
+    } else if (a.mode === "healing_water" || a.mode === "static_field") {
       this.spawnMagicPool(f, a);
     } else if (a.mode === "ward") {
       // Marina Z is intentionally the full eight-second ward, even in PvP.
@@ -3377,7 +3607,22 @@ export class Game implements MobHost {
     const weightedAttack = knockFactor === 1 ? scaledAttack :
       { ...scaledAttack, knock: Math.min(9.5, scaledAttack.knock * knockFactor) };
     if (d instanceof Fighter && attacker) d.setImpactSource(attacker.root.position);
+    const wasFrozen = (d instanceof Fighter || d instanceof Mob) && d.status.has("freeze");
     const result = d.receiveHit(attacker, weightedAttack, riposte ? power * 1.15 : power);
+    if (a.effect === "freeze" && !wasFrozen && (d instanceof Fighter || d instanceof Mob) &&
+        d.status.has("freeze") && ["hit", "crit", "ko"].includes(result)) this.roxyFreezeBurst(d);
+    if (attacker instanceof Fighter && attacker.look.element === "frost" && a.style === "frost_shard" &&
+        ["hit", "crit"].includes(result) && (d instanceof Fighter || d instanceof Mob)) {
+      attacker.frostShardStacks = (attacker.frostShardStacks + 1) % 4;
+      if (attacker.frostShardStacks === 0) {
+        // Four real successful hits earn a Freeze attempt; immunity rejects it.
+        if (d.status.apply("freeze", 2, 0, attacker)) this.roxyFreezeBurst(d);
+        else this.fxp("num", d.chest().add(new THREE.Vector3(0, 0.65, 0)), "ICE RESIST", "#b6e8fb", 0.55);
+      } else {
+        this.fxp("num", attacker.chest().add(new THREE.Vector3(0, 0.72, 0)),
+          `FROSTBITE ${attacker.frostShardStacks}/4`, "#c9f4ff", 0.54);
+      }
+    }
     if (riposte && attacker instanceof Fighter && ["hit", "crit", "ko"].includes(result)) {
       attacker.perfectDodgeCounterT = 0;
       this.fxp("num", attacker.chest().add(new THREE.Vector3(0, 0.72, 0)),
@@ -3953,6 +4198,8 @@ export class Game implements MobHost {
     }
     for (const m of this.mobs) if (!m.dead) ev.push(["spawnM", m.id, m.type, m.elite ? 1 : 0, m.hpMult ?? 1, +m.root.position.x.toFixed(2), +m.root.position.z.toFixed(2)]);
     // ROXY_MANUAL_SUMMONS_BIRD_V2_20261108: late joiners also see currently active frost summons.
+    for (const c of this.iceClones) ev.push(["iceCloneSpawn", c.fighter.id, c.fighter.charIndex,
+      c.fighter.team, c.fighter.hp, c.fighter.root.position.toArray()]);
     for (const p of this.snowPuppets) ev.push(["snowPuppet", p.id, p.owner?.id ?? -1, p.team, p.pos.toArray(), p.targetId, p.mode, p.life, p.state, p.shotsLeft, p.slot]);
     this.net?.sendTo(peer, { t: "sync", e: ev, s: [this.wave, this.kills, this.phase] });
     const slot = this.cfg.players.find((p) => p.peer === peer);
@@ -4030,6 +4277,28 @@ export class Game implements MobHost {
         break;
       }
       case "projEnd": { const p = this.projectiles.find((x) => x.id === ev[1]); if (p) p.done = true; break; }
+      case "iceCloneSpawn": {
+        if (this.iceClones.some(c=>c.fighter.id===ev[1])) break;
+        const look=CHARACTERS[ev[2]]?.look;
+        if (!look) break;
+        const f=new Fighter(look,ev[2],undefined,undefined,false);
+        f.id=ev[1]; f.team=ev[3]; f.hp=ev[4]; f.maxHp=ev[4]; f.puppet=true;
+        f.root.position.copy(v3(ev[5]));
+        this.scene.add(f.root,f.trail.mesh); this.entities.set(f.id,f);
+        this.iceClones.push({fighter:f,ownerId:-1,netTimer:0});
+        this.tintIceClone(f);
+        break;
+      }
+      case "iceClonePose": {
+        const f=this.iceClones.find(c=>c.fighter.id===ev[1])?.fighter;
+        if (f) f.applySnapshot(ev[2]);
+        break;
+      }
+      case "iceCloneEnd": {
+        const clone=this.iceClones.find(c=>c.fighter.id===ev[1]);
+        if (clone) this.finishIceClone(clone,false);
+        break;
+      }
       case "snowPuppet": {
         this.makeSnowPuppet(ev[1], null, ev[3], null, 0, v3(ev[4]), ev[5], ev[6], ev[7], ev[8] ?? "idle", ev[9] ?? 0, ev[10] ?? 0);
         break;

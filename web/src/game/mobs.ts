@@ -231,8 +231,14 @@ export class Mob implements Entity {
       if (this.hp <= 0) this.die();
     }
     if (this.dead) return;
-    this.stateT += dt;
-    this.cdT -= dt;
+    if (this.status.has("freeze")) {
+      this.state = MS.FLINCH; this.stateT = 0;
+      this.windStarted = false;
+      this.animate(dt);
+      return;
+    }
+    this.stateT += dt * this.status.actionSpeedMult();
+    this.cdT -= dt * this.status.actionSpeedMult();
     const pos = this.root.position;
     this.target = this.host?.nearestPlayer(pos) ?? null;
     const tg = this.target;
