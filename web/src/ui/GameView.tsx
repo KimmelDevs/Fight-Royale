@@ -39,6 +39,30 @@ function StatusChips({ list, right }: { list?: StatusKind[]; right?: boolean }) 
   );
 }
 
+function RoxyFrostbiteMeter({ stacks, shards, shieldT, right = false }: {
+  stacks: number; shards: number; shieldT: number; right?: boolean;
+}) {
+  const value = Math.max(0, Math.min(3, Math.floor(stacks)));
+  return (
+    <div style={{ marginTop: 6, padding: "5px 8px", borderRadius: 9,
+      background: "rgba(8, 31, 60, .74)", border: "1px solid rgba(132, 222, 255, .45)",
+      color: "#bdeeff", fontSize: 11, fontWeight: 800,
+      display: "flex", alignItems: "center", justifyContent: right ? "flex-end" : "flex-start", gap: 7 }}>
+      <span style={{ letterSpacing: ".03em", whiteSpace: "nowrap" }}>❄ FROSTBITE</span>
+      <div style={{ display: "flex", gap: 3 }} aria-label={`Frostbite ${value} of 4`}>
+        {Array.from({ length: 4 }, (_, i) => <span key={i} style={{
+          width: 10, height: 14, transform: "rotate(35deg) scale(.73)",
+          background: i < value ? "#9ceaff" : "rgba(172, 221, 247, .18)",
+          border: `1px solid ${i < value ? "#efffff" : "#6186a3"}`,
+          boxShadow: i < value ? "0 0 6px #62ccff" : "none",
+        }} />)}
+      </div>
+      <b style={{ fontVariantNumeric: "tabular-nums" }}>{value}/4</b>
+      {shieldT > 0 && shards > 0 && <span style={{ color: "#f0fbff", whiteSpace: "nowrap" }}>◇ AEGIS {shards}/4</span>}
+    </div>
+  );
+}
+
 function Bar({ v, color, right }: { v: number; color: string; right?: boolean }) {
   return (
     <div className="bar">
@@ -210,6 +234,7 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
               <div className="nm"><Icon src={charIcon(me.id)} alt={me.name} size={44} />{me.name}</div>
               <Bar v={me.hp / me.maxHp} color="#7fd65b" />
               <div className="guard"><Bar v={me.guard / me.maxGuard} color={me.guard / me.maxGuard > 0.25 ? "#f2c94c" : "#ff7043"} /></div>
+              {me.id === "roxy" && <RoxyFrostbiteMeter stacks={me.frostShardStacks} shards={me.frostShieldCharges} shieldT={me.frostShieldT} />}
               {/* ZAREK_WHITE_COUNTER_V1 */}
               {me.id === "zarek" && (
                 <div style={{ display: "flex", alignItems: "center", gap: 7,
@@ -250,6 +275,7 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
               <div className="nm">{other.name}{other.tag ? `  (${other.tag})` : ""}<Icon src={charIcon(other.id)} alt={other.name} size={44} /></div>
               <Bar v={other.hp / other.maxHp} color="#e8534a" right />
               <div className="guard"><Bar v={other.guard / other.maxGuard} color="#f2c94c" right /></div>
+              {other.id === "roxy" && <RoxyFrostbiteMeter stacks={other.frostShardStacks} shards={other.frostShieldCharges} shieldT={other.frostShieldT} right />}
               <StatusChips list={other.status} right />
             </div>
           )}

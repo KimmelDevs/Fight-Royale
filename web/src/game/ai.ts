@@ -30,6 +30,7 @@
 // EMBER_GROUND_HAZARD_AI_V1_NOV06
 // CONTINUOUS_PARRY_AI_V4_NOV06
 // CONTINUOUS_COMBAT_ASTER_EMBER_V3_NOV06
+// ROXY_MASTER_SKILLS_MAGE_BASIC_COUNTERS_V6_20261108: Roxy combat planning and one-projectile mage parry counters.
 // Duel CPU. Presses the same virtual buttons a player would, with human-ish reaction times:
 // reacts once per enemy swing / projectile / ground marker (block, parry, jump, sidestep),
 // keeps its preferred range (ranged kits kite), and picks attacks and skills when idle.
@@ -165,6 +166,7 @@ const FIGHT_STYLES: Readonly<Record<string, FightStyle>> = {
   zarek: { range: 2.10, heavy: 0.30, combo: 0.91, bait: 0.35, pressure: 0.86, skillBias: [1.3, 1.2, 1.45] },
   kaizen: { range: 2.65, heavy: 0.33, combo: 0.78, bait: 0.51, pressure: 0.71, skillBias: [1.2, 1.45, 1.15] },
   nesa: { range: 2.38, heavy: 0.43, combo: 0.64, bait: 0.62, pressure: 0.52, skillBias: [1.05, 1.15, 1.2] },
+  roxy: { range: 5.45, heavy: 0.36, combo: 0.52, bait: 0.24, pressure: 0.32, skillBias: [1.45, 1.60, 1.20] },
 };
 
 // CHARACTER_STYLES_V1: existing FIGHT_STYLES already holds base preferences.
@@ -200,6 +202,7 @@ const CHARACTER_PERSONALITY: Readonly<Record<string, PersonalityProfile>> = {
   zarek:   { role: "glaive",      pressure: 1.34, probe: 0.79, reset: 0.34, vReserve: 0.64, spacing: -0.08 },
   kaizen:  { role: "grappler",    pressure: 0.97, probe: 1.22, reset: 0.39, vReserve: 0.78, spacing:  0.10 },
   nesa:    { role: "bruiser",     pressure: 1.03, probe: 1.04, reset: 0.45, vReserve: 0.85, spacing:  0.19 },
+  roxy:    { role: "controller",  pressure: 0.60, probe: 1.16, reset: 0.90, vReserve: 0.52, spacing:  0.26 },
 };
 // Difficulty affects how often bots make informed, committed personality reads.
 const CHARACTER_IQ = [
@@ -1243,6 +1246,88 @@ export class AiBrain implements Brain {
   // Check actual equipped cooldowns frequently instead of waiting seconds
   // between idle decisions. Still uses the fighter's normal skill inputs.
   private readySkillPoll = 0;
+  // Roxy uses a short, difficulty-scaled plan that is evaluated before
+  // ordinary attack IQ can keep her locked into endless light-attack queues.
+  private roxySkillReadAt = 0;
+  private roxyTarget = -1;
+
+  /** Roxy's actual kit is not a generic melee skill set:
+   * Z is four-charge damage prevention, X is an automatic FREEZE summon,
+   * C is targeted meteor, and Master-only V is stationary Frostwing artillery.
+   * Samples visible opportunities and issues ONE legal skill press. No free
+   * cooldowns, HP, hits, extra summons or fourth-skill unlocks.
+   */
+  private roxySkillOpportunity(f: Fighter, o: Fighter, dt: number): boolean {
+    if (f.look.element !== "frost" || f.kit !== "mage" || f.isDown() || o.isDown()) return false;
+    if (!f.attacks.z || f.attacks.z.mode !== "frost_aegis") return false;
+    if (this.roxyTarget !== o.id) {
+      this.roxyTarget = o.id;
+      this.roxySkillReadAt = this.threats.now() + [1.25, 0.82, 0.48, 0.20][this.iqLevel];
+    }
+    const now = this.threats.now();
+    if (now < this.roxySkillReadAt || !f.onGround || f.status.has("freeze")) return false;
+    const castingFree = f.state === S.IDLE || f.state === S.BLOCK ||
+      (f.state === S.ATTACK && f.atkPhase === 2 && !!f.atk &&
+        f.stateT >= f.atk.wind + f.atk.active + 0.07);
+    if (!castingFree || f.chainBoundBy || f.chainBindT > 0 ||
+        this.blockHold > 0 || this.blockWait >= 0 ||
+        this.comboParryTarget > now || this.projectileSwordCommit > 0) return false;
+    const gap = f.root.position.clone().setY(0).distanceTo(o.root.position.clone().setY(0));
+    const nearHit = o.state === S.ATTACK && o.atkPhase <= 1;
+    const danger = nearHit && (o.atk?.type === "melee" ?
+      gap < (o.atk.reach + 1.0) : gap < 8.5);
+    const projectileDanger = this.threats.projectiles().some(p =>
+      p.team !== f.team && (p.target === f || p.target?.id === f.id) &&
+      p.pos.distanceToSquared(f.chest()) < 75);
+    const punish = this.hasPunishWindow(o);
+    const frozen = o.status.has("freeze");
+    const freezeReady = !frozen && o.status.freezeImmunityRemaining() <= 0;
+    const ready = (key: "z" | "x" | "c" | "v") =>
+      !!f.attacks[key] && (f.cooldowns[key] ?? 1) <= 0 &&
+      (key !== "v" || f.bonusSkillUnlocked);
+    const choices: { key: "z" | "x" | "c" | "v"; score: number }[] = [];
+    // Protect a real incoming hit, or pre-shield when injured and close enough.
+    if (ready("z") && (f.frostShieldCharges <= 0 || f.frostShieldT <= 0) &&
+        (danger || projectileDanger || (gap < 6.5 && f.hp < f.maxHp * 0.78)))
+      choices.push({ key: "z", score: danger || projectileDanger ? 4.7 : 2.75 });
+    // Snowpuff won't waste a freeze during the explicit post-thaw immunity.
+    if (ready("x") && freezeReady && gap > 0.8 && gap < 7.8 &&
+        (!nearHit || gap >= 2.7))
+      choices.push({ key: "x", score: punish ? 3.25 : 2.25 });
+    // A frozen, immobile enemy is an ideal meteor target. It is still a legal
+    // delayed strike; the enemy may dodge if thawed before impact.
+    if (ready("c") && gap < 10.2 && (!danger || gap > 3.1))
+      choices.push({ key: "c", score: frozen ? 4.15 : punish ? 3.5 :
+        o.state === S.BLOCK ? 2.25 : gap < 7.0 ? 1.65 : 0.75 });
+    // Frostwing has a 52-second cooldown: save it for a usable ranged setup.
+    if (ready("v") && gap > 2.65 && gap < 9.3 && !danger)
+      choices.push({ key: "v", score: frozen || punish ? 3.0 :
+        gap > 4.0 && gap < 7.7 ? 2.55 : 1.10 });
+    if (!choices.length) {
+      this.roxySkillReadAt = now + [0.95, 0.53, 0.30, 0.17][this.iqLevel];
+      return false;
+    }
+    // Difficulty determines recognition and planning interval, NOT legality.
+    const notice = [0.28, 0.58, 0.83, 0.97][this.iqLevel];
+    this.roxySkillReadAt = now + [1.75, 1.05, 0.64, 0.35][this.iqLevel] *
+      (0.85 + Math.random() * 0.30);
+    if (Math.random() > notice) return false;
+    choices.sort((a, b) => b.score - a.score);
+    const choice = this.iqLevel === 0 && choices.length > 1 && Math.random() < 0.36
+      ? choices[1] : choices[0];
+    if (choice.score < 1.35) return false;
+    // Threats, telegraphs and true parry-counter windows already ran first.
+    this.queue = []; this.hold = 0;
+    this.theaterT = 0; this.theaterMode = "none";
+    this.theaterFollow = ""; this.theaterFollowT = 0;
+    this.tacticsT = 0;
+    f.intent.attack = false;
+    f.intent.block = false;
+    f.intent.skill = choice.key;
+    this.skillCd = Math.max(this.skillCd, 0.5);
+    this.readySkillPoll = 0.28;
+    return true;
+  }
 
   private readySkillOpportunity(f: Fighter, o: Fighter, dt: number): boolean {
     this.readySkillPoll = Math.max(0, this.readySkillPoll - dt);
@@ -1952,11 +2037,14 @@ export class AiBrain implements Brain {
     // opportunistic skills, scripted personality follow-ups and random offense.
     const landedActed = !survivalActed && !this.aiAirTap && !f.intent.skill &&
       this.aerialLandingPunish(f, o);
-    const iqActed = !survivalActed && !landedActed && !this.aiAirTap && !f.intent.skill &&
+    // Roxy's kit plan runs BEFORE normal combo/pattern reads starve her skills.
+    const roxyActed = !survivalActed && !landedActed && !this.aiAirTap && !f.intent.skill &&
+      this.roxySkillOpportunity(f, o, dt);
+    const iqActed = !survivalActed && !landedActed && !roxyActed && !this.aiAirTap && !f.intent.skill &&
       this.projectileSwordCommit <= 0 && this.combatIQAction(f, o, dt);
-    const patternActed = !survivalActed && !landedActed && !iqActed && !this.aiAirTap && !f.intent.skill &&
+    const patternActed = !survivalActed && !landedActed && !roxyActed && !iqActed && !this.aiAirTap && !f.intent.skill &&
       this.projectileSwordCommit <= 0 && this.patternFootwork(f, o);
-    if (!survivalActed && !landedActed && !this.aiAirTap && !f.intent.skill && !iqActed && !patternActed &&
+    if (!survivalActed && !landedActed && !roxyActed && !this.aiAirTap && !f.intent.skill && !iqActed && !patternActed &&
         this.projectileSwordCommit <= 0 &&
         !this.readySkillOpportunity(f, o, dt) && !this.theaterOffense(f, o))
       this.offense(f, o, dt);
@@ -3955,8 +4043,16 @@ private personalizedSkill(f: Fighter, o: Fighter, distance: number): string | nu
     } else if (a.type === "projectile" || a.type === "lob") {
       viable = distance < (a.type === "lob" ? 9 : 11);
       if (distance > 3.5) points += 0.45;
+    } else if (a.type === "snow_puppet") {
+      // Persistent summons have their own range; no fabricated melee reach.
+      viable = id !== "roxy" ||
+        (a.style === "bird" ? distance >= 2.6 && distance < 9.4 :
+          !o.status.has("freeze") && o.status.freezeImmunityRemaining() <= 0 && distance < 7.8);
     } else if (a.type === "buff") {
-      viable = a.mode === "counter" || a.mode === "blood_feint"
+      viable = a.mode === "frost_aegis" ?
+        (f.frostShieldCharges <= 0 || f.frostShieldT <= 0) &&
+        (f.hp < f.maxHp * 0.80 || (attackComing && distance < 6.5)) :
+        a.mode === "counter" || a.mode === "blood_feint"
         ? attackComing && close
         : a.mode === "ward" ? close || f.hp < f.maxHp * 0.55
         : a.mode === "blood_festival" ? distance < 3.4
@@ -3992,6 +4088,12 @@ private personalizedSkill(f: Fighter, o: Fighter, distance: number): string | nu
         if (name === "Flame Burst") points += close ? 2.6 : -0.7;
         if (name === "Fireball Volley" && distance > 3) points += 1.1;
         if (name === "Meteor" && punish) points += 1.1;
+        break;
+      case "roxy":
+        if (a.mode === "frost_aegis") points += attackComing ? 3.0 : 0.2;
+        if (name === "Frost Marionette") points += punish ? 2.0 : 1.2;
+        if (name === "Glacier Meteor") points += o.status.has("freeze") ? 3.2 : punish ? 2.0 : 0;
+        if (name === "Frostwing Choir") points += distance > 3.2 && !attackComing ? 1.8 : 0;
         break;
       case "marina":
         if (name === "Bubble Ward" && attackComing) points += 3.0;

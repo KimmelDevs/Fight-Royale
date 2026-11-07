@@ -326,7 +326,7 @@ export class Fighter implements Entity {
     this.parryCounterPendingDepth = depth;
   }
   hasParryCounterReady() { return this.parryCounterT > 0; }
-  parryCounterReach() { return (this.attacks.pc ?? this.attacks.l1).reach; }
+  parryCounterReach() { return this.kit === "mage" ? 10.0 : (this.attacks.pc ?? this.attacks.l1).reach; }
   tryParryCounter(): boolean {
     // Same legal rules for a human basic-attack tap and an AI counter decision.
     if (!this.hasParryCounterReady() || !this.onGround || ![S.IDLE, S.BLOCK].includes(this.state) ||
@@ -2475,7 +2475,7 @@ export class Fighter implements Entity {
       +this.nesaSpinYaw.toFixed(3), +this.model.nesaHammerScale.toFixed(2),
       this.nesaCCharges, +this.nesaCRechargeT.toFixed(2), +this.model.nesaSpinHorizontal.toFixed(2),
       +this.parryCounterSpin.toFixed(3), this.atkId === "pc" ? 1 : 0,
-      +this.kaizenSpinSpeed.toFixed(2), this.kaizenSpinDirection, this.garrickResolve, +this.cooldowns.v.toFixed(2)];
+      +this.kaizenSpinSpeed.toFixed(2), this.kaizenSpinDirection, this.garrickResolve, +this.cooldowns.v.toFixed(2), this.frostShardStacks, this.frostShieldCharges, +this.frostShieldT.toFixed(2)];
   }
 
   applySnapshot(s: any[]) {
@@ -2498,6 +2498,10 @@ export class Fighter implements Entity {
     this.kaizenSpinSpeed = s.length > 49 ? s[49] : 1;
     this.kaizenSpinDirection = s.length > 50 ? s[50] : 1;
     this.garrickResolve = s.length > 51 ? s[51] : 0;
+    // Roxy V5 fields appended; backward-compatible with older server snapshots.
+    this.frostShardStacks = s.length > 53 ? s[53] : 0;
+    this.frostShieldCharges = s.length > 54 ? s[54] : 0;
+    this.frostShieldT = s.length > 55 ? s[55] : 0;
     this.hp = s[8];
     this.guard = s[9];
     this.model.walk = s[10];

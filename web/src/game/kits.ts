@@ -204,6 +204,16 @@ export function attacks(kit: string, element: string): Record<string, Attack> {
     if (move.dmg > 0) move.no_parry = true;
   }
   t.pc = parryCounterAttack(kit, element, t);
+  if (kit === "mage") {
+    // Roxy/Ember/Raven/Marina: after a legitimate parry, launch ONE regular
+    // basic projectile. It is not a spin/AOE and still clashes and can be dodged.
+    const basic = t.l1;
+    t.pc = { ...basic, name: "Arcane Riposte", desc: "On a successful parry, cast one ordinary basic projectile.",
+      type: "projectile", wind: 0.16, active: 0.05, recover: 0.30,
+      dmg: basic.dmg, guard: basic.guard, knock: basic.knock, stun: basic.stun,
+      heavy: false, count: 1, spread: 0, next: "", pierce: false,
+      pose_w: basic.pose_w, pose_s: basic.pose_s };
+  }
   // BULLET_SWORDPLAY_V1: Aster's X now sweeps forward instead of jumping.
   // Keep its existing name, damage and cooldown; each Weaken stack reduces outgoing damage 20% multiplicatively for 50s, up to x5.
   if (kit === "knight" && element === "light" && t.x?.name === "Rising Slash") {
@@ -315,8 +325,8 @@ function bonusSkill(kit: string, element: string): Attack {
     case "mage":
       // ASTER_EMBER_LATEST_20261106: fire is consumed to amplify the beam.
       if (element === "frost") return a({ name: "Frostwing Choir", desc: "Summon 3 stationary Frostwings. Each keeps facing an enemy and fires one ice shard every 2 seconds for 25 seconds.",
-        cd: 25, type: "snow_puppet", style: "bird", wind: 0.35, recover: 0.45,
-        dmg: 26, guard: 8, knock: 0.55, stun: 0.08, count: 3, speed: 0, radius: 0.7, duration: 25,
+        cd: 52, type: "snow_puppet", style: "bird", wind: 0.35, recover: 0.45,
+        dmg: 15, guard: 8, knock: 0.55, stun: 0.08, count: 3, speed: 0, radius: 0.7, duration: 25,
         pose_w: "mh_w", pose_s: "m3_s" });
       if (element === "fire") return a({ name: "Absolute Combustion",
         desc: "Condense nearby fire patches and active burns into a white-hot beam. Each consumed patch and burn amplifies the damage.",
@@ -397,19 +407,19 @@ function mage(element: string): Record<string, Attack> {
   if (element === "frost") {
     // All light bolts are individually destructible projectiles. No piercing or homing.
     for (const key of ["l1", "l2", "l3"]) {
-      t[key] = { ...t[key], style: "frost_shard", pierce: false, size: 0.82 };
+      t[key] = { ...t[key], dmg: Math.round(t[key].dmg * 0.75), style: "frost_shard", pierce: false, size: 0.82 }; // ROXY V5: 25% less light damage
     }
     t.heavy = a({ name: "Seeking Frost", type: "projectile", wind: 0.24, active: 0.05, recover: 0.55,
-      dmg: 57, guard: 16, knock: 1.2, stun: 0.16, speed: 13.0, size: 0.85, count: 4, spread: 0.33,
+      dmg: 40, guard: 16, knock: 1.2, stun: 0.16, speed: 13.0, size: 0.85, count: 4, spread: 0.33,
       style: "frost_shard", pose_w: "mh_w", pose_s: "mh_s" });
     t.z = a({ name: "Snowglass Aegis", desc: "Four orbiting ice crystals. Each incoming damaging hit destroys one shard and deals zero damage; lasts up to 7 seconds.",
       cd: 13, type: "buff", mode: "frost_aegis", duration: 7, wind: 0.13, recover: 0.25, pose_w: "mh_w", pose_s: "m3_s" });
     t.x = a({ name: "Frost Marionette", desc: "Summon a light-blue snow marionette that automatically rushes an enemy and FREEZES it for 2 seconds on contact.",
       cd: 10, type: "snow_puppet", style: "freeze", wind: 0.26, recover: 0.42,
-      dmg: 65, guard: 20, knock: 0.7, stun: 0.08, count: 1, speed: 4.5, radius: 0.9, duration: 8.5,
+      dmg: 46, guard: 20, knock: 0.7, stun: 0.08, count: 1, speed: 4.5, radius: 0.9, duration: 8.5,
       effect: "freeze", effect_t: 2.0, pose_w: "m2_w", pose_s: "m2_s" });
     t.c = a({ name: "Glacier Meteor", desc: "A huge icy meteor falls on the marked enemy position, damaging and slowing enemies in the impact area.",
-      cd: 15, type: "strike", style: "meteor", wind: 0.36, recover: 0.65, dmg: 245, guard: 65, knock: 5.5, stun: 0.65,
+      cd: 15, type: "strike", style: "meteor", wind: 0.36, recover: 0.65, dmg: 160, guard: 65, knock: 5.5, stun: 0.65,
       heavy: true, delay: 0.85, radius: 2.1, effect: "slow", effect_t: 2.0, effect_p: 0.65,
       pose_w: "mh_w", pose_s: "mh_s" });
     return t;

@@ -98,6 +98,7 @@ export class FighterModel extends THREE.Group {
   /** Two-handed weapons: the left hand is pulled onto this point of the grip every frame. */
   private gripL: THREE.Object3D | null = null;
   private roxyFloatingBook: THREE.Group | null = null;
+  private roxyOpenPalm = 0;
   private glaivePivot: THREE.Group | null = null;
   /** Nesa's heart hammer root, isolated so the carnival finisher can grow it 4x. */
   private nesaHammerPivot: THREE.Group | null = null;
@@ -1347,7 +1348,10 @@ export class FighterModel extends THREE.Group {
     const L = this.look;
     // Floating grimoire, not a gun: torso-mounted keeps it from following the casting hand.
     // Local -X is her right side; the book hovers beside her shoulder, spine upright.
-    const b = pivot(this.torso, [-0.62, 0.20, 0.43], [-0.08, -0.28, 0.10]);
+    // ROXY V6: float above the actual VRM hand, NOT a fixed torso coordinate.
+    // A model-root pivot avoids inheriting the hand's grip/gun rotation.
+    const b = pivot(this, [0, 0, 0], [-0.46, -0.26, 0.10]);
+    b.scale.setScalar(0.58);
     this.roxyFloatingBook = b;
     const cover = this.tn("#17254b"), gold = this.tn("#e5ac69"), inset = this.tn("#275e88");
     const pages = this.tn("#f1f1df"), edge = this.tn("#a5dffd");
@@ -1434,11 +1438,8 @@ export class FighterModel extends THREE.Group {
     this.knee[0] += (kn[0] - this.knee[0]) * k;
     this.knee[1] += (kn[1] - this.knee[1]) * k;
     this.t += dt;
-    if (this.roxyFloatingBook) {
-      this.roxyFloatingBook.position.y = 0.20 + Math.sin(this.t * 2.4) * 0.042;
-      this.roxyFloatingBook.rotation.y = -0.28 + Math.sin(this.t * 1.7) * 0.11;
-      this.roxyFloatingBook.rotation.z = 0.10 + Math.sin(this.t * 2.1) * 0.035;
-    }
+    // Book placement happens after vrmRig.update below, when the visual
+    // wrist has reached its final animated location for this frame.
     // 0.64 = ordinary walking; 1 = full sprint; each kit uses its own gait rate.
     const running = THREE.MathUtils.clamp((this.walk - 0.66) / 0.34, 0, 1);
     const moving = Math.min(1, this.walk / 0.64);
@@ -1459,6 +1460,17 @@ export class FighterModel extends THREE.Group {
     this.torso.rotation.x += running * ((this.kit === "greatsword" || this.kit === "hammer") ? 0.08 : 0.13);
     this.arm_l.rotation.x -= s * 0.17 * running;
     this.arm_r.rotation.x += s * 0.14 * running;
+    // ROXY V5: free, palm-up right hand supports the levitating grimoire.
+    // Applies only to locomotion/idle; attacks, blocks and hit reactions keep original poses.
+    if (this.look.element === "frost") {
+      // Persistent gesture weight, unlike resetting the joint blend each frame.
+      const target = !this.combat && !this.hurt && this.walk < 0.72 ? 1 : 0;
+      this.roxyOpenPalm = THREE.MathUtils.damp(this.roxyOpenPalm, target, 9, dt);
+      this.arm_r.rotation.x = THREE.MathUtils.lerp(this.arm_r.rotation.x, -0.95, this.roxyOpenPalm);
+      this.arm_r.rotation.z = THREE.MathUtils.lerp(this.arm_r.rotation.z, -0.36, this.roxyOpenPalm);
+      this.hand_r.rotation.x = THREE.MathUtils.lerp(this.hand_r.rotation.x, 1.15, this.roxyOpenPalm);
+      this.hand_r.rotation.z = THREE.MathUtils.lerp(this.hand_r.rotation.z, 0.16, this.roxyOpenPalm);
+    }
     this.hips.position.y += Math.abs(s) * 0.018 * running;
 
     if (actionPose.startsWith("pc_")) {
@@ -1663,6 +1675,19 @@ export class FighterModel extends THREE.Group {
     }
     if (this.gripL) this.reachGrip();
     this.vrmRig?.update(dt, { t: this.t, walk: this.walk, phase: this.walkPhase, crouch: this.hipsY, combat: this.combat, hurt: this.hurt, draw: this.draw, knee: this.knee, pose: actionPose });
+    // ROXY V6: correct both procedural and VRM grimoire placement, every frame.
+    if (this.roxyFloatingBook) {
+      const hand = this.vrmRig?.vrm.humanoid.getNormalizedBoneNode("rightHand") ?? this.hand_r;
+      const palm = this.worldToLocal(hand.getWorldPosition(new THREE.Vector3()));
+      // Outside the right wrist, slightly up and forward: no intersection
+      // with the forearm, face, or hat while the hand changes pose.
+      const hover = 0.15 + Math.sin(this.t * 2.3) * 0.022;
+      const pos = palm.add(new THREE.Vector3(-0.055, hover, 0.17));
+      this.roxyFloatingBook.position.copy(pos);
+      this.roxyFloatingBook.rotation.set(-0.46 + Math.sin(this.t * 1.6) * 0.035,
+        -0.26 + Math.sin(this.t * 1.8) * 0.09,
+        0.10 + Math.sin(this.t * 2.0) * 0.035);
+    }
     if (this.bowPivot) this.updateBow();
     if (this.kit === "chainblade") this.updateChainblade(dt);
     // Visible only for the 3-second festival; client puppet uses replicated timer too.
@@ -1720,7 +1745,9 @@ export class FighterModel extends THREE.Group {
     // Weapons were sized for the chibi bodies; scale them down to suit the VRoid proportions.
     // Left hand grips for shields, paired weapons, bows and two-handed swords; mages and
     // kickers keep it free and relaxed.
-    this.vrmRig.grip = { left: !["mage", "kicks"].includes(this.kit), right: this.kit !== "kicks" };
+    // Roxy's fingers remain open; she summons the book rather than grabbing it.
+    this.vrmRig.grip = { left: !["mage", "kicks"].includes(this.kit),
+      right: this.kit !== "kicks" && this.look.element !== "frost" };
     // Staffs and bows follow the arm a lot (natural tilt); blades less, to keep swing arcs.
     this.vrmRig.followArm = this.kit === "chainblade" ? 0.14 : this.kit === "glaive" ? 0.24 : this.kit === "sickle" ? 0.18 : this.kit === "mage" ? 0.4 : this.kit === "bow" ? 0.5 : 0.3;
     this.vrmRig.staff = this.kit === "mage" && this.look.element !== "frost";

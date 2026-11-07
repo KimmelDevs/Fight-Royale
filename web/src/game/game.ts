@@ -295,6 +295,7 @@ interface Trap {
 }
 
 // ROXY_FLOATING_BOOK_FROSTWING_FREEZE_V4_20261108
+// ROXY_BALANCE_GRIMOIRE_FROSTBITE_V5_20261108
 // ROXY_MANUAL_SUMMONS_BIRD_V2_20261108 — manual frost summons with handcrafted procedural meshes.
 // ROXY_FROSTWING_SPELLBOOK_V3_20261108
 interface SnowPuppet {
@@ -4460,6 +4461,11 @@ export class Game implements MobHost {
           value: f.bloodFrenzyT > 0 ? `${f.bloodFrenzyT.toFixed(1)}s` : `${Math.round(f.bloodlust)}/100` });
         if (f.bloodFestivalT > 0) passives.push({ label: "FESTIVAL", value: `${f.bloodFestivalT.toFixed(1)}s` });
       }
+      if (f.look.element === "frost") {
+        passives.push({ label: "FROSTBITE", value: `${f.frostShardStacks}/4` });
+        if (f.frostShieldT > 0 && f.frostShieldCharges > 0)
+          passives.push({ label: "AEGIS", value: `${f.frostShieldCharges}/4` });
+      }
       if (f.kit === "hammer") passives.push({ label: "HEARTS", value: `${f.nesaCCharges}/3` });
       if (f.kit === "bomb") passives.push({ label: "MINES", value: `${f.bobMineCharges}/4` });
       if (f.look.name === "Aster" && rival && rival.status.stacks("weaken") > 0)
@@ -4476,7 +4482,7 @@ export class Game implements MobHost {
     };
     const info = (f: Fighter) => ({ id: CHARACTERS[f.charIndex].id, name: f.look.name + (isCpu(f.owner) && f.owner !== "cpu" ? " (CPU)" : ""), hp: f.hp, maxHp: f.maxHp, guard: f.guard, maxGuard: f.maxGuard, down: f.isDown(), glow: f.look.glow,
       pct: f.pct, stocks: f.stocks, out: f.out, team: f.team, status: f.status.kinds(), bloodlust: f.bloodlust, bloodFrenzyT: f.bloodFrenzyT, bloodFestivalT: f.bloodFestivalT, clashMomentum: f.clashMomentum, chainBindT: f.chainBindT,
-      chainBindKind: f.chainBindKind }); // KAIZEN_PREDATOR_HOOK_V9
+      chainBindKind: f.chainBindKind, frostShardStacks: f.frostShardStacks, frostShieldCharges: f.frostShieldCharges, frostShieldT: f.frostShieldT }); // ROXY V5 HUD
     return {
       mode: this.cfg.mode,
       plat: this.plat,
