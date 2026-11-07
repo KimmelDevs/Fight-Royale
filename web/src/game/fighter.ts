@@ -179,6 +179,8 @@ export class Fighter implements Entity {
   zenithCatchRecoilT = 0;
   zenithSpearAnchor = new THREE.Vector3();
   zenithMagnetCharges = 0;
+  /** Zenith V9: 20 real seconds of Magnetic Charge; independent of spear throw state. */
+  zenithMagneticChargeT = 0;
   zenithDominionRepel = false;
   onZenithRecall: (f: Fighter) => void = () => {};
   catchZenithSpear() {
@@ -773,6 +775,8 @@ export class Fighter implements Entity {
       this.garrickFollowTarget = null;
       this.garrickFollowT = 0;
     }
+    if (this.look.element === "metal")
+      this.zenithMagneticChargeT = Math.max(0, this.zenithMagneticChargeT - dt);
     this.zenithCatchShieldT = Math.max(0, this.zenithCatchShieldT - dt);
     this.zenithCatchRecoilT = Math.max(0, this.zenithCatchRecoilT - dt);
     if (this.look.element === "metal") {
@@ -1414,7 +1418,7 @@ export class Fighter implements Entity {
     } else this.cooldowns[k] = this.attacks[k].type === "barrel" ? 0.6 :
       bobMine ? (this.bobMineCharges > 0 ? 0 : this.bobMineRechargeT) : this.attacks[k].cd * this.cdMult;
     // Cast in the air, a skill with an air version uses it instead.
-    if (this.look.element === "metal" && k === "c") this.zenithDominionRepel = this.intent.skillHeld === "c";
+    if (this.look.element === "metal" && k === "c") this.zenithDominionRepel = false; // V9 C is a timed self-buff
     this.startAttack(!this.onGround && this.attacks[k + "_air"] ? k + "_air" : k);
   }
 
@@ -1539,10 +1543,24 @@ export class Fighter implements Entity {
     if (this.kit === "chainblade" && this.chainFuryT > 0 && /^l\d+$/.test(id))
       this.atk = { ...this.atk, reach: this.atk.reach + 0.32, guard: this.atk.guard * 1.12 };
     // Each real clash adds +20% light-combo speed, capped at 2x. Counter itself is uncapped.
-    if (this.kit === "glaive" && /^l[1-9]$/.test(id)) {
+    if (this.kit === "glaive" && this.look.element !== "metal" && /^l[1-9]$/.test(id)) {
       const speed = 1 + Math.min(this.clashMomentum, 5) * 0.20;
       this.atk = { ...this.atk, wind: this.atk.wind / speed,
         active: this.atk.active / speed, recover: this.atk.recover / speed };
+    }
+    // V12 attack speed: twin blades 2x normally / 2.4x with Magnetic Charge;
+    // spear basics 1x normally / 2.4x with Magnetic Charge.
+    // No animation-only speed fakery; wind, active, and recover ALL scale.
+    if (this.kit === "glaive" && this.look.element === "metal" && /^l[1-5]$/.test(id)) {
+      const charged = this.zenithMagneticChargeT > 0;
+      // ZENITH_MAGNETIC_CHARGE_24X_V12_20261108 — effective multiplier vs original speed.
+      const speed = this.zenithSpearOut ? (charged ? 2.4 : 2) : (charged ? 2.4 : 1);
+      this.atk = { ...this.atk,
+        wind: this.atk.wind / speed,
+        active: this.atk.active / speed,
+        recover: this.atk.recover / speed,
+        guard: this.atk.guard * (charged ? 0.8 : 1),
+      };
     }
     if (this.kit === "sickle" && this.bloodFrenzyT > 0 && id.startsWith("l"))
       this.atk = { ...this.atk, wind: this.atk.wind * 0.88, recover: this.atk.recover * 0.88 };
@@ -2159,6 +2177,7 @@ export class Fighter implements Entity {
     this.clashMomentum = 0;
     if (this.look.element === "metal") {
       this.zenithSpearOut = false;
+      this.zenithMagneticChargeT = 0;
       this.zenithCatchShieldT = 0;
       this.zenithCatchRecoilT = 0;
       this.model.zenithCatchShieldT = 0;
@@ -2604,7 +2623,8 @@ export class Fighter implements Entity {
       this.nesaCCharges, +this.nesaCRechargeT.toFixed(2), +this.model.nesaSpinHorizontal.toFixed(2),
       +this.parryCounterSpin.toFixed(3), this.atkId === "pc" ? 1 : 0,
       +this.kaizenSpinSpeed.toFixed(2), this.kaizenSpinDirection, this.garrickResolve, +this.cooldowns.v.toFixed(2), this.frostShardStacks, this.frostShieldCharges, +this.frostShieldT.toFixed(2),
-      this.zenithSpearOut ? 1 : 0, +this.zenithCatchShieldT.toFixed(2), +this.zenithCatchRecoilT.toFixed(2)];
+      this.zenithSpearOut ? 1 : 0, +this.zenithCatchShieldT.toFixed(2), +this.zenithCatchRecoilT.toFixed(2),
+      +this.zenithMagneticChargeT.toFixed(2)];
   }
 
   applySnapshot(s: any[]) {
@@ -2641,6 +2661,7 @@ export class Fighter implements Entity {
       this.zenithCatchRecoilT = s[58] ?? 0;
       this.model.zenithCatchShieldT = this.zenithCatchShieldT;
       this.model.zenithCatchRecoilT = this.zenithCatchRecoilT;
+      this.zenithMagneticChargeT = s.length > 59 ? (s[59] ?? 0) : 0;
     }
     this.hp = s[8];
     this.guard = s[9];

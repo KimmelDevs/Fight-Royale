@@ -188,6 +188,12 @@ export function attacks(kit: string, element: string): Record<string, Attack> {
   t.v = bonusSkill(kit, element);
   // ZENITH_SPEAR_ANIMATION_AUDIO_V2_20261108: compact weapon, dedicated spear poses, exact SFX path mapping.
 // ZENITH_SINGLE_SPEAR_FLAT_SFX_V3_20261108: one spearhead, flat /sfx/*.mp3 paths.
+  // ZENITH_SOVEREIGN_METAL_BLOOM_V12_20261108 — protected V windup; 17+14 spears.
+  // ZENITH_MAGNETIC_CHARGE_24X_V12_20261108 — C caps basic speed at 2.4x.
+  // ZENITH_PHANTOM_FANG_MAGNETIC_CHARGE_V9_20261108
+  // C: 20s real-time buff. Spear 2.4x attack tempo; twin blades 2x normally / 2.4x buffed.
+  // Guard damage only is reduced by 20% while buffed; base health damage does NOT rise.
+  // l5 spear Phantom Fang splits a single finisher into five contact windows.
   // ZENITH_IRON_SOVEREIGN_V1_20261108: Metal spear kit is independent of Zarek.
   if (kit === "glaive" && element === "metal") {
     const base = (key: string, value: Partial<Attack>) => { t[key] = a(value); };
@@ -200,6 +206,11 @@ export function attacks(kit: string, element: string): Record<string, Attack> {
       dmg: combo[i][0], guard: 13+i*2, reach: 2.14, lunge: 2.35, knock: i===4?3.0:0.65,
       stun: i===4?0.32:0.16, style: "zenith_basic", pose_w: combo[i][2], pose_s: combo[i][3],
       next: i<4?`l${i+2}`:"" });
+    // A true multi-hit l5 needs enough active time to play five rapid thrusts.
+    // The total damage (68) and guard damage (21) are split, not multiplied.
+    t.l5.name = "Phantom Fang";
+    t.l5.active = 0.40;
+    t.l5.recover = 0.12;
     base("heavy", { name: "Magnetic Lance", type: "projectile", wind: 0.44, recover: 0.47,
       dmg: 100, guard: 35, knock: 3.0, stun: 0.35, heavy: true, speed: 23, size: 0.88, pierce: true,
       style: "zenith_heavy", pose_w: "znh_w", pose_s: "znh_s" });
@@ -211,10 +222,10 @@ export function attacks(kit: string, element: string): Record<string, Attack> {
       cd: 10, type: "melee", wind: 0.12, active: 0.75, recover: 0.33,
       dmg: 25, guard: 9, reach: 2.35, knock: 0.35, stun: 0.13,
       style: "zenith_barrage", pose_w: "znx_w", pose_s: "znx_s" });
-    base("c", { name: "Magnetic Dominion", desc: "Tap to draw a positively marked enemy toward you, hold to repel nearby foes. With your spear thrown, zip toward its magnetic anchor instead.",
-      cd: 14, type: "buff", mode: "zenith_magnet", wind: 0.12, active: 0.08, recover: 0.36,
-      radius: 4.5, pose_w: "znc_w", pose_s: "znc_s" });
-    base("v", { name: "Sovereign Arsenal", desc: "Summon six magnetic spear constructs for dodgeable directional strikes, ending in one heavy rail spear.",
+    base("c", { name: "Magnetic Charge", desc: "20s buff: spear and twin blade basics 2.4x speed (twin blades normally 2x). Basic guard damage -20%. Health damage unchanged.",
+      cd: 30, type: "buff", mode: "zenith_charge", duration: 20, wind: 0.12, active: 0.08, recover: 0.36,
+      pose_w: "znc_w", pose_s: "znc_s" });
+    base("v", { name: "Sovereign Arsenal", desc: "17 protective bloom spears erupt during cast; 12 elegant directional spears and 2 guided rail finishers follow.",
       cd: 53, type: "projectile", wind: 0.55, active: 1.35, recover: 0.70,
       dmg: 43, guard: 15, knock: 1.4, stun: 0.18, speed: 17, size: 1.2,
       style: "zenith_arsenal", pose_w: "znv_w", pose_s: "znv_s" });

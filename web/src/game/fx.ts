@@ -36,6 +36,9 @@ const ROCK = new THREE.DodecahedronGeometry(0.07, 0);
 // ARENA_REACTIONS_V1 shared floor geometry, not attack collision geometry.
 const ARENA_REACTION_STRIP = new THREE.BoxGeometry(1, 0.008, 1);
 const ARENA_REACTION_DISC = new THREE.CircleGeometry(1, 22).rotateX(-Math.PI / 2);
+// ZENITH_PHANTOM_FANG_VISUAL_V10_1_20261108 — narrow shared spear afterimage meshes.
+const ZENITH_FANG_SHAFT = new THREE.CylinderGeometry(0.014, 0.023, 1, 6);
+const ZENITH_FANG_HEAD = new THREE.ConeGeometry(0.045, 0.20, 5);
 const MOTE = new THREE.OctahedronGeometry(0.03, 0);
 const rockMats = ["#8a6a48", "#6e5a46", "#a08060", "#5c4a3a"].map((c) => new THREE.MeshLambertMaterial({ color: c }));
 const moteMats = new Map<string, THREE.Material>();
@@ -693,6 +696,96 @@ export class Fx {
       m.scale.set(w * pop, (2 - w) * pop, w * pop);
       if (t >= dur) this.splash(m.position.clone(), 30, 1.4, color);
       return t < dur && target.parent !== null;
+    });
+  }
+
+  /** Zenith's Phantom Fang: clean spear silhouettes, not slash explosions.
+   * Each burst renders three thin silver-blue ghost lances in world space.
+   * The five existing contact frames spawn these independently, overlapping
+   * for ~0.16s so a charged combo reads as a rapid spear flurry.
+   */
+  zenithFang(from: THREE.Vector3, to: THREE.Vector3, beat = 0) {
+    const direction = to.clone().sub(from);
+    const len = direction.length();
+    if (len < 0.05) return;
+    const root = new THREE.Group();
+    root.position.copy(from).add(to).multiplyScalar(0.5);
+    root.quaternion.setFromUnitVectors(UP, direction.divideScalar(len));
+    const mats: { material: THREE.MeshBasicMaterial; alpha: number }[] = [];
+    const ghost = (color: string, opacity: number) => {
+      const material = new THREE.MeshBasicMaterial({
+        color, transparent: true, opacity, depthWrite: false,
+        blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+      });
+      mats.push({ material, alpha: opacity });
+      return material;
+    };
+    // Tight lateral offsets create a fast multi-spear silhouette, not a broad fan.
+    for (const [n, x, alpha] of [[0, 0, 0.82], [1, -0.084, 0.32], [2, 0.084, 0.32]] as const) {
+      const material = ghost(n === 0 ? "#d9f6ff" : "#71b7d4", beat === 4 ? alpha : alpha * 0.82);
+      const rod = new THREE.Mesh(ZENITH_FANG_SHAFT, material);
+      rod.scale.y = len * 0.86;
+      rod.position.set(x, -0.075, 0);
+      root.add(rod);
+      const head = new THREE.Mesh(ZENITH_FANG_HEAD, material);
+      head.position.set(x, len * 0.5 - 0.095, 0);
+      root.add(head);
+    }
+    const duration = beat === 4 ? 0.19 : 0.155;
+    let age = 0;
+    this.add(root, (dt) => {
+      age += dt;
+      const remain = Math.max(0, 1 - age / duration);
+      for (const { material, alpha } of mats) material.opacity = alpha * remain * remain;
+      if (age >= duration) {
+        for (const { material } of mats) material.dispose();
+        return false;
+      }
+      return true;
+    });
+  }
+
+  // ZENITH_SOVEREIGN_METAL_BLOOM_V12_20261108 — clean twin rail aiming lines.
+  /** A narrow silver-blue rail line with a traveling dot and forward arrow.
+   * Entirely visual: the real projectile and collision remain unchanged.
+   */
+  zenithRailGuide(from: THREE.Vector3, to: THREE.Vector3, duration = 0.26) {
+    const travel = to.clone().sub(from);
+    const len = travel.length();
+    if (len < 0.10) return;
+    const root = new THREE.Group();
+    root.position.copy(from).add(to).multiplyScalar(0.5);
+    root.quaternion.setFromUnitVectors(UP, travel.normalize());
+    const make = (color: string, opacity: number) => new THREE.MeshBasicMaterial({
+      color, transparent: true, opacity, depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    const hazeMat = make("#6db0d2", 0.23);
+    const rayMat = make("#e3f6ff", 0.72);
+    const dotMat = make("#f5fcff", 0.72);
+    const arrowMat = make("#b0ddeb", 0.57);
+    const haze = new THREE.Mesh(new THREE.CylinderGeometry(0.030, 0.030, 1, 6), hazeMat);
+    haze.scale.y = len;
+    const ray = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, 1, 6), rayMat);
+    ray.scale.y = len;
+    const dot = new THREE.Mesh(SPH, dotMat);
+    dot.scale.setScalar(0.045);
+    const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.062, 0.17, 6), arrowMat);
+    arrow.position.y = len * 0.5 - 0.11;
+    root.add(haze, ray, dot, arrow);
+    for (const mesh of [haze, ray, dot, arrow]) (mesh as any).ownsMat = true;
+    let age = 0;
+    const lifetime = Math.max(0.12, Math.min(duration, 0.45));
+    this.add(root, (dt) => {
+      age += dt;
+      const phase = Math.min(1, age / lifetime);
+      dot.position.y = (phase - 0.5) * len;
+      const fade = (1 - phase) * (1 - phase);
+      hazeMat.opacity = 0.23 * fade;
+      rayMat.opacity = 0.72 * fade;
+      dotMat.opacity = 0.72 * fade;
+      arrowMat.opacity = 0.57 * fade;
+      return age < lifetime;
     });
   }
 
