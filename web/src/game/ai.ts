@@ -1,3 +1,4 @@
+// KAIZEN_SPIN_HIT_RELIABILITY_V9
 // FIGHT_ROYALE_KAIZEN_MOBILE_SPIN_V8
 // FIGHT_ROYALE_GARRICK_BOB_KAIZEN_ROOK_V7
 // FIGHT_ROYALE_ZAREK_CPU_SHIELD_RECOVERY_V2
@@ -1026,6 +1027,11 @@ export class AiBrain implements Brain {
   }
 
   think(f: Fighter, dt: number) {
+    // KAIZEN_SPIN_HIT_RELIABILITY_V9: unlike LocalBrain, AiBrain does not
+    // receive a held Z key. Keep it virtually held for the full active spin.
+    // This does not bypass cooldowns, change the skill duration, or affect players.
+    if (f.kit === "chainblade" && f.state === S.ATTACK &&
+        f.atk?.style === "chain_razor_cyclone") f.intent.skillHeld = "z";
     const o = f.opponent as Fighter | null;
     if (!o || o.isDown()) return;
     if (this.avoidKaizenSpinGuard(f, o, dt)) return;

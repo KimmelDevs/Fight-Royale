@@ -1,3 +1,4 @@
+// KAIZEN_SPIN_HIT_RELIABILITY_V9
 // FIGHT_ROYALE_KAIZEN_MOBILE_SPIN_V8
 // FIGHT_ROYALE_GARRICK_BOB_KAIZEN_ROOK_V7
 // FIGHT_ROYALE_NYX_CAMERA_CONTINUOUS_DODGE_20261107_V1
@@ -1482,52 +1483,88 @@ export class Game implements MobHost {
     }
   }
 
+  /** Small swept disk for mobile spin hit checks: the weapon stays damaging
+   * while the body walks between timed pulses. Maximum sweep 0.9 arena units;
+   * never crosses a dash/teleport gap and never overrides guards or dodges. */
+  private kaizenSpinInRange(from: THREE.Vector3, now: THREE.Vector3, d: Entity,
+                            radius: number, maxHeight: number): boolean {
+    if (Math.abs(d.root.position.y - now.y) > maxHeight) return false;
+    const movement = now.clone().sub(from).setY(0);
+    const distance = movement.length();
+    // Bound the swept path to natural walking between consecutive spin beats.
+    const start = from.clone().setY(0);
+    if (distance > 0.9) start.addScaledVector(movement, (distance - 0.9) / distance);
+    const segment = now.clone().setY(0).sub(start);
+    const target = d.root.position.clone().setY(0);
+    const delta = target.clone().sub(start);
+    const lengthSq = segment.lengthSq();
+    const t = lengthSq > 0.00001
+      ? THREE.MathUtils.clamp(delta.dot(segment) / lengthSq, 0, 1) : 1;
+    const closest = start.addScaledVector(segment, t);
+    return target.distanceTo(closest) <= radius + d.radius;
+  }
+
   /** KAIZEN_CHAINBLADE_V1: three independent, interruptible chain swipes. */
   private chainRazorCyclone(f: Fighter, a: Attack) {
     const round = this.round, serial = f.swingSerial;
+    let previousCenter = f.root.position.clone();
     for (let i = 0; i < 9; i++) this.laterCombo(f, i * 0.18, () => {
       if (round !== this.round || f.isDown() || f.state !== S.ATTACK || f.swingSerial !== serial) return;
       if (i >= 4 && f.intent.skillHeld !== "z") return;
+      const center = f.root.position.clone();
+      const from = previousCenter;
+      previousCenter = center.clone();
       const reach = 1.65 + Math.min(i, 8) * 0.10;
       const hit = { ...a, dmg: i >= 4 ? 22 : 28, guard: 8, stun: 0.10, heavy: false } as Attack;
-      this.fxp("ring", f.root.position.clone().add(new THREE.Vector3(0, 1.1, 0)), "#ff5d78", reach, 0.10, 0.6);
+      this.fxp("ring", center.clone().add(new THREE.Vector3(0, 1.1, 0)), "#ff5d78", reach, 0.10, 0.6);
       for (const d of this.enemiesOf(f)) {
-        const diff = d.root.position.clone().sub(f.root.position).setY(0);
-        if (diff.length() > reach + d.radius || Math.abs(d.root.position.y - f.root.position.y) > 1.9) continue;
+        if (!this.kaizenSpinInRange(from, center, d, reach, 1.9)) continue;
+        const diff = d.root.position.clone().sub(center).setY(0);
         // Real opposing active attacks still create the standard weapon clash.
         if (d instanceof Fighter && this.isDuel() && d.state === S.ATTACK && d.atk?.type === "melee" && d.atkPhase === 1) {
           this.clash(f, d, f.chest()); return;
         }
-        this.applyHit(f, d, hit, f.atkPower, d.chest(), diff.normalize(), false);
+        const direction = diff.lengthSq() > 0.00001 ? diff.normalize() :
+          new THREE.Vector3(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
+        this.applyHit(f, d, hit, f.atkPower, d.chest(), direction, false);
       }
     });
   }
 
   private chainDeathSpiral(f: Fighter, a: Attack) {
     const round = this.round, serial = f.swingSerial;
+    let previousCenter = f.root.position.clone();
     const times = [0.05, 0.28, 0.51, 0.74, 0.97, 1.20, 1.43];
     for (let i = 0; i < times.length; i++) this.laterCombo(f, times[i], () => {
       if (round !== this.round || f.isDown() || f.state !== S.ATTACK || f.swingSerial !== serial) return;
       const origin = f.root.position.clone(); // spinning field follows Kaizen
+      const from = previousCenter;
+      previousCenter = origin.clone();
       const radius = Math.max(1.7, 4.2 - i * 0.40);
       this.fxp("ring", origin.clone().add(new THREE.Vector3(0, 0.8, 0)), "#fa536c", radius, 0.18, 0.9);
       this.fxp("slashes", origin.clone().add(new THREE.Vector3(Math.sin(i * 1.2) * 1.0, 1.2, Math.cos(i * 1.2))), "#ff6e83");
       f.poseOverride = ["cbx1_s", "cbx2_s", "cbx3_s"][i % 3];
       for (const d of this.enemiesOf(f)) {
+        if (!this.kaizenSpinInRange(from, origin, d, radius, 1.9)) continue;
         const diff = d.root.position.clone().sub(origin).setY(0);
-        if (diff.length() > radius + d.radius || Math.abs(d.root.position.y - f.root.position.y) > 1.9) continue;
-        this.applyHit(f, d, { ...a, dmg: 38, guard: 11, stun: 0.13, knock: 0, heavy: false }, f.atkPower, d.chest(), diff.normalize(), false);
+        const direction = diff.lengthSq() > 0.00001 ? diff.normalize() :
+          new THREE.Vector3(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
+        this.applyHit(f, d, { ...a, dmg: 38, guard: 11, stun: 0.13, knock: 0, heavy: false }, f.atkPower, d.chest(), direction, false);
       }
     });
     this.laterCombo(f, 1.67, () => {
       if (round !== this.round || f.isDown() || f.state !== S.ATTACK || f.swingSerial !== serial) return;
       f.poseOverride = "cb5_s";
       const origin = f.root.position.clone(); // finisher follows Kaizen
+      const from = previousCenter;
+      previousCenter = origin.clone();
       this.fxp("slashes", origin.clone().add(new THREE.Vector3(0, 1.9, 0)), "#ffbbc2");
       for (const d of this.enemiesOf(f)) {
+        if (!this.kaizenSpinInRange(from, origin, d, 2.0, 2.2)) continue;
         const diff = d.root.position.clone().sub(origin).setY(0);
-        if (diff.length() > 2.0 + d.radius || Math.abs(d.root.position.y - f.root.position.y) > 2.2) continue;
-        this.applyHit(f, d, { ...a, dmg: 135, guard: 37, knock: 5.3, stun: 0.55, heavy: true }, f.atkPower, d.chest(), diff.normalize(), false);
+        const direction = diff.lengthSq() > 0.00001 ? diff.normalize() :
+          new THREE.Vector3(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
+        this.applyHit(f, d, { ...a, dmg: 135, guard: 37, knock: 5.3, stun: 0.55, heavy: true }, f.atkPower, d.chest(), direction, false);
       }
       this.add_trauma(0.38);
     });
