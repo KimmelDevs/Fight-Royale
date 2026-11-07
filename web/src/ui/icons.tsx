@@ -8,7 +8,7 @@ import { useState } from "react";
 
 // Air attacks reuse the regular skill artwork; no missing *_air.webp requests.
 export const skillIcon = (kit: string, element: string, key: string) =>
-  `/icons/skills/${kit === "mage" ? `mage-${element}` : kit}-${key.replace(/_air$/, "")}.webp`;
+  `/icons/skills/${kit === "mage" ? `mage-${element}` : kit === "glaive" && element === "metal" ? "glaive-metal" : kit}-${key.replace(/_air$/, "")}.webp`;
 export const emblemIcon = (id: string) => `/icons/emblems/${id}.webp`;
 /** Character portrait; "random" is the question mark. */
 export const charIcon = (id: string) => `/icons/chars/${id}.webp`;

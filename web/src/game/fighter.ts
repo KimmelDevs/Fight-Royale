@@ -174,10 +174,28 @@ export class Fighter implements Entity {
   onSwing: (f: Fighter) => void = () => {};
   // ZENITH_IRON_SOVEREIGN_V1_20261108 — pure game-side spear state.
   zenithSpearOut = false;
+  // ZENITH_TWIN_BLADES_CATCH_CHOREO_V5_20261108: recovery is CC-only protection, never HP invulnerability.
+  zenithCatchShieldT = 0;
+  zenithCatchRecoilT = 0;
   zenithSpearAnchor = new THREE.Vector3();
   zenithMagnetCharges = 0;
   zenithDominionRepel = false;
   onZenithRecall: (f: Fighter) => void = () => {};
+  catchZenithSpear() {
+    if (this.look.element !== "metal" || this.isDown()) return;
+    this.zenithSpearOut = false;
+    this.model.setZenithSpearHeld(true);
+    this.zenithCatchShieldT = 2.0;
+    this.zenithCatchRecoilT = 0.62;
+    this.status.grantCcImmunity(2.0);
+    this.model.zenithCatchShieldT = 2.0;
+    this.model.zenithCatchRecoilT = 0.62;
+    this.model.recoil = Math.max(this.model.recoil, 0.46);
+    this.knock = 0;
+    // A catch can break preexisting ice/jolts but never undoes damage.
+    for (const cc of ["freeze", "paralyze", "slow"] as const) this.status.consume(cc);
+    if (this.state === S.HITSTUN || this.state === S.STAGGER) this.setState(S.IDLE);
+  }
   onKo: (f: Fighter) => void = () => {};
   /** Status effects (burn, poison, paralyze...). Damage-over-time ticks queue in `dots` for the game. */
   status = new StatusSet();
@@ -388,11 +406,13 @@ export class Fighter implements Entity {
   }
   /** Clash recoil strength depends on the opponent's weapon, not damage. */
   weightedClashPush(strength: number) {
+    if (this.zenithCatchShieldT > 0) return;
     if (!this.stage && !this.meteorFistArmor && !this.hammerWeightArmor && !this.knockedDown())
       this.knock = this.state === S.HITSTUN && this.stunPose === "clash"
         ? Math.min(8, strength) : Math.max(this.knock, Math.min(8, strength));
   }
   private beginKnockdown() {
+    if (this.zenithCatchShieldT > 0) return;
     // No knockdown during airborne juggles, binds, or armored specials.
     this.knockdownLockT = 2.3;
     this.holding = false; this.buffered = false;
@@ -752,6 +772,19 @@ export class Fighter implements Entity {
     if (this.garrickFollowT <= 0 || this.garrickFollowTarget?.isDown()) {
       this.garrickFollowTarget = null;
       this.garrickFollowT = 0;
+    }
+    this.zenithCatchShieldT = Math.max(0, this.zenithCatchShieldT - dt);
+    this.zenithCatchRecoilT = Math.max(0, this.zenithCatchRecoilT - dt);
+    if (this.look.element === "metal") {
+      this.model.zenithCatchShieldT = this.zenithCatchShieldT;
+      this.model.zenithCatchRecoilT = this.zenithCatchRecoilT;
+      if (this.zenithCatchRecoilT > 0) {
+        this.intent.attack = false;
+        this.intent.skill = "";
+        this.intent.skillHeld = "";
+        this.intent.move.set(0, 0, 0);
+        this.intent.dash.set(0, 0, 0);
+      }
     }
     this.clock += dt;
     this.knockdownLockT = Math.max(0, this.knockdownLockT - dt);
@@ -1858,6 +1891,9 @@ export class Fighter implements Entity {
   private tickStatus(dt: number) {
     if (this.state === S.KO || this.state === S.WIN || this.stage) { this.status.clear(); return; }
     const st = this.status.tick(dt, this.model.walk > 0.3);
+    if (this.zenithCatchShieldT > 0) {
+      for (const cc of ["freeze", "paralyze", "slow"] as const) this.status.consume(cc);
+    }
     if (this.status.has("freeze")) {
       this.intent.attack = false; this.intent.skill = ""; this.intent.block = false; this.intent.jump = false;
       this.intent.move.set(0, 0, 0); this.intent.dash.set(0, 0, 0);
@@ -1872,7 +1908,7 @@ export class Fighter implements Entity {
       this.dots.push({ ...d, src: this.status.src });
       if (this.hp <= 0) { this.ko(); return; }
     }
-    if (st.jolt && this.bloodFestivalT <= 0 && !this.meteorFistArmor && !this.hammerWeightArmor && this.state !== S.HITSTUN && this.state !== S.STAGGER) {
+    if (st.jolt && this.zenithCatchShieldT <= 0 && this.bloodFestivalT <= 0 && !this.meteorFistArmor && !this.hammerWeightArmor && this.state !== S.HITSTUN && this.state !== S.STAGGER) {
       this.stun = 0.25; this.stunPose = "hit"; this.holding = false;
       this.setState(S.HITSTUN);
       this.model.flash("#ffe066", 0.12);
@@ -1964,12 +2000,13 @@ export class Fighter implements Entity {
         this.lastDamage = hammerCrush ? dmg * 0.50 : dmg * 0.4;
         this.lastCrit = false;
         this.hp = Math.max(this.hp - this.lastDamage, 0);
-        this.knock = hammerCrush ? Math.max(4.1, a.knock * 0.62) : 3.5;
+        this.knock = this.zenithCatchShieldT > 0 ? 0 :
+          hammerCrush ? Math.max(4.1, a.knock * 0.62) : 3.5;
         if (this.hp <= 0) { this.ko(); return "ko"; }
         if (hammerCrush && !this.stage && this.onGround && this.bloodFestivalT <= 0 &&
             this.knockdownLockT <= 0 && !this.chainBoundBy && !this.chainBindTarget &&
             (a.heavy || a.id === "z" || a.id === "c" || a.id === "v")) this.beginKnockdown();
-        else if (this.bloodFestivalT <= 0) this.stagger(0.85);
+        else if (this.bloodFestivalT <= 0 && this.zenithCatchShieldT <= 0) this.stagger(0.85);
         this.model.flash("#ffd966", 0.18);
         return "guard_break";
       }
@@ -1998,7 +2035,7 @@ export class Fighter implements Entity {
         this.model.recoil = 0.95;
         return "blocked";
       }
-      this.knock = a.knock * 0.5;
+      this.knock = this.zenithCatchShieldT > 0 ? 0 : a.knock * 0.5;
       this.model.recoil = 0.7;
       return "blocked";
     }
@@ -2015,9 +2052,16 @@ export class Fighter implements Entity {
     this.model.flash();
     if (this.hp <= 0) { this.ko(); return "ko"; }
     // Even during Blood Festival, damage and non-stunning conditions still land.
-    if (a.effect && !(this.bloodFestivalT > 0 && a.effect === "paralyze") &&
+    if (a.effect && this.zenithCatchShieldT <= 0 &&
+        !(this.bloodFestivalT > 0 && a.effect === "paralyze") &&
         !(this.meteorFistArmor && (a.effect === "paralyze" || a.effect === "slow")))
       this.status.apply(a.effect as StatusKind, a.effect_t, a.effect_p, attacker);
+    if (this.zenithCatchShieldT > 0) {
+      // Damage still lands; no stun, stagger, floor knockdown or forced knockback.
+      this.knock = 0;
+      this.model.recoil = Math.max(this.model.recoil, 0.18);
+      return this.lastCrit ? "crit" : "hit";
+    }
     if (this.hammerWeightArmor) {
       // NESA_WEIGHT_PASSIVE_V1: once her swing is committed, Nesa still takes damage,
       // but the weight keeps the attack going instead of letting hitstun cancel it.
@@ -2040,7 +2084,8 @@ export class Fighter implements Entity {
     }
     // Stun rules: one stun per skill use (multi-hit skills don't re-stun every tick), and
     // repeated stuns within a few seconds get shorter, so nobody can be locked forever.
-    const src = attacker instanceof Fighter ? `${attacker.id}:${attacker.swingSerial}` : "";
+    const src = attacker instanceof Fighter
+      ? `${attacker.id}:${attacker.swingSerial}${a.id === "z_return" ? ":rail-return" : ""}` : "";
     const reeling = this.state === S.HITSTUN || this.state === S.STAGGER;
     if (src && src === this.stunSrc && reeling) return this.lastCrit ? "crit" : "hit";
     this.stunSrc = src;
@@ -2054,9 +2099,10 @@ export class Fighter implements Entity {
     return this.lastCrit ? "crit" : "hit";
   }
 
-  stagger(d: number) { if (this.knockedDown() || this.bloodFestivalT > 0 || this.meteorFistArmor || this.hammerWeightArmor) return; this.stun = d; this.stunPose = "stagger"; this.holding = false; this.setState(S.STAGGER); }
+  stagger(d: number) { if (this.zenithCatchShieldT > 0 || this.knockedDown() || this.bloodFestivalT > 0 || this.meteorFistArmor || this.hammerWeightArmor) return; this.stun = d; this.stunPose = "stagger"; this.holding = false; this.setState(S.STAGGER); }
 
   clashRecoil() {
+    if (this.zenithCatchShieldT > 0) { this.model.recoil = 0.30; return; }
     if (this.hammerWeightArmor) {
       // NESA_WEIGHT_PASSIVE_V1: late hammer swings power through clashes.
       this.model.recoil = Math.max(this.model.recoil, 0.32);
@@ -2111,6 +2157,14 @@ export class Fighter implements Entity {
     this.chainFuryT = 0;
     this.judgmentT = 0; this.model.setJudgment(false);
     this.clashMomentum = 0;
+    if (this.look.element === "metal") {
+      this.zenithSpearOut = false;
+      this.zenithCatchShieldT = 0;
+      this.zenithCatchRecoilT = 0;
+      this.model.zenithCatchShieldT = 0;
+      this.model.zenithCatchRecoilT = 0;
+      this.model.setZenithSpearHeld(true);
+    }
     this.bloodlust = 0; this.bloodFrenzyT = 0; this.bloodFeintT = 0; this.sickleOut = false; this.bloodFestivalT = 0;
     this.model.standUp();
     this.knock = 0; this.knockdownLockT = 0;
@@ -2151,6 +2205,10 @@ export class Fighter implements Entity {
     const p = dmg * PCT_PER_DMG;
     this.pct = Math.min(this.pct + p, 999);
     this.lastDamage = p;
+    if (this.zenithCatchShieldT > 0) {
+      this.model.flash();
+      return this.lastCrit ? "crit" : "hit";
+    }
     if (this.meteorFistArmor) {
       this.model.flash();
       return this.lastCrit ? "crit" : "hit";
@@ -2368,7 +2426,7 @@ export class Fighter implements Entity {
         }
         break;
       case S.BLOCK: p = "block"; sp = 30; break;
-      case S.CHARGE: p = this.attacks.heavy.pose_w; sp = 10; break;
+      case S.CHARGE: p = this.attacks.heavy.pose_w; sp = this.look.element === "metal" ? 22 : 10; break;
       case S.ATTACK:
         if (this.kit === "hammer" && a) {
           if (a.style === "nesa_spin" || a.style === "nesa_air_spin") {
@@ -2413,6 +2471,25 @@ export class Fighter implements Entity {
           const elapsed = this.stateT - a.wind;
           p = elapsed < 0 ? "vrv_w" : ["vrv1_s", "vrv2_s", "vrv3_s", "vrv4_s", "vrv5_s"][Math.min(4, Math.floor(elapsed / 0.14))];
           sp = elapsed < 0 ? 22 : 48;
+          break;
+        }
+        // ZENITH_SPEAR_ANIMATION_AUDIO_V2_20261108 — dedicated attack pose timing.
+        if (this.kit === "glaive" && this.look.element === "metal" && a) {
+          if (a.style === "zenith_barrage") {
+            const elapsed = this.stateT - a.wind;
+            const combo = this.zenithSpearOut
+              ? ["znt1_s", "znt2_s", "znt3_s", "znt4_s", "znt5_s", "zntx_s"]
+              : ["zn1_s", "zn2_s", "zn3_s", "zn4_s", "zn5_s", "znx_s"];
+            p = elapsed < 0 ? (this.zenithSpearOut ? "znt1_w" : "znx_w") :
+              combo[Math.min(5, Math.floor(elapsed / 0.105))];
+            sp = elapsed < 0 ? 25 : 67;
+          } else if (this.zenithSpearOut && /^l[1-5]$/.test(this.atkId)) {
+            p = `znt${this.atkId.slice(1)}_${this.atkPhase === 0 ? "w" : "s"}`;
+            sp = this.atkPhase === 0 ? 28 : 80;
+          } else if (this.atkPhase === 0) { p = a.pose_w; sp = 25; }
+          else if (this.atkPhase === 1) { p = a.pose_s; sp = 74; }
+          else if (this.stateT < a.wind + a.active + a.recover * 0.68) { p = a.pose_s; sp = 25; }
+          else { p = "idle"; sp = 20; }
           break;
         }
         // ZAREK_CYCLONE_V3: true successive poses for serpent, slide reversal and ultimate.
@@ -2505,6 +2582,11 @@ export class Fighter implements Entity {
       } else p = `air_slice_${direction}_${this.atkPhase === 0 ? "w" : "s"}`;
       sp = this.atkPhase === 0 ? (this.kit === "assassin" ? 34 : 24) : (this.kit === "assassin" ? 74 : 56);
     }
+    if (this.look.element === "metal" && this.zenithCatchRecoilT > 0 &&
+        this.state !== S.KO && this.state !== S.WIN) {
+      p = this.zenithCatchRecoilT > 0.34 ? "zncatch_w" : "zncatch_s";
+      sp = this.zenithCatchRecoilT > 0.34 ? 32 : 24;
+    }
     this.poseName = p;
     this.poseSpeed = sp;
   }
@@ -2521,7 +2603,8 @@ export class Fighter implements Entity {
       +this.nesaSpinYaw.toFixed(3), +this.model.nesaHammerScale.toFixed(2),
       this.nesaCCharges, +this.nesaCRechargeT.toFixed(2), +this.model.nesaSpinHorizontal.toFixed(2),
       +this.parryCounterSpin.toFixed(3), this.atkId === "pc" ? 1 : 0,
-      +this.kaizenSpinSpeed.toFixed(2), this.kaizenSpinDirection, this.garrickResolve, +this.cooldowns.v.toFixed(2), this.frostShardStacks, this.frostShieldCharges, +this.frostShieldT.toFixed(2)];
+      +this.kaizenSpinSpeed.toFixed(2), this.kaizenSpinDirection, this.garrickResolve, +this.cooldowns.v.toFixed(2), this.frostShardStacks, this.frostShieldCharges, +this.frostShieldT.toFixed(2),
+      this.zenithSpearOut ? 1 : 0, +this.zenithCatchShieldT.toFixed(2), +this.zenithCatchRecoilT.toFixed(2)];
   }
 
   applySnapshot(s: any[]) {
@@ -2548,6 +2631,17 @@ export class Fighter implements Entity {
     this.frostShardStacks = s.length > 53 ? s[53] : 0;
     this.frostShieldCharges = s.length > 54 ? s[54] : 0;
     this.frostShieldT = s.length > 55 ? s[55] : 0;
+    if (this.look.element === "metal" && s.length > 58) {
+      const isOut = s[56] === 1;
+      if (this.zenithSpearOut !== isOut) {
+        this.zenithSpearOut = isOut;
+        this.model.setZenithSpearHeld(!isOut);
+      }
+      this.zenithCatchShieldT = s[57] ?? 0;
+      this.zenithCatchRecoilT = s[58] ?? 0;
+      this.model.zenithCatchShieldT = this.zenithCatchShieldT;
+      this.model.zenithCatchRecoilT = this.zenithCatchRecoilT;
+    }
     this.hp = s[8];
     this.guard = s[9];
     this.model.walk = s[10];

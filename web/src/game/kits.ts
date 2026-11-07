@@ -186,36 +186,38 @@ export function attacks(kit: string, element: string): Record<string, Attack> {
   // AIR_COMBAT_V1: shared air commands keep each kit's existing Z/X/C untouched.
   Object.assign(t, airCombatMoves(kit, element, t));
   t.v = bonusSkill(kit, element);
+  // ZENITH_SPEAR_ANIMATION_AUDIO_V2_20261108: compact weapon, dedicated spear poses, exact SFX path mapping.
+// ZENITH_SINGLE_SPEAR_FLAT_SFX_V3_20261108: one spearhead, flat /sfx/*.mp3 paths.
   // ZENITH_IRON_SOVEREIGN_V1_20261108: Metal spear kit is independent of Zarek.
   if (kit === "glaive" && element === "metal") {
     const base = (key: string, value: Partial<Attack>) => { t[key] = a(value); };
     const combo: [number, number, string, string][] = [
-      [43, 0.14, "gl1_w", "gl1_s"], [46, 0.14, "gl2_w", "gl2_s"],
-      [49, 0.15, "gl3_w", "gl3_s"], [51, 0.16, "gl4_w", "gl4_s"],
-      [68, 0.24, "gl5_w", "gl5_s"] ];
+      [43, 0.14, "zn1_w", "zn1_s"], [46, 0.14, "zn2_w", "zn2_s"],
+      [49, 0.15, "zn3_w", "zn3_s"], [51, 0.16, "zn4_w", "zn4_s"],
+      [68, 0.24, "zn5_w", "zn5_s"] ];
     for (let i=0;i<5;i++) base(`l${i+1}`, { name: `Steel Fang ${i+1}`, type: "melee",
       wind: 0.085 + 0.014 * i, active: 0.075, recover: combo[i][1],
       dmg: combo[i][0], guard: 13+i*2, reach: 2.14, lunge: 2.35, knock: i===4?3.0:0.65,
       stun: i===4?0.32:0.16, style: "zenith_basic", pose_w: combo[i][2], pose_s: combo[i][3],
       next: i<4?`l${i+2}`:"" });
-    base("heavy", { name: "Magnetic Lance", type: "projectile", wind: 0.28, recover: 0.56,
-      dmg: 100, guard: 35, knock: 3.0, stun: 0.35, heavy: true, speed: 23, size: 1.5, pierce: true,
-      style: "zenith_heavy", pose_w: "glh_w", pose_s: "glh_s" });
+    base("heavy", { name: "Magnetic Lance", type: "projectile", wind: 0.44, recover: 0.47,
+      dmg: 100, guard: 35, knock: 3.0, stun: 0.35, heavy: true, speed: 23, size: 0.88, pierce: true,
+      style: "zenith_heavy", pose_w: "znh_w", pose_s: "znh_s" });
     base("z", { name: "Rail Spear", desc: "Throw your spear in a piercing metal line (Negative). Press Z again to recall through foes. If not recalled, it returns automatically.",
       cd: 12, type: "projectile", wind: 0.19, recover: 0.29, dmg: 92, guard: 25,
-      knock: 3.2, stun: 0.27, speed: 24, size: 1.8, pierce: true,
-      style: "zenith_rail", pose_w: "glz_w", pose_s: "glz_s" });
+      knock: 2.5, stun: 0.40, speed: 24, size: 1.06, pierce: true,
+      style: "zenith_rail", pose_w: "znz_w", pose_s: "znz_s" });
     base("x", { name: "Phantom Spear Barrage", desc: "Five fast held thrusts, then three independently flying spear thrusts while Zenith can reposition.",
       cd: 10, type: "melee", wind: 0.12, active: 0.75, recover: 0.33,
       dmg: 25, guard: 9, reach: 2.35, knock: 0.35, stun: 0.13,
-      style: "zenith_barrage", pose_w: "glx_w", pose_s: "glz_s" });
+      style: "zenith_barrage", pose_w: "znx_w", pose_s: "znx_s" });
     base("c", { name: "Magnetic Dominion", desc: "Tap to draw a positively marked enemy toward you, hold to repel nearby foes. With your spear thrown, zip toward its magnetic anchor instead.",
       cd: 14, type: "buff", mode: "zenith_magnet", wind: 0.12, active: 0.08, recover: 0.36,
-      radius: 4.5, pose_w: "glc_w", pose_s: "glc_s" });
+      radius: 4.5, pose_w: "znc_w", pose_s: "znc_s" });
     base("v", { name: "Sovereign Arsenal", desc: "Summon six magnetic spear constructs for dodgeable directional strikes, ending in one heavy rail spear.",
       cd: 53, type: "projectile", wind: 0.55, active: 1.35, recover: 0.70,
       dmg: 43, guard: 15, knock: 1.4, stun: 0.18, speed: 17, size: 1.2,
-      style: "zenith_arsenal", pose_w: "glc_w", pose_s: "glc_s" });
+      style: "zenith_arsenal", pose_w: "znv_w", pose_s: "znv_s" });
   }
   // ASTER_KNIGHT_COMBAT_ANIM_V2: only animation pose keys change, never skill values.
   if (kit === "knight" && element === "light") {
@@ -249,7 +251,7 @@ export function attacks(kit: string, element: string): Record<string, Attack> {
   if (kit === "glaive" && element === "metal") {
     t.pc = { ...t.l2, name: "Iron Reversal", desc: "A perfect parry opens the guard for a fast magnetic counter-thrust.",
       id: "pc", type: "melee", style: "zenith_basic", wind: 0.12, active: 0.08, recover: 0.29,
-      dmg: 70, guard: 20, knock: 1.4, stun: 0.28, next: "", pose_w: "gl2_w", pose_s: "gl2_s" };
+      dmg: 70, guard: 20, knock: 1.4, stun: 0.28, next: "", pose_w: "zn2_w", pose_s: "zn2_s" };
   }
   // BULLET_SWORDPLAY_V1: Aster's X now sweeps forward instead of jumping.
   // Keep its existing name, damage and cooldown; each Weaken stack reduces outgoing damage 20% multiplicatively for 50s, up to x5.
@@ -1104,6 +1106,53 @@ const GLAIVE: Record<string, Pose> = {
   charge: P([-0.06, -0.7, 0], [0, 0.48, 0], [-2.4, -0.7, -0.15], [0.8, 0, 0], [-2.4, -0.2, 0.1], [0.4, 0, 0], [-0.5, 0, 0.1], [0.4, 0, -0.1], -0.12),
 };
 
+// ZENITH_SPEAR_ANIMATION_AUDIO_V2_20261108 — tight thrusts, alternate rear-blade strike,
+// two-hand rail throw, one-hand magnetic control and elevated arsenal summon.
+  // ZENITH_V6_SAFE_RECOVERY_20261108: spear style without removing other kits.
+const ZENITH: Record<string, Pose> = {
+  ...GLAIVE,
+  idle: P([0.01,-0.12,0], [-0.01,0.10,0], [-0.92,-0.04,-0.30], [0.16,0,0.06], [-0.58,-0.62,0.20], [0.08,0,0.02], [-0.26,0,0.08], [0.30,0,-0.08], -0.07),
+  block: P([0.10,-0.05,0], [0.02,0.04,0], [-1.10,0.08,-0.28], [0.13,0,0.06], [-0.86,-0.50,0.26], [0.10,0,0.02], [-0.36,0,0.08], [0.40,0,-0.08], -0.09),
+  zn1_w: P([0.08,-0.36,0], [0,0.22,0], [-1.26,-0.26,-0.28], [0.24,0,0.06], [-0.72,-0.82,0.18], [0.10,0,0.02], [-0.34,0,0.08], [0.29,0,-0.07], -0.10),
+  zn1_s: P([0.22,0.18,0], [0,-0.12,0], [-1.72,0.02,-0.22], [0.04,0,0.06], [-1.06,-0.58,0.18], [0.05,0,0.02], [-0.54,0,0.09], [0.43,0,-0.08], -0.13),
+  zn2_w: P([0.12,0.28,0.02], [0,-0.22,0], [-1.03,0.32,-0.10], [0.20,0,0.14], [-0.60,-0.44,0.36], [0.08,0,0.02], [-0.23,0,0.09], [0.34,0,-0.07], -0.09),
+  zn2_s: P([0.22,-0.14,0], [0,0.14,0], [-1.60,-0.10,-0.17], [0.05,0,0.10], [-1.05,-0.36,0.24], [0.06,0,0.02], [-0.45,0,0.10], [0.36,0,-0.09], -0.12),
+  zn3_w: P([0.05,-0.28,-0.03], [0,0.20,0], [-0.98,-0.56,-0.34], [0.18,0,-0.04], [-0.62,-0.72,0.18], [0.10,0,0.02], [-0.33,0,0.11], [0.36,0,-0.07], -0.10),
+  zn3_s: P([0.18,0.20,0], [0,-0.17,0], [-1.46,-0.18,-0.30], [0.04,0,-0.02], [-0.96,-0.64,0.20], [0.04,0,0.02], [-0.51,0,0.10], [0.42,0,-0.08], -0.13),
+  // Fourth thrust: short diagonal spearhead redirect, not a rear-end blade attack.
+  zn4_w: P([0.10,0.20,0], [0,-0.18,0], [-0.82,0.04,-0.36], [0.20,0,0.05], [-0.78,-0.36,0.28], [0.12,0,-0.02], [-0.27,0,0.10], [0.31,0,-0.07], -0.09),
+  zn4_s: P([0.19,-0.18,0.03], [0,0.15,0], [-1.42,-0.20,-0.28], [0.04,0,0.05], [-1.08,-0.50,0.16], [0.05,0,-0.02], [-0.53,0,0.11], [0.45,0,-0.08], -0.13),
+  zn5_w: P([-0.02,-0.46,0], [0.02,0.30,0], [-1.18,-0.42,-0.32], [0.30,0,0.03], [-0.86,-0.76,0.22], [0.13,0,0.02], [-0.50,0,0.12], [0.30,0,-0.08], -0.13),
+  zn5_s: P([0.30,0.34,0], [-0.08,-0.18,0], [-1.86,-0.06,-0.30], [0.04,0,0.03], [-1.18,-0.66,0.20], [0.04,0,0.02], [-0.73,0,0.13], [0.52,0,-0.09], -0.18),
+  // Raised hand: call the physical spear above her before launching it.
+  znh_w: P([-0.05,0.03,0], [-0.18,0.01,0], [-2.55,0.06,-0.32], [0.24,0,0.10], [-2.25,0.03,0.31], [0.19,0,0], [-0.31,0,0.09], [0.38,0,-0.08], -0.09),
+  // Release the overhead spear, right arm extends downrange with follow-through.
+  znh_s: P([0.24,0.19,0], [-0.08,-0.16,0], [-1.73,0.33,-0.10], [0.05,0,0], [-1.38,-0.24,0.20], [0.17,0,0], [-0.59,0,0.12], [0.46,0,-0.08], -0.14),
+  znz_w: P([0.02,-0.24,0], [0,0.18,0], [-2.02,-0.32,-0.58], [0.42,0,0.10], [-0.74,-0.24,0.34], [0.14,0,0.02], [-0.40,0,0.09], [0.34,0,-0.08], -0.12),
+  znz_s: P([0.30,0.20,0], [-0.10,-0.10,0], [-0.60,0.02,-0.08], [0.04,0,0.02], [-1.76,-0.10,0.22], [0.08,0,0.02], [-0.67,0,0.10], [0.48,0,-0.10], -0.17),
+  znx_w: P([0.08,-0.22,0], [0,0.16,0], [-1.00,-0.30,-0.30], [0.22,0,0.06], [-0.68,-0.62,0.22], [0.10,0,0.02], [-0.40,0,0.09], [0.38,0,-0.08], -0.10),
+  znx_s: P([0.18,0.10,0], [0,-0.06,0], [-1.42,-0.06,-0.24], [0.06,0,0.05], [-0.98,-0.44,0.20], [0.06,0,0.02], [-0.56,0,0.10], [0.42,0,-0.09], -0.12),
+  // Twin blades: alternating left/right cuts, pivoting hips, then an X-shaped cross finisher.
+  znt1_w: P([0.09,-0.35,0], [0,0.19,0], [-1.15,-0.58,0.2], [0.34,0,-0.20], [-1.2,0.37,-0.12], [0.3,0,0.16], [-0.29,0,0.14], [0.38,0,-0.12], -0.10),
+  znt1_s: P([0.2,0.43,0], [0,-0.28,0], [-1.65,0.73,0.34], [0.14,0,-0.60], [-1.16,-0.25,-0.22], [0.26,0,0.35], [-0.61,0,0.12], [0.34,0,-0.06], -0.15),
+  znt2_w: P([0.06,0.39,0], [0,-0.23,0], [-1.17,0.32,-0.1], [0.3,0,-0.25], [-1.15,-0.69,0.21], [0.31,0,0.32], [-0.22,0,0.11], [0.44,0,-0.09], -0.10),
+  znt2_s: P([0.18,-0.43,0], [0,0.31,0], [-1.12,-0.31,-0.26], [0.23,0,0.15], [-1.72,0.82,-0.29], [0.11,0,0.55], [-0.36,0,0.06], [0.50,0,-0.12], -0.16),
+  znt3_w: P([0.14,-0.22,0], [0,0.19,0], [-1.75,-0.55,0.12], [0.16,0,0.16], [-1.36,0.44,-0.16], [0.22,0,-0.18], [-0.42,0,0.16], [0.36,0,-0.07], -0.13),
+  znt3_s: P([0.20,0.27,0], [0,-0.16,0], [-1.32,0.48,-0.27], [0.21,0,-0.55], [-1.87,-0.42,0.20], [0.11,0,0.33], [-0.62,0,0.12], [0.40,0,-0.08], -0.17),
+  znt4_w: P([0.09,0.23,0], [0,-0.19,0], [-1.15,0.29,0.15], [0.29,0,0.26], [-1.44,-0.41,0.12], [0.24,0,-0.19], [-0.22,0,0.07], [0.48,0,-0.11], -0.12),
+  znt4_s: P([0.24,-0.34,0], [0,0.21,0], [-1.75,-0.57,-0.12], [0.10,0,0.50], [-1.64,0.55,-0.18], [0.16,0,-0.48], [-0.63,0,0.14], [0.38,0,-0.08], -0.17),
+  znt5_w: P([-0.06,-0.13,0], [0,0.13,0], [-1.17,-0.58,-0.30], [0.3,0,-0.23], [-1.18,0.58,0.30], [0.27,0,0.23], [-0.44,0,0.12], [0.43,0,-0.11], -0.10),
+  znt5_s: P([0.34,0.10,0], [-0.14,0,0], [-1.75,0.17,-0.56], [0.13,0,0.57], [-1.75,-0.17,0.56], [0.13,0,-0.57], [-0.75,0,0.15], [0.55,0,-0.14], -0.19),
+  zntx_s: P([0.26,0.06,0], [0,0,0], [-1.62,0.12,-0.47], [0.12,0,0.48], [-1.62,-0.12,0.47], [0.12,0,-0.48], [-0.58,0,0.14], [0.51,0,-0.11], -0.16),
+  // The spear slams back into a raised palm; shoulders compress then settle.
+  zncatch_w: P([-0.12,-0.17,0], [0.10,0.10,0], [-2.04,-0.36,-0.25], [0.44,0,0.35], [-1.28,0.49,0.28], [0.24,0,-0.22], [-0.45,0,0.09], [0.35,0,-0.11], -0.11),
+  zncatch_s: P([0.16,0.20,0], [-0.05,-0.12,0], [-1.42,0.13,-0.12], [0.25,0,-0.12], [-1.3,-0.32,0.20], [0.18,0,0.20], [-0.42,0,0.10], [0.42,0,-0.08], -0.11),
+  znc_w: P([0.04,-0.10,0], [0,0.08,0], [-0.50,-0.18,-0.74], [0.16,0,0.12], [-1.22,-0.32,0.12], [0.18,0,0.02], [-0.30,0,0.07], [0.31,0,-0.08], -0.06),
+  znc_s: P([0.14,0.14,0], [0,-0.10,0], [-0.58,0.18,-0.92], [0.08,0,0.12], [-1.20,-0.02,0.16], [0.12,0,0.02], [-0.42,0,0.10], [0.38,0,-0.09], -0.08),
+  znv_w: P([-0.08,-0.06,0], [0,0.08,0], [-2.36,-0.02,-0.30], [0.14,0,0.04], [-1.00,-0.42,0.26], [0.14,0,0.02], [-0.46,0,0.12], [0.43,0,-0.08], -0.10),
+  znv_s: P([0.16,0.12,0], [0,-0.10,0], [-2.54,0.10,-0.22], [0.08,0,0.04], [-0.60,-0.12,0.20], [0.10,0,0.02], [-0.54,0,0.09], [0.49,0,-0.09], -0.10),
+};
+
 const CHAINBLADE: Record<string, Pose> = {
   ...twoHanded(KNIGHT),
   idle: P([0.06, -0.12, 0], [-0.03, 0.1, 0], [-0.86, 0.17, -0.16], [0.25, 0, -0.2], [-0.48, -0.3, 0.40], [0.17, 0, 0.08], [-0.19, 0, 0.06], [0.19, 0, -0.06], -0.055),
@@ -1223,7 +1272,7 @@ const TABLES: Record<string, Record<string, Pose>> = {
 };
 
 export function poses(kit: string, element?: string): Record<string, Pose> {
-  const t = { ...COMMON, ...(TABLES[kit] ?? KNIGHT), ...(kit === "knight" && element === "light" ? { ...ASTER_SWINGS, ...ASTER_COMBAT_V2 } : {}), ...(kit === "assassin" ? NYX_SHADOW_V1 : {}) };
+  const t = { ...COMMON, ...(TABLES[kit] ?? KNIGHT), ...(kit === "knight" && element === "light" ? { ...ASTER_SWINGS, ...ASTER_COMBAT_V2 } : {}), ...(kit === "assassin" ? NYX_SHADOW_V1 : {}), ...(kit === "glaive" && element === "metal" ? ZENITH : {}) };
   if (!t.charge) t.charge = t.mh_w ?? t.ash_w ?? KNIGHT.charge;
   return t;
 }

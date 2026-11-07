@@ -103,6 +103,10 @@ export const STYLES = {
   storm: { stance: D(7), toeOut: D(8), knee: D(10), drop: 0.025, lean: D(3), chin: D(1), shoulderUp: D(2), elbowOut: D(5),
     hipSway: 0.012, hipRoll: D(1.4), contra: D(1.5), relaxKnee: D(5), headTilt: D(0.8), headYaw: D(5),
     breath: 0.8, armSwing: D(12), walkRoll: D(1.6), walkYaw: D(3) },
+  // Zenith's agile two-handed spear stance (independent of Zarek's storm gait).
+  magnetic: { stance: D(8), toeOut: D(7), knee: D(13), drop: 0.025, lean: D(5), chin: D(1.5), shoulderUp: D(1.3), elbowOut: D(5),
+    hipSway: 0.005, hipRoll: D(0.5), contra: D(0.75), relaxKnee: D(4), headTilt: D(0.5), headYaw: D(4),
+    breath: 0.65, armSwing: D(9), walkRoll: D(1.0), walkYaw: D(3) },
   chainblade: { stance: D(8), toeOut: D(12), knee: D(14), drop: 0.035, lean: D(8), chin: D(3), shoulderUp: D(1), elbowOut: D(7),
     hipSway: 0.008, hipRoll: D(0.8), contra: D(1.2), relaxKnee: D(6), headTilt: D(0.5), headYaw: D(5),
     breath: 0.65, armSwing: D(14), walkRoll: D(1.3), walkYaw: D(3.0) },

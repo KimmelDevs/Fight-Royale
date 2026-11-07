@@ -465,19 +465,70 @@ function buildProjectile(g: THREE.Group, style: string, element: string, size: n
     edge.position.z = 0.16 * size; g.add(edge);
     return;
   }
-  // ZENITH_IRON_SOVEREIGN_V1_20261108 — metal spear, not a lightning bolt.
+  // ZENITH_REFERENCE_SPEAR_V4_20261108 — skill projectiles and constructs match Zenith's ornate spear.
   if (style === "zenith_rail" || style === "zenith_heavy" || style === "zenith_construct") {
-    const steel = new THREE.MeshLambertMaterial({ color: "#c7d1de" });
-    const ink = new THREE.MeshLambertMaterial({ color: "#263e61" });
-    const core = new THREE.Mesh(new THREE.CylinderGeometry(0.035*size,0.035*size,0.95*size,10), ink);
-    core.rotation.x = Math.PI/2; g.add(core);
-    for (const side of [-1,1]) {
-      const tip = new THREE.Mesh(new THREE.ConeGeometry(0.12*size,0.48*size,6), steel);
-      tip.rotation.x = side*Math.PI/2; tip.position.z=side*0.66*size; g.add(tip);
-      const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.055*size,0.055*size,0.09*size,8), steel);
-      collar.rotation.x=Math.PI/2; collar.position.z=side*0.44*size; g.add(collar);
+    const steel = new THREE.MeshLambertMaterial({ color: "#dfe6f0" });
+    const whiteSteel = new THREE.MeshLambertMaterial({ color: "#eff4fb" });
+    const navy = new THREE.MeshLambertMaterial({ color: "#263a58" });
+    const dark = new THREE.MeshLambertMaterial({ color: "#17263a" });
+    const gold = new THREE.MeshLambertMaterial({ color: "#d4b27b" });
+    const paleGold = new THREE.MeshLambertMaterial({ color: "#e9d4a5" });
+    const crystal = new THREE.MeshLambertMaterial({ color: "#67c9ef" });
+    const scale = size;
+
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.017*scale, 0.017*scale, 1.26*scale, 8), navy);
+    shaft.rotation.x = Math.PI / 2;
+    shaft.position.z = -0.08 * scale;
+    g.add(shaft);
+    const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.022*scale, 0.022*scale, 0.34*scale, 8), dark);
+    grip.rotation.x = Math.PI / 2;
+    grip.position.z = -0.12 * scale;
+    g.add(grip);
+
+    // Broad forward spearhead
+    const head = new THREE.Mesh(new THREE.ConeGeometry(0.085*scale, 0.44*scale, 5), steel);
+    head.rotation.x = Math.PI / 2;
+    head.position.z = 0.66 * scale;
+    g.add(head);
+    const midridge = new THREE.Mesh(new THREE.BoxGeometry(0.010*scale, 0.22*scale, 0.030*scale), whiteSteel);
+    midridge.position.z = 0.60 * scale;
+    g.add(midridge);
+    const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.034*scale, 0.034*scale, 0.08*scale, 8), gold);
+    collar.rotation.x = Math.PI / 2;
+    collar.position.z = 0.45 * scale;
+    g.add(collar);
+
+    for (const side of [-1, 1]) {
+      const wing = new THREE.Mesh(new THREE.BoxGeometry(0.16*scale, 0.05*scale, 0.026*scale), gold);
+      wing.position.set(side * 0.10*scale, 0, 0.48*scale);
+      wing.rotation.z = side * 0.60;
+      wing.rotation.y = side * 0.18;
+      g.add(wing);
+      const wingGem = new THREE.Mesh(new THREE.OctahedronGeometry(0.028*scale, 0), crystal);
+      wingGem.position.set(side * 0.12*scale, 0, 0.52*scale);
+      g.add(wingGem);
     }
-    const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.085*size,0), glow);
+
+    const bodyPlate = new THREE.Mesh(new THREE.BoxGeometry(0.11*scale, 0.22*scale, 0.032*scale), gold);
+    bodyPlate.position.z = 0.16 * scale;
+    g.add(bodyPlate);
+    for (const z of [0.24, 0.16, 0.08]) {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.018*scale, 0.005*scale, 6, 14), dark);
+      ring.rotation.x = Math.PI / 2;
+      ring.position.z = z * scale;
+      g.add(ring);
+    }
+
+    const butt = new THREE.Mesh(new THREE.SphereGeometry(0.030*scale, 8, 6), paleGold);
+    butt.position.z = -0.73 * scale;
+    g.add(butt);
+    const spike = new THREE.Mesh(new THREE.ConeGeometry(0.018*scale, 0.06*scale, 6), gold);
+    spike.rotation.x = -Math.PI / 2;
+    spike.position.z = -0.79 * scale;
+    g.add(spike);
+
+    const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.030*scale, 0), glow);
+    gem.position.z = 0.36 * scale;
     g.add(gem);
     return;
   }
@@ -1490,6 +1541,16 @@ export class Game implements MobHost {
 
   /** The whoosh / cast / release sound when an attack comes out. */
   private swingSound(f: Fighter, a: Attack) {
+    if (f.look.element === "metal" && f.kit === "glaive") {
+      const sound = a.style === "zenith_rail" ? "metal_arrow_fast_hit" :
+        a.style === "zenith_arsenal" ? "sci_fi_gear_turn" :
+        a.style === "zenith_barrage" ? "metal_swish" :
+        a.style === "zenith_heavy" ? "metal_hit_woosh" :
+        a.mode === "zenith_magnet" ? "hi_tech_touch_with_magnet" :
+        "metal_hit_woosh";
+      this.snd(sound, a.style === "zenith_arsenal" ? 0.57 : 0.46);
+      return;
+    }
     const heavy = a.heavy || f.atkId === "heavy";
     if (a.type === "melee") {
       if (f.kit === "knuckles" || f.kit === "kicks") this.snd(heavy ? "swing_heavy" : "whoosh_light", 0.7);
@@ -1513,6 +1574,11 @@ export class Game implements MobHost {
 
   /** The impact sound for a clean hit, by what hit it. */
   private hitSound(attacker: Entity | null, a: Attack, crit: boolean) {
+    if (attacker instanceof Fighter && attacker.look.element === "metal" && attacker.kit === "glaive") {
+      this.snd("metal_arrow_hit", 0.5);
+      if (crit) this.snd("crit", 0.45);
+      return;
+    }
     const heavy = a.heavy;
     let name = "hit_blunt";
     if (attacker instanceof Fighter) {
@@ -1617,12 +1683,16 @@ export class Game implements MobHost {
   private onSwing(f: Fighter) {
     if (f.look.element === "metal") {
       const za = f.atk!;
+      if (za.style === "zenith_heavy") { this.zenithChargedOverhead(f, za); return; }
       if (za.style === "zenith_rail") { this.zenithLaunch(f, za); return; }
       if (za.style === "zenith_barrage") { this.zenithBarrage(f, za); return; }
       if (za.style === "zenith_arsenal") { this.zenithArsenal(f, za); return; }
     }
     const a = f.atk!;
     this.swingSound(f, a);
+    if (f.look.element === "metal" && a.id === "pc") {
+      this.snd("metallic_impact_with_whip", 0.56);
+    }
     if (a.style === "parry_counter") {
       // One real hit at the 0.40s contact frame, not an AOE or repeated spin ticks.
       const tip = f.model.bladeTip.getWorldPosition(new THREE.Vector3());
@@ -1652,7 +1722,7 @@ export class Game implements MobHost {
     const el = f.look.element;
     const big = ["z", "x", "c", "v", "heavy", "l3"].includes(f.atkId);
     // Zarek leaves quick traces only on major glaive swings. Works for CPU and players.
-    if (f.kit === "glaive" && big && f.root.position.y < 2.1)
+    if (f.kit === "glaive" && f.look.element !== "metal" && big && f.root.position.y < 2.1)
       this.fxp("arenaReact", f.root.position.clone(), "arc", 0.68);
     if (el === "earth" && big && a.style !== "iron_tempest") {
       // Earth skills and heavy blows crack the ground in front of the fighter.
@@ -1679,7 +1749,10 @@ export class Game implements MobHost {
     }
     if (f.kit === "glaive" && a.type === "melee") {
       const p = f.model.bladeTip.getWorldPosition(new THREE.Vector3());
-      this.fxp("sparks", p, "#78dcff", big ? 25 : 12, 5);
+      if (f.look.element === "metal") {
+        this.fxp("sparks", p, "#b4c8df", big ? 9 : 5, 2.7);
+        this.fxp("flash", p, "#dbeafa", 0.12, 0.07, 0.42);
+      } else this.fxp("sparks", p, "#78dcff", big ? 25 : 12, 5);
     }
     // KAIZEN_DIRECTIONAL_V3: every move has its own hit logic and chain choreography.
     if (f.kit === "chainblade") {
@@ -2049,6 +2122,8 @@ export class Game implements MobHost {
   }
 
   private melee(f: Fighter, a: Attack): boolean {
+    if (f.look.element === "metal" && f.zenithSpearOut && /^l[1-5]$/.test(a.id))
+      a = { ...a, reach: Math.min(a.reach, 1.58) };
     this.meleeCatchesAtSwing(f, a);
     let connected = false;
     // AIR_COMBAT_V1: launcher has a tall vertical hitbox; air combo is mid-height.
@@ -2803,6 +2878,27 @@ export class Game implements MobHost {
   }
 
   // ZENITH_IRON_SOVEREIGN_V1_20261108: metallic field physics, bounded displacements.
+  // Full charged-attack choreography: a light burst above the raised palm,
+  // then a separate (real, dodgeable) overhead summoned spear projectile.
+  private zenithChargedOverhead(f: Fighter, a: Attack) {
+    const round = this.round;
+    const above = f.chest().add(new THREE.Vector3(0, 1.26, 0));
+    this.fxp("flash", above.clone(), "#e9f9ff", 0.46, 0.18, 0.92);
+    this.fxp("ring", above.clone(), "#a8ddff", 0.45, 0.16, 0.74);
+    this.fxp("motes", above.clone(), "#d8f2ff", 13);
+    this.snd("metal_arrow_fast_hit", 0.38);
+    this.later(0.16, () => {
+      if (this.round !== round || f.isDown()) return;
+      const target = f.opponent && !f.opponent.isDown() ? f.opponent : this.enemiesOf(f)[0] ?? null;
+      const dir = target ? target.chest().sub(above) :
+        new THREE.Vector3(Math.sin(f.root.rotation.y), -0.06, Math.cos(f.root.rotation.y));
+      const shot = this.spawnProjectile(f, f.team, a, f.atkPower, above.clone(),
+        dir.normalize().multiplyScalar(a.speed), "zenith_heavy", "metal", a.size, "#dce9fb", false, target);
+      shot.life = 1.8;
+      this.fxp("flash", above.clone(), "#d4eaff", 0.23, 0.10, 0.76);
+    });
+  }
+
   private zenithLaunch(f: Fighter, a: Attack) {
     // One independently simulated spear, which can be slashed/parried/clashed.
     if (f.zenithSpearOut) return;
@@ -2812,18 +2908,21 @@ export class Game implements MobHost {
     const speed = Math.max(19,a.speed);
     const p = this.spawnProjectile(f,f.team,a,f.atkPower,origin,aim.normalize().multiplyScalar(speed),
       "zenith_rail","metal",a.size,"#b6d4ee",true,target);
-    p.life=3.2;
+    p.life=5.5;
     f.zenithSpearOut=true;
     f.zenithSpearAnchor.copy(p.pos);
     f.model.setZenithSpearHeld(false);
-    this.fxp("flash",origin,"#acbfd9",0.38,0.14,0.72);
+    this.fxp("flash",origin,"#acbfd9",0.25,0.14,0.58);
+    this.fxp("motes",f.chest(),"#bbd8ef",17); // Twin blades assembling from metal fragments
+    this.snd("metal_arrow_fast_hit", 0.58);
   }
   private zenithRecall(f: Fighter) {
     const p=this.projectiles.find(x=>!x.done && x.style==="zenith_rail" && x.shooter===f);
     if (!p || p.returnTo) return;
-    p.returnTo=f; p.hitIds.clear(); p.life=Math.max(p.life,0.85);
+    p.returnTo=f; p.hitIds.clear(); p.life=Math.max(p.life,2.0);
     if (this.cfg.role!=="client") this.emit(["zenithRecall",p.id,f.id]);
-    this.fxp("ring",p.pos.clone(),"#b1cae6",0.85,0.16,0.65);
+    this.fxp("ring",p.pos.clone(),"#b1cae6",0.52,0.16,0.5);
+    this.snd("sci_fi_gear_turn", 0.55);
   }
   private zenithDominion(f: Fighter, a: Attack) {
     const owned = this.projectiles.find(p=>!p.done && p.shooter===f && p.style==="zenith_rail");
@@ -2867,14 +2966,19 @@ export class Game implements MobHost {
       this.fxp("ring",e.chest(),repel?"#c3d0e3":"#869fc8",0.85,0.20,0.58);
     }
     f.zenithMagnetCharges = 0;
-    this.fxp("motes",f.chest(),"#a6bddc",17);
+    this.fxp("motes",f.chest(),"#a6bddc",11);
+    this.snd("hi_tech_touch_with_magnet", 0.5);
   }
   private zenithBarrage(f: Fighter,a:Attack) {
+    this.snd("metal_hit_woosh", 0.44);
     const round=this.round;
     // Five standard, blockable/parryable melee checks in a short tempo.
     for(let i=0;i<5;i++) this.later(0.10*i,()=>{
       if(this.round!==round || f.isDown())return;
-      this.melee(f,{...a,id:`zx${i}`,style:"zenith_barrage",dmg:25,knock:i===4?1.8:0.3,stun:0.13});
+      this.melee(f,{...a,id:`zx${i}`,style:f.zenithSpearOut?"zenith_twin":"zenith_barrage",
+        dmg:f.zenithSpearOut?20:25,reach:f.zenithSpearOut?1.65:a.reach,
+        knock:i===4?1.8:0.3,stun:0.13});
+      if (i===0 || i===2 || i===4) this.snd("metal_swish", 0.39);
       this.fxp("sparks",f.model.bladeTip.getWorldPosition(new THREE.Vector3()),"#a6c8de",10,4);
     });
     // Independent extra thrusts: their projectile objects keep flying if she dodges.
@@ -2883,18 +2987,19 @@ export class Game implements MobHost {
       const origin=f.chest().add(new THREE.Vector3((i-1)*0.3,0.25,0));
       const target=f.opponent && !f.opponent.isDown()? f.opponent:this.enemiesOf(f)[0]??null;
       const aim=target?target.chest().sub(origin):new THREE.Vector3(Math.sin(f.root.rotation.y),0,Math.cos(f.root.rotation.y));
-      const part={...a,id:`zxfloat${i}`,type:"projectile",style:"zenith_construct",dmg:28,pierce:false,heavy:false,speed:20,size:0.85};
-      this.spawnProjectile(f,f.team,part,f.atkPower,origin,aim.normalize().multiplyScalar(20),"zenith_construct","metal",0.85,"#a5bfe0",false,target);
+      const part={...a,id:`zxfloat${i}`,type:"projectile",style:"zenith_construct",dmg:28,pierce:false,heavy:false,speed:20,size:0.66};
+      this.spawnProjectile(f,f.team,part,f.atkPower,origin,aim.normalize().multiplyScalar(20),"zenith_construct","metal",0.66,"#a5bfe0",false,target);
     });
   }
   private zenithArsenal(f:Fighter,a:Attack) {
+    this.snd("sci_fi_gear_turn", 0.56);
     const round=this.round;
     const target=f.opponent&&!f.opponent.isDown()?f.opponent:this.enemiesOf(f)[0]??null;
     if(!target) return;
     const point=target.root.position.clone();
     // Visible, dodgeable open: attack directions are committed before each shot.
-    this.fxp("ring",point.clone(),"#a6bcd6",2.7,0.52,0.55);
-    this.fxp("motes",point.clone().add(new THREE.Vector3(0,1,0)),"#b5cbdd",22);
+    this.fxp("ring",point.clone(),"#a6bcd6",1.85,0.52,0.45);
+    this.fxp("motes",point.clone().add(new THREE.Vector3(0,1,0)),"#b5cbdd",14);
     for(let i=0;i<7;i++) this.later(0.30+i*0.22,()=>{
       if(this.round!==round||f.isDown())return;
       const angle=(i%6)*Math.PI/3+0.18;
@@ -2904,11 +3009,12 @@ export class Game implements MobHost {
       const power=i===6?1.28:1;
       const part={...a,id:i===6?"v_final":`v${i}`,style:"zenith_construct",dmg:i===6?96:36,
         knock:i===6?5.3:0.9,stun:i===6?0.45:0.15,heavy:i===6,pierce:false,
-        size:i===6?2.0:1.0};
+        size:i===6?1.05:0.64};
       const p=this.spawnProjectile(f,f.team,part,f.atkPower*power,origin,toward.normalize().multiplyScalar(i===6?26:17),
         "zenith_construct","metal",part.size,"#b0c6dc",false,target);
       p.life=1.25;
-      this.fxp("flash",origin,"#d0deef",0.16,0.1,0.8);
+      this.fxp("flash",origin,"#d0deef",0.12,0.1,0.7);
+      if (i===6) this.snd("dramatic_metal_explosion_impact", 0.62);
     });
   }
 
@@ -2926,13 +3032,20 @@ export class Game implements MobHost {
       if (p.style === "zenith_rail" && p.shooter instanceof Fighter) {
         const owner=p.shooter;
         // Outbound -> short magnetic anchor -> return, never an infinite spear.
-        if (!p.returnTo && p.age > 1.50) { p.returnTo=owner; p.hitIds.clear(); }
+        if (!p.returnTo && p.age > 2.75) { p.returnTo=owner; p.hitIds.clear(); }
         if (p.returnTo) {
           const aim=owner.chest().sub(p.pos);
           if (aim.length()<0.82) {
-            p.done=true; owner.zenithSpearOut=false;
-            owner.model.setZenithSpearHeld(true);
-            this.fxp("flash",owner.chest(),"#a5c1dc",0.25,0.1,0.7);
+            p.done = true;
+            // Actual hand-contact, not just a timeout: start CC shield + catch recoil.
+            if (this.cfg.role !== "client") owner.catchZenithSpear();
+            else { owner.zenithSpearOut = false; owner.model.setZenithSpearHeld(true); }
+            this.fxp("flash",owner.chest(),"#d4f2ff",0.49,0.19,0.85);
+            this.fxp("ring",owner.chest(),"#8bd4ff",1.02,0.22,0.75);
+            this.fxp("motes",owner.chest(),"#bfdcf5",23);
+            this.fxp("num",owner.chest().add(new THREE.Vector3(0,0.80,0)),
+              "MAGNETIC GUARD 2s", "#c6f0ff", 0.78);
+            this.snd("metallic_impact_with_whip",0.48);
           } else p.vel.copy(aim.normalize().multiplyScalar(25));
         } else if (p.age>0.38) p.vel.set(0,0,0);
         owner.zenithSpearAnchor.copy(p.pos);
@@ -3004,7 +3117,12 @@ export class Game implements MobHost {
             this.impactFx(p.atk, p.pos.clone(), p.color, 0.7);
             const stacks = p.finalBlade && (e instanceof Fighter || e instanceof Mob) ? e.status.stacks("poison") : 0;
             const atk = stacks ? { ...p.atk, dmg: p.atk.dmg + stacks * 15, effect: "" } : p.atk;
-            const outcome = this.applyHit(p.shooter, e, atk, p.power, p.pos.clone(), dir, true);
+            // Rail Spear: the return hit stuns longer than its outgoing hit;
+            // damage and separate hitIds still obey normal block/parry rules.
+            const spearAtk = p.style === "zenith_rail" && p.returnTo
+              ? { ...atk, id: "z_return", stun: 0.50, knock: 1.9, heavy: false }
+              : atk;
+            const outcome = this.applyHit(p.shooter, e, spearAtk, p.power, p.pos.clone(), dir, true);
             if (stacks && ["hit", "crit", "ko"].includes(outcome) && (e instanceof Fighter || e instanceof Mob)) {
               e.status.consume("poison");
               this.fxp("num", e.chest().add(new THREE.Vector3(0, 0.8, 0)), `EXECUTE +${stacks * 15}`, "#ff5072", 0.9);
@@ -3788,7 +3906,8 @@ export class Game implements MobHost {
     if (attacker instanceof Fighter && attacker.look.element === "metal" &&
         (result === "hit" || result === "crit" || result === "ko") &&
         (a.style === "zenith_basic" || a.style === "zenith_rail" ||
-         a.style === "zenith_heavy" || a.style === "zenith_construct" || a.style === "zenith_barrage")) {
+         a.style === "zenith_heavy" || a.style === "zenith_construct" || a.style === "zenith_barrage" ||
+         a.style === "zenith_twin")) {
       const sign = (a.style === "zenith_rail" || a.style === "zenith_heavy" || a.style === "zenith_construct") ? -1 : 1;
       this.zenithMarks.set(d.id, { sign, ttl: 7, team: attacker.team });
       this.fxp("num", d.chest().add(new THREE.Vector3(0,0.83,0)), sign > 0 ? "MAGNET +" : "MAGNET -", sign > 0 ? "#a1c8ff" : "#dce3ef", 0.54);

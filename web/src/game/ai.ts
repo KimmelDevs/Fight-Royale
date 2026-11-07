@@ -1301,7 +1301,7 @@ export class AiBrain implements Brain {
       // Don't instantly recall every Z! Attack from two positions or reposition by C first.
       if (ready("c") && anchorDist > 2.3 && gap > 2.1 && gap < 8 &&
           (marked === -1 || anchorDist > 4.2) && held > 0.36) key = "c";
-      else if (held > (this.iqLevel >= 2 ? 1.0 : 1.5) &&
+      else if (held > (this.iqLevel >= 2 ? 1.75 : 2.2) &&
           (gap < 3.3 || held > 2.4 || anchorDist > 7.5)) key = "z";
     } else if (ready("v") && gap >= 2.3 && gap < 7.3 && pressure && this.iqLevel >= 2) {
       key = "v";

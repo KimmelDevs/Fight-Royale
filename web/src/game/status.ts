@@ -30,6 +30,9 @@ interface Active { t: number; p: number; stacks: number; tick: number; jolt: num
 
 export class StatusSet {
   private m = new Map<StatusKind, Active>();
+  // ZENITH_TWIN_BLADES_CATCH_CHOREO_V5_20261108: reject new CC at the status-entry point.
+  private ccImmuneT = 0;
+  grantCcImmunity(t: number) { this.ccImmuneT = Math.max(this.ccImmuneT, t); }
   // ROXY_FLOATING_BOOK_FROSTWING_FREEZE_V4_20261108: immunity starts AFTER thawing.
   private freezeImmuneT = 0;
   freezeImmunityRemaining() { return this.freezeImmuneT; }
@@ -39,6 +42,7 @@ export class StatusSet {
   src: unknown = null;
 
   apply(kind: StatusKind, t: number, p: number, src: unknown = null): boolean {
+    if (this.ccImmuneT > 0 && (kind === "freeze" || kind === "paralyze" || kind === "slow")) return false;
     // Incoming Freeze may damage, but cannot refresh, chain, or bypass thaw immunity.
     if (kind === "freeze" && (this.m.has("freeze") || this.freezeImmuneT > 0)) return false;
     if (src) this.src = src;
@@ -61,7 +65,7 @@ export class StatusSet {
   has(kind: StatusKind) { return (this.mask & STATUS[kind].bit) !== 0; }
   stacks(kind: StatusKind) { return this.m.get(kind)?.stacks ?? 0; }
   consume(kind: StatusKind) { const n = this.stacks(kind); this.m.delete(kind); this.syncMask(); return n; }
-  clear() { this.m.clear(); this.mask = 0; this.src = null; this.freezeImmuneT = 0; }
+  clear() { this.m.clear(); this.mask = 0; this.src = null; this.freezeImmuneT = 0; this.ccImmuneT = 0; }
 
   /** Slow also affects attack animation and the casting/wind-up of skills. */
   actionSpeedMult() {
@@ -94,6 +98,7 @@ export class StatusSet {
     let jolt = false;
     let thawed = false;
     this.freezeImmuneT = Math.max(0, this.freezeImmuneT - dt);
+    this.ccImmuneT = Math.max(0, this.ccImmuneT - dt);
     for (const [kind, s] of this.m) {
       s.t -= dt;
       if (kind === "burn" || kind === "poison" || kind === "bleed") {

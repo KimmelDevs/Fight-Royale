@@ -100,6 +100,16 @@ export class FighterModel extends THREE.Group {
   private roxyFloatingBook: THREE.Group | null = null;
   private roxyOpenPalm = 0;
   private glaivePivot: THREE.Group | null = null;
+  // ZENITH_TWIN_BLADES_CATCH_CHOREO_V5_20261108: one-handed metal weapons only while spear is flying.
+  private zenithSpearGrip: THREE.Object3D | null = null;
+  private zenithTwinBlades: THREE.Group[] = [];
+  private zenithTwinBases: THREE.Object3D[] = [];
+  private zenithTwinTips: THREE.Object3D[] = [];
+  private zenithSpearBase: THREE.Object3D | null = null;
+  private zenithSpearTip: THREE.Object3D | null = null;
+  private zenithCatchAura: THREE.Group | null = null;
+  zenithCatchShieldT = 0;
+  zenithCatchRecoilT = 0;
   /** Nesa's heart hammer root, isolated so the carnival finisher can grow it 4x. */
   private nesaHammerPivot: THREE.Group | null = null;
   nesaHammerScale = 1;
@@ -684,8 +694,9 @@ export class FighterModel extends THREE.Group {
 
   /** ZAREK_STORM_V1: double-ended conductive glaive; meshes follow the VRM's hands. */
   private buildGlaive() {
-    // Metal uses the same hand rig, new material palette and a longer leaner spear.
-    const zenithMetal = this.look.element === "metal";
+    if (this.look.element === "metal") { this.buildZenithSpear(); return; }
+    // Zarek's glaive remains unchanged.
+    const zenithMetal = false; // Metal is handled above in buildZenithSpear().
     const staff = pivot(this.hand_r, [0, 0, 0], [PI / 2, 0, 0]);
     this.glaivePivot = staff;
     if (zenithMetal) staff.name = "zenithMagneticSpear";
@@ -720,9 +731,149 @@ export class FighterModel extends THREE.Group {
     this.castPoint = this.bladeTip;
   }
 
-  /** The game hides the held metal spear when its projectile is flying. */
+  // ZENITH_REFERENCE_SPEAR_V4_20261108 — ornate single-headed spear inspired by the new reference.
+  // Larger leaf spearhead, gold side ornaments, blue crystal core, and a blunt rear pommel.
+  private buildZenithSpear() {
+    const spear = pivot(this.hand_r, [0, 0, 0], [PI / 2, 0, 0]);
+    spear.name = "zenithRoyalSpear";
+    spear.scale.setScalar(0.96);
+    this.glaivePivot = spear;
+
+    const steel = M.toon("#dfe6f0", { rim: 0.78, shade: METAL_SHADE });
+    const whiteSteel = this.tn("#eef3fa");
+    const navy = this.tn("#263a58");
+    const dark = this.tn("#17263a");
+    const gold = this.tn("#d4b27b");
+    const paleGold = this.tn("#e9d4a5");
+    const crystal = this.tn("#67c9ef");
+    const gem = this.gem();
+
+    // Shaft
+    mesh(spear, cyl(0.0155, 0.0155, 1.78, 10), navy);
+    mesh(spear, cyl(0.021, 0.021, 0.56, 10), dark, [0, -0.11, 0]);
+    for (const y of [-0.33, -0.17, -0.01, 0.15]) {
+      mesh(spear, torus(0.020, 0.027), gold, [0, y, 0], [PI / 2, 0, 0], [1, 0.32, 1]);
+    }
+
+    // Front assembly — broad leaf spearhead like the reference image.
+    const outline = new THREE.Shape();
+    outline.moveTo(-0.020, 0.78);
+    outline.lineTo(-0.070, 0.94);
+    outline.lineTo(-0.062, 1.10);
+    outline.lineTo(-0.030, 1.24);
+    outline.lineTo(0, 1.42);
+    outline.lineTo(0.030, 1.24);
+    outline.lineTo(0.062, 1.10);
+    outline.lineTo(0.070, 0.94);
+    outline.lineTo(0.020, 0.78);
+    outline.closePath();
+    const headGeo = new THREE.ExtrudeGeometry(outline, {
+      depth: 0.016, bevelEnabled: true, bevelThickness: 0.004,
+      bevelSize: 0.004, bevelSegments: 1
+    });
+    headGeo.translate(0, 0, -0.008);
+    mesh(spear, headGeo, steel);
+    mesh(spear, box(0.009, 0.46, 0.009), whiteSteel, [0, 1.05, 0.009]);
+    mesh(spear, cyl(0.028, 0.026, 0.075, 10), gold, [0, 0.82, 0]);
+    mesh(spear, cyl(0.025, 0.025, 0.028, 10), paleGold, [0, 0.89, 0]);
+
+    // Decorative gold side wings near the base of the spearhead.
+    for (const side of [-1, 1]) {
+      const wing = new THREE.Shape();
+      wing.moveTo(side * 0.018, 0.86);
+      wing.lineTo(side * 0.13, 0.92);
+      wing.lineTo(side * 0.17, 1.02);
+      wing.lineTo(side * 0.08, 1.08);
+      wing.lineTo(side * 0.028, 1.00);
+      wing.closePath();
+      const wingGeo = new THREE.ExtrudeGeometry(wing, {
+        depth: 0.010, bevelEnabled: true, bevelThickness: 0.002,
+        bevelSize: 0.002, bevelSegments: 1
+      });
+      wingGeo.translate(0, 0, -0.005);
+      mesh(spear, wingGeo, gold);
+      mesh(spear, new THREE.OctahedronGeometry(0.024, 0), crystal,
+        [side * 0.108, 0.98, 0.016]);
+    }
+
+    // Oval gold body detail with inset circles like the reference weapon.
+    mesh(spear, new THREE.BoxGeometry(0.105, 0.30, 0.028), gold,
+      [0, 0.46, 0], [0, 0, 0], [1, 1, 0.8]);
+    for (const y of [0.55, 0.46, 0.37]) {
+      mesh(spear, new THREE.TorusGeometry(0.018, 0.006, 6, 16), dark,
+        [0, y, 0.016], [Math.PI / 2, 0, 0]);
+    }
+    mesh(spear, sphere(0.024, 10), gem, [0, 0.73, 0.008]);
+    mesh(spear, box(0.013, 0.16, 0.016), crystal, [0, 0.98, 0.01]);
+
+    // Rear grip and butt — no blade, only a blunt counterweight.
+    mesh(spear, cyl(0.025, 0.022, 0.11, 10), gold, [0, -0.83, 0]);
+    mesh(spear, sphere(0.030, 10), paleGold, [0, -0.90, 0]);
+    mesh(spear, new THREE.ConeGeometry(0.018, 0.055, 8), gold, [0, -0.96, 0], [Math.PI, 0, 0]);
+
+    this.gripL = pivot(spear, [0, -0.34, 0]);
+    this.zenithSpearGrip = this.gripL;
+    this.buildZenithTwinBlades();
+    this.bladeBase = pivot(spear, [0, 0.80, 0]);
+    this.bladeTip = pivot(spear, [0, 1.42, 0]);
+    this.shieldNode = spear;
+    this.castPoint = this.bladeTip;
+  }
+
+  /** In-flight: dual short swords; caught: one real long spear and two swords dissolve. */
   setZenithSpearHeld(held: boolean) {
-    if (this.look.element === "metal" && this.glaivePivot) this.glaivePivot.visible = held;
+    if (this.look.element !== "metal") return;
+    if (this.glaivePivot) this.glaivePivot.visible = held;
+    for (const blade of this.zenithTwinBlades) blade.visible = !held;
+    this.gripL = held ? this.zenithSpearGrip : null;
+    this.bladeBase = held ? this.zenithSpearBase ?? this.bladeBase : this.zenithTwinBases[0] ?? this.bladeBase;
+    this.bladeTip = held ? this.zenithSpearTip ?? this.bladeTip : this.zenithTwinTips[0] ?? this.bladeTip;
+    if (this.vrmRig) {
+      this.vrmRig.gripL = held ? this.zenithSpearGrip : null;
+      this.vrmRig.glaive = held;
+      this.vrmRig.bladed = held ? 0.4 : 0.76;
+    }
+  }
+
+  /** Twin Metal Blades are prebuilt, never reconstructed per frame. */
+  private buildZenithTwinBlades() {
+    const steel = M.toon("#dbe8f6", { rim: 0.65, shade: METAL_SHADE });
+    const blue = this.tn("#80d7ef"), gold = this.tn("#cda96d"), grip = this.tn("#1b3047");
+    for (const [i, hand] of [this.hand_r, this.hand_l].entries()) {
+      const sword = pivot(hand, [0, 0.04, 0.06], [PI / 2, 0, i ? -0.20 : 0.20]);
+      sword.name = i ? "zenithTwinLeft" : "zenithTwinRight";
+      mesh(sword, cyl(0.023, 0.025, 0.23, 10), grip, [0, -0.06, 0]);
+      mesh(sword, box(0.19, 0.035, 0.065), gold, [0, 0.08, 0]);
+      mesh(sword, sphere(0.029, 10), gold, [0, -0.19, 0]);
+      const blade = new THREE.Shape();
+      blade.moveTo(-0.045, 0.10);
+      blade.lineTo(-0.073, 0.34);
+      blade.lineTo(-0.031, 0.51);
+      blade.lineTo(0, 0.66);
+      blade.lineTo(0.031, 0.51);
+      blade.lineTo(0.073, 0.34);
+      blade.lineTo(0.045, 0.10);
+      blade.closePath();
+      const geo = new THREE.ExtrudeGeometry(blade, {depth:0.018,bevelEnabled:true,
+        bevelSize:0.003,bevelThickness:0.003,bevelSegments:1});
+      geo.translate(0, 0, -0.009);
+      mesh(sword, geo, steel);
+      mesh(sword, box(0.012, 0.33, 0.026), blue, [0, 0.34, 0.015]);
+      this.zenithTwinBases.push(pivot(sword, [0, 0.12, 0]));
+      this.zenithTwinTips.push(pivot(sword, [0, 0.66, 0]));
+      sword.visible = false;
+      this.zenithTwinBlades.push(sword);
+    }
+    const aura = pivot(this, [0, 0.94, 0]);
+    aura.name = "zenithCatchMagneticGuard";
+    const glow = new THREE.MeshBasicMaterial({color: "#83d8ff", transparent: true,
+      opacity: 0.60, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide});
+    const ring = mesh(aura, new THREE.TorusGeometry(0.55, 0.013, 6, 44), glow);
+    ring.rotation.x = 0.35;
+    const ring2 = mesh(aura, new THREE.TorusGeometry(0.47, 0.009, 6, 38), glow);
+    ring2.rotation.y = 0.45;
+    aura.visible = false;
+    this.zenithCatchAura = aura;
   }
 
   /** KAIZEN_BIND_ZAREK_COUNTER_V4: forked short blade in right hand, long chain gripped by left. */
@@ -1419,6 +1570,28 @@ export class FighterModel extends THREE.Group {
   // --- posing ------------------------------------------------------------------------
   /** Exponentially blends joints toward `pose` and applies overlays (walk, breathing, cloth). */
   blend(pose: Pose, dt: number, speed: number, actionPose = "") {
+    if (this.zenithCatchAura) {
+      this.zenithCatchAura.visible = this.zenithCatchShieldT > 0;
+      this.zenithCatchAura.rotation.y += dt * 2.5;
+      this.zenithCatchAura.rotation.z = 0.10 * Math.sin(this.t * 3.2);
+      this.zenithCatchAura.scale.setScalar(0.90 + 0.07 * Math.sin(this.t * 4.7));
+    }
+    if (this.zenithTwinBlades.length) {
+      if (!this.glaivePivot?.visible) {
+        const left = /znt[24]_/.test(this.glaivePose);
+        const side = left ? 1 : 0;
+        if (this.zenithTwinBases[side]) this.bladeBase = this.zenithTwinBases[side];
+        if (this.zenithTwinTips[side]) this.bladeTip = this.zenithTwinTips[side];
+      }
+      for (let i = 0; i < this.zenithTwinBlades.length; i++) {
+        const blade = this.zenithTwinBlades[i];
+        // A visible inward-cross on combo 5, otherwise compact alternating slashes.
+        const crossing = this.glaivePose === "znt5_s" || this.glaivePose === "zntx_s";
+        const anim = this.glaivePose.startsWith("znt") ? Math.sin(this.t * 26 + i * 2) * 0.11 : 0;
+        const want = crossing ? (i === 0 ? -0.72 : 0.72) : (i === 0 ? 0.14 : -0.14) + anim;
+        blade.rotation.z = THREE.MathUtils.damp(blade.rotation.z, want, 24, dt);
+      }
+    }
     if (this.katanaBladePivot) {
       // The hand moves to the scabbard via the Kaede-C pose; the curved blade
       // slides through the hilt into its sheathed position with smooth follow-through.
@@ -1647,7 +1820,19 @@ export class FighterModel extends THREE.Group {
     // and pivot cleave. All rotations are local to the weapon: one motion path for VRM and
     // procedural character, and the left-hand IK follows the same physical shaft.
     if (this.glaivePivot) {
+      // Attack pose angles are independent of the VRM clip. Narrow wrist turns
+      // produce a direct, forward thrust instead of Zarek's wide blade arcs.
       const angles: Record<string, [number, number, number]> = {
+        zn1_w: [1.52,-0.17,0.03], zn1_s: [1.16,0.11,-0.06],
+        zn2_w: [1.66,0.23,0.08], zn2_s: [1.20,-0.15,-0.07],
+        zn3_w: [1.57,-0.13,0.08], zn3_s: [1.08,0.13,-0.04],
+        zn4_w: [1.70,0.20,0.24], zn4_s: [1.16,-0.18,-0.25],
+        zn5_w: [1.69,-0.24,0.05], zn5_s: [0.99,0.20,-0.10],
+        znh_w: [1.79,-0.18,0.15], znh_s: [1.03,0.18,-0.08],
+        znz_w: [1.76,-0.20,0.10], znz_s: [1.08,0.12,-0.08],
+        znx_w: [1.52,-0.12,0.04], znx_s: [1.11,0.13,0],
+        znc_w: [1.43,0.18,0.12], znc_s: [1.37,-0.16,-0.12],
+        znv_w: [1.90,0.0,0.03], znv_s: [2.08,0.10,0.05],
         idle: [PI / 2, 0, 0], block: [PI / 2, -0.17, -0.08],
         gl1_w: [1.48, -0.53, -0.16], gl1_s: [0.89, 0.21, 0.14],
         gl2_w: [1.80, 0.64, 0.35], gl2_s: [1.34, -0.83, -0.30],
@@ -1760,7 +1945,7 @@ export class FighterModel extends THREE.Group {
     this.vrmRig.followArm = this.kit === "chainblade" ? 0.14 : this.kit === "glaive" ? 0.24 : this.kit === "sickle" ? 0.18 : this.kit === "mage" ? 0.4 : this.kit === "bow" ? 0.5 : 0.3;
     this.vrmRig.staff = this.kit === "mage" && this.look.element !== "frost";
     this.vrmRig.glaive = this.kit === "glaive";
-    this.vrmRig.style = this.kit === "knight" && this.look.element === "light" ? "aster" : this.kit === "chainblade" ? "chainblade" : this.kit === "glaive" ? "storm" : this.kit === "sickle" ? "feral" : this.kit === "hammer" ? "nesa" : this.kit === "greatsword" ? "greatsword" : this.look.body === "m" ? "heavy" : "light";
+    this.vrmRig.style = this.kit === "glaive" && this.look.element === "metal" ? "magnetic" : this.kit === "knight" && this.look.element === "light" ? "aster" : this.kit === "chainblade" ? "chainblade" : this.kit === "glaive" ? "storm" : this.kit === "sickle" ? "feral" : this.kit === "hammer" ? "nesa" : this.kit === "greatsword" ? "greatsword" : this.look.body === "m" ? "heavy" : "light";
     if (this.kit === "knight") { this.buildHeaterShield(); this.vrmRig.shield = true; }
     if (this.gripL) { this.vrmRig.gripL = this.gripL; this.vrmRig.bladed = this.kit === "chainblade" ? 0.58 : this.kit === "glaive" ? 0.4 : 1; }
     if (["knight", "greatsword", "hammer", "katana"].includes(this.kit) && this.bladeBase.parent) {
@@ -1775,7 +1960,7 @@ export class FighterModel extends THREE.Group {
     // A longbow is about 85-90% of body height.
     if (this.kit === "bow") { this.vrmRig.archer = true; this.vrmRig.followArm = 0; this.bowPivot?.scale.setScalar(1.45); }
     // ZAREK_WEAPON_RANGE_MATCH_V1_NOV06: keep Zarek's long double-ended blade visible on VRM bodies.
-    const weaponScale = this.kit === "glaive" ? 0.87 : VRM_WEAPON_SCALE; // ZAREK_PROPORTIONATE_GLAIVE_V1: total VRoid weapon length about -29%
+    const weaponScale = this.kit === "glaive" && this.look.element === "metal" ? 0.93 : this.kit === "glaive" ? 0.87 : VRM_WEAPON_SCALE; // ZAREK_PROPORTIONATE_GLAIVE_V1: total VRoid weapon length about -29%
     for (const h of [this.hand_l, this.hand_r]) h.scale.multiplyScalar(weaponScale);
     JN.forEach((n, i) => this.joints[n].quaternion.copy(save[i]));
     this.hips.position.copy(hipsPos);
