@@ -1,3 +1,5 @@
+// FIGHT_ROYALE_PARRY_SPIN_COUNTERS_V2
+// FIGHT_ROYALE_PARRY_SPIN_COUNTERS_V1
 // NESA_HEART_SMASH_V4
 // FIGHT_ROYALE_GROUNDED_AIR_SLICES_V1
 // FIGHT_ROYALE_WEIGHTED_KNOCKDOWN_WAKEUP_V1
@@ -135,6 +137,12 @@ export class Fighter implements Entity {
   perfectDodgeT = 0;
   perfectDodgeUsed = false;
   perfectDodgeCounterT = 0; // one successful melee riposte, expires after 0.95s
+  parryCounterT = 0; // brief follow-up window after a successful parry
+  private parryCounterTarget: Entity | null = null;
+  private parryCounterPendingDepth = 0;
+  parryCounterDepth = 0;
+  parryRecoilT = 0; // 0.5s recoil limits offense but never causes hard stun
+  private counterVisualRemote = false;
 
   // Survival perks.
   dmgMult = 1;
@@ -164,6 +172,8 @@ export class Fighter implements Entity {
   private bladeSwingYaw = 0;
   /** Visual-only full-body turn for Garrick Iron Tempest (host-synced). */
   private tempestSpin = 0;
+  /** Visual-only spin amount for the new universal parry counter. */
+  private parryCounterSpin = 0;
   // AIR_COMBAT_V1: launcher follow-up and one defensive air recovery per airtime.
   airChaseT = 0;
   private airChaseUsed = false;
@@ -203,6 +213,8 @@ export class Fighter implements Entity {
   private nesaCArmed = true;
 
   private guardDelay = 0;
+  // FIGHT_ROYALE_AI_GUARD_TIMING_PARRY_V1_20261107: expose only the real remaining regeneration wait to CPU logic.
+  get guardRegenRemaining(): number { return Math.max(0, this.guardDelay); }
   /** Successful parry makes the NEXT shield raise 90% faster (0.10s to 0.01s). */
   shieldRaise = 0.10;
   nextShieldFast = false;
@@ -222,6 +234,40 @@ export class Fighter implements Entity {
     return true;
   }
   private knock = 0;
+
+  armParryCounter(target: Entity | null, depth = 0) {
+    // Two counter-parries are enough: prevent infinite counter-on-counter loops.
+    if (depth > 2) { this.parryCounterT = 0; this.parryCounterTarget = null; return; }
+    this.parryCounterT = 0.75;
+    this.parryCounterTarget = target && target.team !== this.team && !target.isDown() ? target : null;
+    this.parryCounterPendingDepth = depth;
+  }
+  hasParryCounterReady() { return this.parryCounterT > 0; }
+  parryCounterReach() { return (this.attacks.pc ?? this.attacks.l1).reach; }
+  tryParryCounter(): boolean {
+    // Same legal rules for a human basic-attack tap and an AI counter decision.
+    if (!this.hasParryCounterReady() || !this.onGround || ![S.IDLE, S.BLOCK].includes(this.state) ||
+        this.chainBindT > 0 || !!this.chainBoundBy || this.parryRecoilT > 0) return false;
+    this.holding = false;
+    this.startAttack("pc");
+    return this.atkId === "pc" && this.state === S.ATTACK;
+  }
+  applyParryRecoil(seconds = 0.5) {
+    // This is NOT S.STAGGER/HITSTUN: the attacker can evade, reposition or block.
+    this.parryRecoilT = Math.max(this.parryRecoilT, seconds);
+    this.model.recoil = Math.max(this.model.recoil, 0.85);
+    this.holding = false;
+    this.buffered = false;
+    if (this.state === S.ATTACK && !this.isContinuousComboActive()) {
+      this.finishAttack();
+      this.setState(S.IDLE);
+    }
+  }
+  private actionPoseTag() {
+    if (this.counterVisualRemote || (this.atkId === "pc" && this.atk?.style === "parry_counter"))
+      return `pc_${this.kit}_${this.stateT < 0.40 ? "w" : "s"}`;
+    return this.poseName;
+  }
   // WEIGHTED_KNOCKDOWN: physical shove follows the ACTUAL impact source,
   // not whichever enemy the AI happens to target next.
   private knockAway = new THREE.Vector3(0, 0, 1);
@@ -602,6 +648,9 @@ export class Fighter implements Entity {
     this.invulnT = Math.max(this.invulnT - dt, 0);
     this.perfectDodgeT = Math.max(0, this.perfectDodgeT - dt);
     this.perfectDodgeCounterT = Math.max(0, this.perfectDodgeCounterT - dt);
+    this.parryCounterT = Math.max(0, this.parryCounterT - dt);
+    this.parryRecoilT = Math.max(0, this.parryRecoilT - dt);
+    if (this.parryRecoilT > 0) this.model.recoil = Math.max(this.model.recoil, 0.23 + 0.35 * this.parryRecoilT);
     this.airJumpT = Math.max(this.airJumpT - dt, 0);
     this.airChaseT = Math.max(this.airChaseT - dt, 0);
     this.airChaseMoveT = Math.max(this.airChaseMoveT - dt, 0);
@@ -773,6 +822,10 @@ export class Fighter implements Entity {
     const cycloneActive = this.kit === "kicks" && this.state === S.ATTACK && this.atk?.style === "cyclone_kick_v2";
     const cyclonePhase = cycloneActive ? Math.max(0, Math.min(1, (this.stateT - this.atk!.wind) / this.atk!.active)) : 0;
     this.cycloneSpin = cycloneActive ? Math.PI * 4 * (cyclonePhase * cyclonePhase * (3 - 2 * cyclonePhase)) : 0;
+    const parryCounterActive = this.state === S.ATTACK && this.atkId === "pc" && this.atk?.style === "parry_counter";
+    const parryCounterPhase = parryCounterActive ? Math.max(0, Math.min(1, this.stateT / Math.max(this.atk?.wind ?? 0.4, 0.01))) : 0;
+    this.parryCounterSpin = parryCounterActive ? Math.PI * 2 * (parryCounterPhase * parryCounterPhase * (3 - 2 * parryCounterPhase)) : 0;
+    this.model.parryCounterSpin = this.parryCounterSpin;
     // One-handed Aster and two-handed Garrick lead sword strikes with their torsos.
     // No world-facing change: hit detection and shielding remain authoritative.
     const bladeActive = this.state === S.ATTACK && this.atk?.type === "melee" &&
@@ -794,13 +847,13 @@ export class Fighter implements Entity {
         const turns = Math.max(1, Math.round(attack.active / 0.27));
         this.nesaSpinYaw = t * turns * Math.PI * 2;
       } else this.nesaSpinYaw = 0;
-      this.model.nesaSpinHorizontal = (attack?.style === "nesa_spin" || attack?.style === "nesa_air_spin") ?
+      this.model.nesaSpinHorizontal = (attack?.style === "nesa_spin" || attack?.style === "nesa_air_spin" || attack?.style === "parry_counter") ?
         THREE.MathUtils.clamp(this.stateT / Math.max(0.01, attack.wind), 0, 1) : 0;
       this.model.nesaHammerScale = attack?.style === "nesa_high_striker" &&
         this.stateT >= attack.wind + 0.24 && this.stateT < attack.wind + attack.active + 0.12
         ? 4 : 1;
     } else { this.nesaSpinYaw = 0; this.model.nesaSpinHorizontal = 0; }
-    this.model.rotation.y = this.viewBias + this.tempestSpin + this.cycloneSpin + this.bladeSwingYaw + this.nesaSpinYaw;
+    this.model.rotation.y = this.viewBias + this.tempestSpin + this.cycloneSpin + this.bladeSwingYaw + this.nesaSpinYaw + this.parryCounterSpin;
     this.computePose();
     this.model.bloodFestivalT = this.kit === "sickle" ? this.bloodFestivalT : 0;
     this.model.chainFuryT = this.kit === "chainblade" ? this.chainFuryT : 0;
@@ -814,7 +867,7 @@ export class Fighter implements Entity {
     this.model.glaivePose = this.kit === "glaive" ? (this.state === S.WIN ? "show_baton" : this.poseName) : "idle";
     this.model.blend(this.state === S.WIN
       ? presentationPose(this.look.name, this.stateT, this.poses.idle, "victory")
-      : (this.poses[this.poseName] ?? this.poses.idle), dt, this.poseSpeed, this.poseName);
+      : (this.poses[this.poseName] ?? this.poses.idle), dt, this.poseSpeed, this.actionPoseTag());
     // Pull the model upright smoothly rather than snapping back to standing.
     if (this.state === S.WAKEUP) {
       const t = THREE.MathUtils.clamp(this.stateT / this.wakeupDuration, 0, 1);
@@ -882,7 +935,8 @@ export class Fighter implements Entity {
     if ([S.HITSTUN, S.STAGGER, S.KO, S.WIN].includes(this.state)) {
       this.holding = false; this.nesaAirHolding = false; return;
     }
-    if (pressed && this.atkLock > 0) return;
+    if (pressed && this.atkLock > 0 && !this.hasParryCounterReady()) return;
+    if (pressed && this.parryRecoilT > 0) return;
     // NESA_MOMENTUM_V3: charge a directional midair hammer strike instead of auto-slicing.
     if (this.kit === "hammer" && !this.stage && !this.onGround &&
         (this.state === S.IDLE || this.state === S.BLOCK || this.nesaAirHolding)) {
@@ -921,6 +975,7 @@ export class Fighter implements Entity {
     }
     if (pressed && this.kit === "glaive" && this.state === S.ATTACK &&
         this.atkId === "l4" && this.atk?.next === "l5") this.buffered = true;
+    if (pressed && this.tryParryCounter()) return;
     if (pressed) { this.holding = true; this.holdT = 0; }
     if (this.holding) {
       this.holdT += dt;
@@ -1164,11 +1219,22 @@ export class Fighter implements Entity {
   }
 
   private requestLight() {
+    if (this.parryRecoilT > 0) return;
+    if (this.tryParryCounter()) return;
     if (this.state === S.IDLE || this.state === S.BLOCK) this.startAttack(this.comboTimer > 0 ? this.comboNext : "l1");
     else if (this.state === S.ATTACK && this.atk && this.atk.next) this.buffered = true;
   }
 
   private startAttack(id: string) {
+    if (id === "pc" && this.parryCounterTarget && !this.parryCounterTarget.isDown()) {
+      const aim = this.parryCounterTarget.root.position.clone().sub(this.root.position);
+      if (this.stage) {
+        const dx = Math.sign(aim.x);
+        if (dx) this.facing = dx;
+      } else if (aim.lengthSq() > 0.0001) {
+        this.root.rotation.y = Math.atan2(aim.x, aim.z);
+      }
+    }
     // Platform mode: with no direction held, turn toward a nearby foe before swinging.
     if (this.stage && Math.abs(this.intent.move.x) < 0.2 && this.opponent && !this.opponent.isDown()) {
       const dx = this.opponent.root.position.x - this.root.position.x;
@@ -1190,6 +1256,10 @@ export class Fighter implements Entity {
     // Unbound Drive expands BASIC reach but does not bypass blocks, parries, or clashes.
     this.atkId = id;
     this.atk = this.attacks[id];
+    if (id === "pc") {
+      this.parryCounterDepth = this.parryCounterPendingDepth;
+      this.parryCounterT = 0; this.parryCounterTarget = null;
+    }
     // AIR_COMBAT_V1: avoid missing pose names on custom character rigs.
     if (!this.atk) { this.atkId = ""; return; }
     if (this.kit === "knuckles" && this.atk?.name === "Meteor Fist") this.knock = 0;
@@ -1684,6 +1754,9 @@ export class Fighter implements Entity {
     this.nesaAirHolding = false; this.nesaAirChargeT = 0; this.nesaSpinYaw = 0;
     this.nesaCCharges = 3; this.nesaCRechargeT = 0; this.nesaCArmed = true;
     this.model.nesaSpinHorizontal = 0;
+    this.parryCounterT = 0; this.parryCounterTarget = null; this.parryCounterSpin = 0;
+    this.model.parryCounterSpin = 0;
+    this.parryRecoilT = 0; this.parryCounterPendingDepth = 0; this.parryCounterDepth = 0; this.counterVisualRemote = false;
     this.hp = this.maxHp * frac;
     this.guard = this.maxGuard;
     this.guardDelay = 0; // Fresh round: no guard recovery penalty carries over.
@@ -1710,6 +1783,9 @@ export class Fighter implements Entity {
     this.nesaAirHolding = false; this.nesaAirChargeT = 0; this.nesaSpinYaw = 0;
     this.nesaCCharges = 3; this.nesaCRechargeT = 0; this.nesaCArmed = true;
     this.model.nesaSpinHorizontal = 0;
+    this.parryCounterT = 0; this.parryCounterTarget = null; this.parryCounterSpin = 0;
+    this.model.parryCounterSpin = 0;
+    this.parryRecoilT = 0; this.parryCounterPendingDepth = 0; this.parryCounterDepth = 0; this.counterVisualRemote = false;
     this.clashMomentum = 0;
     this.bloodlust = 0; this.bloodFrenzyT = 0; this.bloodFeintT = 0; this.sickleOut = false; this.bloodFestivalT = 0;
     this.status.clear();
@@ -2056,7 +2132,8 @@ export class Fighter implements Entity {
       +this.model.recoil.toFixed(2), this.cooldowns.z, this.cooldowns.x, this.cooldowns.c, this.maxHp,
       +this.pct.toFixed(1), this.stocks, this.out ? 1 : 0, +this.atkLock.toFixed(2), +this.dashCd.toFixed(2), this.status.mask, this.barrelOut ? 1 : 0, Math.round(this.bloodlust), +this.bloodFrenzyT.toFixed(2), this.sickleOut ? 1 : 0, +this.bloodFestivalT.toFixed(2), +this.tempestSpin.toFixed(3), +this.cycloneSpin.toFixed(3), +this.bladeSwingYaw.toFixed(3), +this.chainFuryT.toFixed(2), this.clashMomentum, this.chainBindTarget ? +this.chainBindTarget.chest().x.toFixed(2) : null, this.chainBindTarget ? +this.chainBindTarget.chest().y.toFixed(2) : null, this.chainBindTarget ? +this.chainBindTarget.chest().z.toFixed(2) : null, +this.chainBindT.toFixed(2), +this.judgmentT.toFixed(2), +this.comboDamageMult.toFixed(3), +this.comboPauseT.toFixed(2), +this.stateT.toFixed(3),
       +this.nesaSpinYaw.toFixed(3), +this.model.nesaHammerScale.toFixed(2),
-      this.nesaCCharges, +this.nesaCRechargeT.toFixed(2), +this.model.nesaSpinHorizontal.toFixed(2)];
+      this.nesaCCharges, +this.nesaCRechargeT.toFixed(2), +this.model.nesaSpinHorizontal.toFixed(2),
+      +this.parryCounterSpin.toFixed(3), this.atkId === "pc" ? 1 : 0];
   }
 
   applySnapshot(s: any[]) {
@@ -2072,6 +2149,9 @@ export class Fighter implements Entity {
     this.nesaCCharges = s.length > 44 ? s[44] : 3;
     this.nesaCRechargeT = s.length > 45 ? s[45] : 0;
     this.model.nesaSpinHorizontal = s.length > 46 ? s[46] : 0;
+    this.parryCounterSpin = s.length > 47 ? s[47] : 0;
+    this.model.parryCounterSpin = this.parryCounterSpin;
+    this.counterVisualRemote = s.length > 48 && s[48] === 1;
     this.hp = s[8];
     this.guard = s[9];
     this.model.walk = s[10];
@@ -2128,7 +2208,7 @@ export class Fighter implements Entity {
     this.model.glaivePose = this.kit === "glaive" ? (this.state === S.WIN ? "show_baton" : this.poseName) : "idle";
     this.model.blend(this.state === S.WIN
       ? presentationPose(this.look.name, this.stateT, this.poses.idle, "victory")
-      : (this.poses[this.poseName] ?? this.poses.idle), dt, this.poseSpeed, this.poseName);
+      : (this.poses[this.poseName] ?? this.poses.idle), dt, this.poseSpeed, this.actionPoseTag());
     if (this.state === S.WAKEUP) {
       const t = THREE.MathUtils.clamp(this.stateT / this.wakeupDuration, 0, 1);
       this.model.rotation.x = -1.45 * (1 - t * t * (3 - 2 * t));

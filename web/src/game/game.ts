@@ -1,3 +1,5 @@
+// FIGHT_ROYALE_PARRY_SPIN_COUNTERS_V2
+// FIGHT_ROYALE_PARRY_SPIN_COUNTERS_V1
 // NESA_HEART_SMASH_V4
 // FIGHT_ROYALE_GROUNDED_AIR_SLICES_V1
 // FIGHT_ROYALE_WEIGHTED_KNOCKDOWN_WAKEUP_V1
@@ -1250,6 +1252,18 @@ export class Game implements MobHost {
   private onSwing(f: Fighter) {
     const a = f.atk!;
     this.swingSound(f, a);
+    if (a.style === "parry_counter") {
+      // One real hit at the 0.40s contact frame, not an AOE or repeated spin ticks.
+      const tip = f.model.bladeTip.getWorldPosition(new THREE.Vector3());
+      this.fxp("slashes", tip, f.look.glow);
+      this.fxp("ring", tip, f.look.glow, 0.86, 0.28, 0.78);
+      this.fxp("sparks", tip, f.look.glow, 22, 6);
+      this.fxp("flash", tip, f.look.glow, 0.32, 0.12, 0.78);
+      this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.75, 0)), "SPIN COUNTER!", f.look.glow, 0.90);
+      this.snd("whoosh_light", 0.55);
+      this.melee(f, a);
+      return;
+    }
     if (f.kit === "hammer" && (a.style === "nesa_spin" || a.style === "nesa_air_spin")) {
       this.nesaMomentumSpin(f, a); return;
     }
@@ -1601,7 +1615,14 @@ export class Game implements MobHost {
     const antiAir = f.atkId === "anti_air";
     const airCombo = f.atkId.startsWith("air_l");
     const directionalAir = !f.stage && f.atkId === "air_l1";
+    // A visual 360 turn never means 360-degree damage or multiple targets.
+    // Counter attacks select only the closest actual enemy and use normal melee tests.
+    const counterTarget = a.style === "parry_counter"
+      ? this.enemiesOf(f).filter(d => !d.isDown()).sort((x, y) =>
+          x.root.position.distanceToSquared(f.root.position) -
+          y.root.position.distanceToSquared(f.root.position))[0] ?? null : null;
     for (const d of this.enemiesOf(f)) {
+      if (a.style === "parry_counter" && d !== counterTarget) continue;
       const to = d.root.position.clone().sub(f.root.position);
       const dy = Math.abs(to.y);
       to.y = 0;
@@ -2709,19 +2730,22 @@ export class Game implements MobHost {
         this.add_trauma(0.14);
         this.hitStop(0.04);
         break;
-      case "parry":
+      case "parry": {
+        const df = d as Fighter;
         this.fxp("impactBurst", shieldPos, "#b9f5ff", 1.65, "clash");
         this.fxp("impactFrame", "parry", "#b9f5ff", 0.72);
-        if (!ranged && attacker instanceof Fighter && attacker.onComboParried()) {
-          this.delayComboFollowups(attacker, 0.20);
-          this.fxp("num", attacker.chest().add(new THREE.Vector3(0, 0.9, 0)),
-            "COMBO -10% • +0.2s", "#b8eaff", 0.82);
-        } else if (a.parry_stun && attacker instanceof Fighter) {
-          // Single-hit vulnerability (Gale, etc.) remains as it was.
-          attacker.stagger(a.parry_stun);
-          this.fxp("num", attacker.chest().add(new THREE.Vector3(0, 0.9, 0)), "STUNNED", "#ffe066", 1.1);
-        } else if (!ranged && attacker instanceof Fighter) attacker.stagger(0.95);
-        else if (!ranged && attacker instanceof Mob) attacker.receiveHit(d, { ...a, dmg: 0, knock: 4 }, 0);
+        if (attacker instanceof Fighter) {
+          if (attacker.onComboParried()) {
+            this.delayComboFollowups(attacker, 0.20);
+            this.fxp("num", attacker.chest().add(new THREE.Vector3(0, 0.9, 0)),
+              "COMBO -10% • +0.2s", "#b8eaff", 0.82);
+          }
+          if (!ranged && a.type === "melee") attacker.applyParryRecoil(0.50);
+          else attacker.model.recoil = Math.max(attacker.model.recoil, 0.35);
+          df.armParryCounter(attacker, attacker.atkId === "pc" ? attacker.parryCounterDepth + 1 : 0);
+          this.fxp("num", df.chest().add(new THREE.Vector3(0, 0.95, 0)),
+            "COUNTER READY", "#ffd0f5", 0.95);
+        } else if (!ranged && attacker instanceof Mob) attacker.receiveHit(d, { ...a, dmg: 0, knock: 4 }, 0);
         this.snd("parry", 0.9);
         if (!ranged && a.type === "melee")
           this.fxp("clashBurst", shieldPos, "#aee9ff", 1.15);
@@ -2729,12 +2753,10 @@ export class Game implements MobHost {
         this.fxp("flash", shieldPos, "#b3f2ff", 0.5, 0.2, 0.9);
         this.fxp("ring", shieldPos, "#b3f2ff", 0.8, 0.35, 0.9);
         this.fxp("num", shieldPos.clone().add(new THREE.Vector3(0, 0.5, 0)), "PARRY!", "#8fe6ff", 1.4);
-        this.add_trauma(0.4);
-        // Keep the classic dramatic PARRY slow motion, slightly stronger for
-        // continuing combos. Stun never replaces the +0.20s combo continuation.
-        this.hitStop(attacker instanceof Fighter && attacker.isContinuousComboActive() ? 0.46 : 0.35,
-          attacker instanceof Fighter && attacker.isContinuousComboActive() ? 0.17 : 0.30);
+        this.add_trauma(0.28);
+        this.hitStop(0.08, 0.10);
         break;
+      }
       case "counter": {
         const df = d as Fighter;
         this.fxp("num", df.chest().add(new THREE.Vector3(0, 0.6, 0)), "COUNTER!", "#ff9aa8", 1.4);

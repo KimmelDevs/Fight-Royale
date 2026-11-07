@@ -1,3 +1,4 @@
+// FIGHT_ROYALE_PARRY_SPIN_COUNTERS_V2
 // NESA_HEART_SMASH_V4
 // FIGHT_ROYALE_ZAREK_EFFECTIVE_RANGE_NERF_V1
 // CONTINUOUS_COMBAT_ASTER_EMBER_V3_NOV06
@@ -76,6 +77,85 @@ const DEFAULT: Omit<Attack, "id" | "element"> = {
 
 const a = (d: Partial<Attack>): Attack => ({ ...DEFAULT, id: "", element: "", ...d }) as Attack;
 
+// FIGHT_ROYALE_PARRY_SPIN_COUNTERS_V1
+function parryCounterAttack(kit: string, element: string, base: Record<string, Attack>): Attack {
+  const light = base.l1 ?? DEFAULT as Attack;
+  const heavy = base.heavy ?? light;
+  const poses: Record<string, [string, string]> = {
+    knight: [heavy.pose_w, heavy.pose_s],
+    greatsword: [heavy.pose_w, heavy.pose_s],
+    hammer: [heavy.pose_w, heavy.pose_s],
+    katana: [heavy.pose_w, heavy.pose_s],
+    bow: [base.z?.pose_w ?? light.pose_w, base.z?.pose_s ?? light.pose_s],
+    mage: [base.z?.pose_w ?? light.pose_w, base.z?.pose_s ?? light.pose_s],
+    knuckles: [heavy.pose_w, heavy.pose_s],
+    kicks: [base.l2?.pose_w ?? light.pose_w, base.l2?.pose_s ?? light.pose_s],
+    wind: [base.z?.pose_w ?? heavy.pose_w, base.z?.pose_s ?? heavy.pose_s],
+    sickle: [heavy.pose_w, heavy.pose_s],
+    chainblade: [heavy.pose_w, heavy.pose_s],
+    glaive: [heavy.pose_w, heavy.pose_s],
+    bomb: [base.z?.pose_w ?? light.pose_w, base.z?.pose_s ?? light.pose_s],
+    assassin: [base.l2?.pose_w ?? light.pose_w, base.l2?.pose_s ?? light.pose_s],
+  };
+  const names: Record<string, string> = {
+    knight: "Royal Crescent",
+    greatsword: "Titan's Reversal",
+    hammer: "Heartbreaker Twirl",
+    katana: "Sakura Reversal",
+    bow: "Scarlet Revolver",
+    mage: "Spell Reversal",
+    knuckles: "Iron Tornado",
+    kicks: "Cyclone Roundhouse",
+    wind: "Tempest Reversal",
+    sickle: "Reaper's Waltz",
+    chainblade: "Chain Cyclone",
+    glaive: "Thunderwheel",
+    bomb: "Firecracker Spin",
+    assassin: "Shadow Carousel",
+  };
+  const reach: Record<string, number> = {
+    knight: 1.95, greatsword: 2.20, hammer: 2.35, katana: 2.00,
+    bow: 1.90, mage: 2.00, knuckles: 1.60, kicks: 1.85,
+    wind: 2.00, sickle: 1.95, chainblade: 2.35, glaive: 2.40,
+    bomb: 1.85, assassin: 1.85,
+  };
+  const lunge: Record<string, number> = {
+    knight: 1.5, greatsword: 1.25, hammer: 1.35, katana: 1.8,
+    bow: 1.2, mage: 1.15, knuckles: 1.65, kicks: 1.95,
+    wind: 1.85, sickle: 1.9, chainblade: 1.55, glaive: 1.8,
+    bomb: 1.25, assassin: 2.2,
+  };
+  const knock: Record<string, number> = {
+    knight: 4.2, greatsword: 4.9, hammer: 5.1, katana: 4.1,
+    bow: 3.6, mage: 3.8, knuckles: 3.8, kicks: 4.0,
+    wind: 4.2, sickle: 4.0, chainblade: 4.5, glaive: 4.8,
+    bomb: 3.8, assassin: 4.1,
+  };
+  const pose = poses[kit] ?? [light.pose_w, light.pose_s];
+  return a({
+    name: kit === "mage" ? (element === "fire" ? "Inferno Twirl" :
+      element === "water" ? "Tidal Pirouette" : "Witch's Spiral") :
+      kit === "knight" && element !== "light" ? "Crimson Waltz" :
+      (names[kit] ?? "Parry Counter"),
+    desc: "A fast one-hit riposte unlocked briefly after a successful parry.",
+    wind: 0.40, active: 0.08, recover: 0.38,
+    dmg: Math.round((light.dmg * 0.85 + heavy.dmg * 0.55) * 1.24),
+    guard: Math.round(Math.max(light.guard, heavy.guard) * 1.12),
+    reach: reach[kit] ?? Math.max(light.reach, 1.9),
+    lunge: lunge[kit] ?? Math.max(light.lunge, 1.2),
+    knock: knock[kit] ?? Math.max(light.knock, 3.1),
+    stun: 0.22,
+    heavy: true,
+    pose_w: pose[0],
+    pose_s: pose[1],
+    style: "parry_counter",
+    next: "",
+    no_parry: false,
+    parry_stun: 0,
+  });
+}
+
+
 /** Normal attacks keyed l1.. plus "heavy" (charged), and skills keyed z/x/c. */
 export function attacks(kit: string, element: string): Record<string, Attack> {
   const t: Record<string, Attack> = ({
@@ -114,6 +194,7 @@ export function attacks(kit: string, element: string): Record<string, Attack> {
   if (kit === "hammer") for (const move of Object.values(t)) {
     if (move.dmg > 0) move.no_parry = true;
   }
+  t.pc = parryCounterAttack(kit, element, t);
   // ZAREK_EFFECTIVE_RANGE_NERF_V1: hitboxes now match the smaller double-ended glaive.
   // Only grounded melee attack data for Zarek is changed: no damage or passive changes.
   if (kit === "glaive") {

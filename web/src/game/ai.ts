@@ -1,3 +1,6 @@
+// FIGHT_ROYALE_PARRY_SPIN_COUNTERS_V2
+// FIGHT_ROYALE_AI_DEFENSE_AGGRESSION_REPAIR_V2
+// FIGHT_ROYALE_PARRY_SPIN_COUNTERS_V1
 // FIGHT_ROYALE_GROUNDED_AIR_SLICES_V1
 // FIGHT_ROYALE_ZAREK_EFFECTIVE_RANGE_NERF_V1
 // EMBER_IGNITION_GUARD_AI_V1_NOV07
@@ -96,6 +99,13 @@ export class AiBrain implements Brain {
   private comboParryExamined = -1;
   private comboParryReleased = false;
   private ignitionChoices = new Map<number, boolean>();
+  // FIGHT_ROYALE_PARRY_SPIN_COUNTERS_V2: CPUs deliberately use and defend counters.
+  private counterSeen = false;
+  private counterWant = false;
+  private counterReactT = 0;
+  private incomingCounterSeen = -1;
+  private incomingCounterReactT = 0;
+  private incomingCounterEvade = false;
   // Personality's brief feints and reposition decisions use ordinary movement inputs.
   private tacticsT = 0;
   private tacticsDir = 1;
@@ -112,6 +122,7 @@ export class AiBrain implements Brain {
   // NESA_AI_EDGE_GIANT_KIRA_AIR_MOVE_V2: independently plan the later giant smash.
   private nesaGiantEvadeUsed = false;
   private nesaGiantEvadeChosen = false;
+
 
 
 
@@ -562,6 +573,101 @@ export class AiBrain implements Brain {
     return true;
   }
 
+
+  /** Read actual parry rewards, not an AI-only counter move or free hit. */
+  private spinCounterResponse(f: Fighter, o: Fighter, dt: number): boolean {
+    if (!f.hasParryCounterReady()) {
+      this.counterSeen = false;
+      this.counterWant = false;
+      this.counterReactT = 0;
+      return false;
+    }
+    if (!this.counterSeen) {
+      this.counterSeen = true;
+      // Personality and difficulty affect whether a CPU confidently commits.
+      const fighter = f.look.name.toLowerCase();
+      const bold = ["kira", "nyx", "vesper", "rook", "zarek", "veyr", "kaizen", "nesa"].includes(fighter);
+      const caution = f.guard < f.maxGuard * 0.20;
+      const chance = this.p.parry <= 0 ? 0.35 : this.p.parry < 0.10 ? 0.64 :
+        this.p.parry < 0.20 ? 0.83 : 0.97;
+      this.counterWant = Math.random() < Math.min(0.98, chance + (bold ? 0.08 : 0) - (caution ? 0.10 : 0));
+      this.counterReactT = rand(this.p.react[0], this.p.react[1]) * (bold ? 0.42 : 0.58);
+    }
+    this.counterReactT = Math.max(0, this.counterReactT - dt);
+    if (!this.counterWant || this.counterReactT > 0 || !f.onGround ||
+        (f.state !== S.BLOCK && f.state !== S.IDLE)) return false;
+    const gap = f.root.position.clone().setY(0).distanceTo(o.root.position.clone().setY(0));
+    if (gap > f.parryCounterReach() + 0.55) {
+      // The defender can chase but cannot spawn a hit outside its actual reach.
+      if (gap < f.parryCounterReach() + 2.4 && f.state === S.IDLE) {
+        const dir = o.root.position.clone().sub(f.root.position).setY(0).normalize();
+        if (f.stage) dir.set(Math.sign(dir.x), 0, 0);
+        f.intent.move.copy(dir);
+      }
+      return false;
+    }
+    if (o.invulnT > 0 || o.knockedDown()) return false;
+    // Shared exact action as player LMB: respect real state, recoil and cast rules.
+    if (!f.tryParryCounter()) return false;
+    this.queue = []; this.hold = 0;
+    this.blockWait = -1; this.blockDur = 0; this.blockHold = 0;
+    this.comboParryTarget = -1;
+    this.theaterFollow = "";
+    this.theaterT = 0;
+    f.intent.block = false;
+    f.intent.attack = false; // no stuck attack held for the next animation
+    f.intent.skill = "";
+    f.intent.move.set(0, 0, 0);
+    this.counterWant = false;
+    return true;
+  }
+
+  /** Recognize an enemy spin counter's 0.4s wind-up and take real defensive action. */
+  private counterThreatDefense(f: Fighter, o: Fighter, dt: number): boolean {
+    const a = o.atk;
+    if (o.state !== S.ATTACK || o.atkId !== "pc" || a?.style !== "parry_counter") {
+      this.incomingCounterSeen = -1;
+      return false;
+    }
+    if (o.swingSerial !== this.incomingCounterSeen) {
+      this.incomingCounterSeen = o.swingSerial;
+      this.incomingCounterReactT = rand(this.p.react[0], this.p.react[1]);
+      this.incomingCounterEvade = Math.random() < (0.22 + this.p.block * 0.55);
+    }
+    this.incomingCounterReactT -= dt;
+    const gap = f.root.position.clone().setY(0).distanceTo(o.root.position.clone().setY(0));
+    const eta = a.wind - o.stateT;
+    if (eta <= 0 || this.incomingCounterReactT > 0 ||
+        gap > a.reach + 0.60 || f.isDown() || !f.onGround ||
+        ![S.IDLE, S.BLOCK].includes(f.state)) return false;
+    const away = f.root.position.clone().sub(o.root.position).setY(0);
+    if (away.lengthSq() < 0.0001) away.set(f.id % 2 ? 1 : -1, 0, 0);
+    away.normalize();
+    if (f.stage) away.set(Math.sign(away.x) || 1, 0, 0);
+    if (this.incomingCounterEvade && f.dashCd <= 0 && eta > 0.10) {
+      const at = f.root.position.clone().setY(0);
+      let dir = away;
+      if (!f.stage) {
+        const flank = new THREE.Vector3(-away.z, 0, away.x);
+        const cap = Math.max(1.0, f.arenaRadius - f.radius - 0.24);
+        const tryFlank = at.clone().addScaledVector(flank, 2.8).length() < cap ? flank : flank.negate();
+        if (at.clone().addScaledVector(tryFlank, 2.8).length() < cap) dir = tryFlank;
+      }
+      f.intent.dash.copy(dir);
+      f.intent.move.copy(dir);
+      f.intent.block = false;
+    } else {
+      // Shield if there is time, never invoke an impossible instant parry.
+      f.intent.block = true;
+      f.intent.move.set(0, 0, 0);
+    }
+    this.blockWait = -1; this.blockHold = 0;
+    this.queue = []; this.hold = 0;
+    f.intent.skill = "";
+    f.intent.attack = false;
+    return true;
+  }
+
   constructor(private threats: Threats, level: number) {
     this.p = PRESETS[Math.max(0, Math.min(level, PRESETS.length - 1))];
   }
@@ -569,6 +675,9 @@ export class AiBrain implements Brain {
   think(f: Fighter, dt: number) {
     const o = f.opponent as Fighter | null;
     if (!o || o.isDown()) return;
+
+    if (this.spinCounterResponse(f, o, dt)) return;
+    if (this.counterThreatDefense(f, o, dt)) return;
     // During X binding, decide when to yank. AI can step nearer while the enemy is held.
     // During V, choose Z/X as before. Neither fighter casts ordinary skills in this state.
     if (f.chainBindTarget && f.chainBindT > 0) {

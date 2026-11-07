@@ -1,3 +1,5 @@
+// FIGHT_ROYALE_PARRY_SPIN_COUNTERS_V2
+// FIGHT_ROYALE_PARRY_SPIN_COUNTERS_V1
 // NESA_HEART_SMASH_V4
 // FIGHT_ROYALE_ZAREK_PROPORTIONATE_GLAIVE_V1
 // FIGHT_ROYALE_SIGNATURE_POSES_V2
@@ -98,6 +100,7 @@ export class FighterModel extends THREE.Group {
   private nesaHammerPivot: THREE.Group | null = null;
   nesaHammerScale = 1;
   nesaSpinHorizontal = 0;
+  parryCounterSpin = 0;
   /** ASTER_EMBER_LATEST_20261106: extra sword forged from his shield. */
   private judgmentSword: THREE.Group | null = null;
   private judgmentOldSword: THREE.Object3D[] = [];
@@ -1388,6 +1391,117 @@ export class FighterModel extends THREE.Group {
     this.arm_l.rotation.x -= s * 0.17 * running;
     this.arm_r.rotation.x += s * 0.14 * running;
     this.hips.position.y += Math.abs(s) * 0.018 * running;
+
+    if (actionPose.startsWith("pc_")) {
+      const phase = THREE.MathUtils.clamp(Math.abs(this.parryCounterSpin) / (Math.PI * 2), 0, 1);
+      const turn = Math.sin(this.parryCounterSpin) * 0.68;
+      const snap = Math.sin(phase * Math.PI);
+      switch (this.kit) {
+        case "knight":
+          this.torso.rotation.y += turn * 0.18;
+          this.torso.rotation.x += 0.06 * snap;
+          this.arm_r.rotation.x += 0.22 + 0.08 * snap;
+          this.arm_r.rotation.z -= 0.16;
+          this.hand_r.rotation.z -= 0.22;
+          this.arm_l.rotation.x -= 0.10;
+          this.cape.rotation.z += Math.sin(turn) * 0.10;
+          break;
+        case "greatsword":
+          this.torso.rotation.y += turn * 0.22;
+          this.torso.rotation.x += 0.08 * snap;
+          this.arm_r.rotation.x += 0.24;
+          this.arm_l.rotation.x += 0.18;
+          this.hand_r.rotation.z -= 0.26;
+          break;
+        case "hammer":
+          this.torso.rotation.y += turn * 0.23;
+          this.torso.rotation.x += 0.10 * snap;
+          this.arm_r.rotation.x += 0.26;
+          this.arm_l.rotation.x += 0.16;
+          this.hand_r.rotation.z -= 0.20;
+          this.cape.rotation.z += Math.sin(turn) * 0.06;
+          break;
+        case "katana":
+          this.torso.rotation.y += turn * 0.21;
+          this.torso.rotation.x += 0.03 * snap;
+          this.arm_r.rotation.x += 0.18;
+          this.hand_r.rotation.z -= 0.28;
+          this.arm_l.rotation.x -= 0.05;
+          break;
+        case "assassin":
+          this.torso.rotation.y += turn * 0.28;
+          this.torso.rotation.x += 0.05 * snap;
+          this.head.rotation.y -= turn * 0.10;
+          this.arm_r.rotation.x += 0.12;
+          this.arm_l.rotation.z += 0.34;
+          break;
+        case "knuckles":
+          this.torso.rotation.y += turn * 0.30;
+          this.torso.rotation.x += 0.04 * snap;
+          this.arm_r.rotation.x += 0.20;
+          this.arm_l.rotation.x += 0.12;
+          this.arm_r.rotation.z -= 0.10;
+          this.arm_l.rotation.z += 0.10;
+          break;
+        case "kicks":
+          this.torso.rotation.y += turn * 0.55;
+          this.torso.rotation.x += 0.05 * snap;
+          this.leg_r.rotation.x -= 0.30 * snap;
+          this.leg_r.rotation.z -= 0.62;
+          this.leg_l.rotation.x += 0.12;
+          this.arm_r.rotation.z -= 0.18;
+          this.arm_l.rotation.z += 0.18;
+          break;
+        case "wind":
+          this.torso.rotation.y += turn * 0.33;
+          this.torso.rotation.x += 0.04 * snap;
+          this.arm_r.rotation.x += 0.12;
+          this.arm_l.rotation.x += 0.08;
+          this.head.rotation.y -= turn * 0.06;
+          break;
+        case "sickle":
+          this.torso.rotation.y += turn * 0.24;
+          this.torso.rotation.x += 0.05 * snap;
+          this.arm_r.rotation.x += 0.18;
+          this.hand_r.rotation.z -= 0.24;
+          this.arm_l.rotation.x -= 0.04;
+          break;
+        case "chainblade":
+          this.torso.rotation.y += turn * 0.23;
+          this.torso.rotation.x += 0.06 * snap;
+          this.arm_r.rotation.x += 0.18;
+          this.arm_l.rotation.x += 0.10;
+          this.hand_r.rotation.z -= 0.18;
+          break;
+        case "glaive":
+          this.torso.rotation.y += turn * 0.22;
+          this.torso.rotation.x += 0.05 * snap;
+          this.arm_r.rotation.x += 0.16;
+          this.arm_l.rotation.x += 0.08;
+          if (this.glaivePivot) this.glaivePivot.rotation.z += Math.sin(turn) * 0.10;
+          break;
+        case "mage":
+          this.torso.rotation.y += turn * 0.16;
+          this.torso.rotation.x += 0.02 * snap;
+          this.arm_r.rotation.x += 0.10;
+          this.hand_r.rotation.z -= 0.20;
+          this.arm_l.rotation.z += 0.08;
+          break;
+        case "bow":
+          this.torso.rotation.y += turn * 0.18;
+          this.torso.rotation.x += 0.02 * snap;
+          this.arm_r.rotation.x += 0.06;
+          this.arm_l.rotation.x += 0.10;
+          this.head.rotation.y -= turn * 0.08;
+          break;
+        case "bomb":
+          this.torso.rotation.y += turn * 0.17;
+          this.torso.rotation.x += 0.03 * snap;
+          this.arm_r.rotation.x += 0.12;
+          this.arm_l.rotation.z += 0.10;
+          break;
+      }
+    }
     if (this.kit === "knight" && this.look.element === "light") {
       // ASTER_KNIGHT_COMBAT_ANIM_V2: grounded, upright armor gait; shoulders, not hips, do the work.
       this.torso.rotation.x += 0.025 + 0.045 * running;
@@ -1434,6 +1548,12 @@ export class FighterModel extends THREE.Group {
 
     this.cape.rotation.set(0.08 + 0.3 * this.walk + 0.3 * this.recoil + Math.sin(this.t * 2.1) * 0.03, 0, Math.sin(this.t * 1.7) * 0.03);
     this.hairSway.forEach((h, i) => { h.rotation.x = 0.1 * this.walk + 0.25 * this.recoil + Math.sin(this.t * 2 + i) * 0.05; });
+    if (actionPose.startsWith("pc_")) {
+      const turn = this.parryCounterSpin;
+      const follow = Math.sin(Math.min(1, turn / (Math.PI * 2)) * Math.PI);
+      this.cape.rotation.y += Math.sin(turn - 0.65) * 0.20 * follow;
+      this.hairSway.forEach((h, i) => { h.rotation.z += Math.sin(turn - 0.35 + i * 0.42) * 0.13 * follow; });
+    }
     // Different actual polearm arcs: direct thrust, reverse-end slash, figure-eight rise,
     // and pivot cleave. All rotations are local to the weapon: one motion path for VRM and
     // procedural character, and the left-hand IK follows the same physical shaft.
