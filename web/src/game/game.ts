@@ -435,7 +435,10 @@ export class Game implements MobHost {
   private lastRaf = 0;
   private last = 0;
   private remoteBrains = new Map<string, RemoteBrain>();
-  private strikeMarks: { target: any; land: number; id: number }[] = [];
+  private strikeMarks: {
+    target: any; land: number; id: number; center?: THREE.Vector3;
+    radius?: number; caster?: Fighter; followsCaster?: boolean; style?: string;
+  }[] = [];
   private round = 0;
   /** Best of three (first to two): round wins for team/player 0 and 1. */
   private matchWins: [number, number] = [0, 0];
@@ -2263,7 +2266,11 @@ export class Game implements MobHost {
         ? (this.plat ? kaedeCenter.clone() : kaedeCenter.clone().setY(0))
         : (this.plat ? src.root.position.clone() : src.root.position.clone().setY(0));
       const wait = i === 0 ? a.delay : a.interval;
-      const mark = { target: f.opponent, land: this.time + wait, id: this.nextId++ };
+      const mark = {
+        target: f.opponent, land: this.time + wait, id: this.nextId++,
+        center: center.clone(), radius: a.radius, caster: f,
+        followsCaster: a.at === "self", style: a.style,
+      };
       this.strikeMarks.push(mark);
       this.fxp("tele", center, color, a.radius, wait);
       if (a.style === "meteor") this.fxp("meteor", center, color, wait);
@@ -3083,7 +3090,10 @@ export class Game implements MobHost {
     const color = style === "meteor" ? "#ff7a33" : "#ff4d4d";
     this.fxp("tele", c, color, radius, delay);
     if (style === "meteor") this.fxp("meteor", c, color, delay);
-    const mark = { target: null, land: this.time + delay, id: this.nextId++ };
+    const mark = {
+      target: null, land: this.time + delay, id: this.nextId++,
+      center: c.clone(), radius, style,
+    };
     this.strikeMarks.push(mark);
     const round = this.round;
     this.later(delay, () => {
