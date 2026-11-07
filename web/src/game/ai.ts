@@ -428,6 +428,140 @@ export class AiBrain implements Brain {
     return true;
   }
 
+  // VEYR_FESTIVAL_RELENTLESS_AI_V1_20261107
+  // During Blood Festival, stop parry / shield planning and keep the four-hit
+  // light string moving. Real input taps only: animation, cooldowns, guard and
+  // collision remain completely unchanged. No AI-only attack-speed buff.
+  private festivalTapDown = false;
+  private festivalTapSwing = -1;
+
+  private veyrFestivalPressure(f: Fighter, o: Fighter, dt: number): boolean {
+    if (f.kit !== "sickle" || f.bloodFestivalT <= 0 || f.isDown()) {
+      this.festivalTapDown = false;
+      this.festivalTapSwing = -1;
+      return false;
+    }
+
+    // Undo old defensive decisions made before the ultimate began. Without
+    // these resets the older reactive AI keeps Veyr shield-locked for seconds.
+    this.blockWait = -1;
+    this.blockDur = 0;
+    this.blockHold = 0;
+    this.comboParryTarget = -1;
+    this.comboParryReleased = false;
+    this.queue = [];
+    this.hold = 0;
+    this.jumpWait = -1;
+    this.sideT = 0;
+    this.tacticsT = 0;
+    this.theaterT = 0;
+    this.theaterMode = "none";
+    this.theaterFollow = "";
+    this.theaterFollowT = 0;
+
+    // Blood Festival locks Veyr's other skills. Do not waste time trying them.
+    f.intent.block = false;
+    f.intent.skill = "";
+    f.intent.jump = false;
+    f.intent.attack = false;
+
+    const to = o.root.position.clone().sub(f.root.position).setY(0);
+    const gap = to.length();
+    if (gap > 0.001) to.divideScalar(gap);
+    const reach = f.attacks.l1?.reach ?? 1.65;
+
+    // Move forward rather than retreat to block. Normal arena clamps, dash
+    // cooldown and sprint movement continue to apply (no teleport/bonus speed).
+    if (gap > reach * 0.79 && gap > 0.05) {
+      if (f.stage) f.intent.move.set(Math.sign(to.x), 0, 0);
+      else f.intent.move.copy(to);
+      if (f.onGround && f.state === S.IDLE && gap > 3.1 && gap < 8 && f.dashCd <= 0) {
+        f.intent.dash.copy(f.intent.move);
+      }
+      f.intent.sprint = f.onGround && f.state === S.IDLE && gap > 2.5;
+    } else {
+      f.intent.move.set(0, 0, 0);
+      f.intent.sprint = false;
+    }
+    // Keep the pursuit while making safe detours around ground fire; this
+    // helper only adjusts movement, never raises a shield.
+    this.avoidFireGround(f);
+
+    // A real light tap requires one pressed frame and a released frame.
+    // Fighter buffers a follow-up only after the previous light has started;
+    // one tap per swingSerial prevents spamming several inputs too early.
+    if (this.festivalTapDown) {
+      this.festivalTapDown = false;
+      return true;
+    }
+    const start = f.onGround && (f.state === S.IDLE || f.state === S.BLOCK) &&
+      gap <= reach + 0.28;
+    const next = f.onGround && f.state === S.ATTACK &&
+      /^l[1-3]$/.test(f.atkId) && !!f.atk?.next &&
+      f.stateT >= f.atk.wind + 0.015 &&
+      this.festivalTapSwing !== f.swingSerial && gap <= reach + 1.1;
+    if (start || next) {
+      f.intent.attack = true;
+      this.festivalTapDown = true;
+      this.festivalTapSwing = f.swingSerial;
+    }
+    return true;
+  }
+
+  // AI_READY_SKILLS_VEYR_FESTIVAL_V1_20261107
+  // Check actual equipped cooldowns frequently instead of waiting seconds
+  // between idle decisions. Still uses the fighter's normal skill inputs.
+  private readySkillPoll = 0;
+
+  private readySkillOpportunity(f: Fighter, o: Fighter, dt: number): boolean {
+    this.readySkillPoll = Math.max(0, this.readySkillPoll - dt);
+    if (this.readySkillPoll > 0 || f.isDown()) return false;
+    // Veyr cannot cast skills during Blood Festival. His light combo takes over.
+    if (f.kit === "sickle" && f.bloodFestivalT > 0) return false;
+    const free = f.state === S.IDLE || f.state === S.BLOCK ||
+      (f.state === S.ATTACK && f.atkPhase === 2 && !!f.atk &&
+        f.stateT >= f.atk.wind + f.atk.active + 0.07);
+    if (!free || !f.onGround) return false;
+    // Planned defensive reads still take priority over opportunistic attacks.
+    if (this.blockHold > 0 || this.blockWait >= 0 ||
+        this.comboParryTarget > this.threats.now()) return false;
+    const distance = f.root.position.clone().setY(0)
+      .distanceTo(o.root.position.clone().setY(0));
+    const ready = ["z", "x", "c"].filter(k =>
+      !!f.attacks[k] && (f.cooldowns[k] ?? 1) <= 0 &&
+      !(f.attacks[k].style === "nesa_heart_slam" &&
+        f.nesaCCharges <= 0));
+    if (!ready.length) return false;
+
+    // The existing 17 personalized profiles handle range and tactical conditions.
+    // Never spend a counter on an idle target, a smash outside range, etc.
+    const key = this.personalizedSkill(f, o, distance);
+    if (!key || !ready.includes(key)) return false;
+    const a = f.attacks[key];
+    const imminent = o.state === S.ATTACK && o.atkPhase === 1 &&
+      !!o.atk && o.atk.type === "melee" &&
+      distance < o.atk.reach + 0.25;
+    // Don't blindly wind up a ranged spell into an active nearby hitbox.
+    if (imminent && (a.type === "projectile" || a.type === "lob" ||
+        (a.type === "strike" && a.wind > 0.3))) return false;
+
+    // Favor usable skills over queued light taps, but the Fighter still enforces
+    // animation recovery, state checks, cooldowns, and actual collision.
+    this.queue = [];
+    this.hold = 0;
+    this.theaterT = 0;
+    this.theaterMode = "none";
+    this.theaterFollow = "";
+    this.theaterFollowT = 0;
+    this.tacticsT = 0;
+    f.intent.attack = false;
+    f.intent.block = false;
+    f.intent.skill = key;
+    this.readySkillPoll = 0.18;
+    this.skillCd = Math.max(this.skillCd, 0.25);
+    return true;
+  }
+
   constructor(private threats: Threats, level: number) {
     this.p = PRESETS[Math.max(0, Math.min(level, PRESETS.length - 1))];
   }
@@ -454,6 +588,8 @@ export class AiBrain implements Brain {
     }
     this.chainDecisionT = 0;
     if (f.chainBoundBy && f.chainBoundBy.chainBindT > 0) return;
+    // During Blood Festival Veyr chases with basics rather than blocking.
+    if (this.veyrFestivalPressure(f, o, dt)) return;
     if (f.stage) { if (this.platform(f, o, dt)) return; }
     this.react(f, o);
     this.defendLongCombo(f, o);
@@ -499,7 +635,8 @@ export class AiBrain implements Brain {
       this.queue = [];
       this.hold = 0;
     }
-    if (!this.aiAirTap && !this.theaterOffense(f, o)) this.offense(f, o, dt);
+    if (!this.aiAirTap && !this.readySkillOpportunity(f, o, dt) &&
+        !this.theaterOffense(f, o)) this.offense(f, o, dt);
     if (f.kit === "wind" && !f.stage) this.airDive(f, o, dt);
     // Sprint to close long gaps. A direction aimed at retreat/evade is not sprinted.
     // This uses the same run animations as player Shift movement.
