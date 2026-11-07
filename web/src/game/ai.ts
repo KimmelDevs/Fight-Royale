@@ -596,8 +596,10 @@ export class AiBrain implements Brain {
     if (!f.stage) { this.dodge(f); this.position(f, o, dt); this.tacticalFootwork(f, o, dt); this.theaterFootwork(f, o, dt); }
     // NESA_AI_EDGE_GIANT_KIRA_AIR_MOVE_V2: Kira can reposition between air kicks.
     // Use the same directional input and capped movement available to the player.
-    if (!f.stage && f.kit === "kicks" && !f.onGround && f.state === S.ATTACK &&
-        /^air_l[1-3]$/.test(f.atkId)) {
+    // NYX_SHADOW_COMBAT_AIR_2_V1: airborne dagger pursuit uses normal steering.
+    if (!f.stage && (f.kit === "kicks" || f.kit === "assassin") &&
+        !f.onGround && f.state === S.ATTACK &&
+        (f.kit === "kicks" ? /^air_l[1-3]$/.test(f.atkId) : /^air_l[1-2]$/.test(f.atkId))) {
       const toward = o.root.position.clone().sub(f.root.position).setY(0);
       const distance = toward.length();
       if (distance > 1.1) f.intent.move.copy(toward.divideScalar(distance));
@@ -625,13 +627,15 @@ export class AiBrain implements Brain {
       this.antiAirCd = rand(2.2, 3.8);
     }
     if (!f.stage && !f.onGround &&
-        (f.state === S.IDLE || (f.kit === "kicks" && f.state === S.ATTACK && /^air_l[1-3]$/.test(f.atkId))) &&
+        (f.state === S.IDLE || (f.state === S.ATTACK &&
+          (f.kit === "kicks" ? /^air_l[1-3]$/.test(f.atkId) :
+            f.kit === "assassin" && f.atkId === "air_l1"))) &&
         !f.airSliceUsed &&
         flatGap < f.attacks.air_l1.reach + 0.20 &&
         Math.abs(o.chest().y - f.chest().y) < 2.1 && this.airSliceCd <= 0 &&
         Math.random() < dt * 7.0) {
       this.aiAirTap = true;
-      this.airSliceCd = f.kit === "kicks" ? rand(0.17, 0.24) : rand(0.55, 0.85);
+      this.airSliceCd = f.kit === "kicks" || f.kit === "assassin" ? rand(0.17, 0.24) : rand(0.55, 0.85);
       this.queue = [];
       this.hold = 0;
     }

@@ -96,6 +96,19 @@ export function attacks(kit: string, element: string): Record<string, Attack> {
   // AIR_COMBAT_V1: shared air commands keep each kit's existing Z/X/C untouched.
   Object.assign(t, airCombatMoves(kit, element, t));
   t.v = bonusSkill(kit, element);
+  // ASTER_KNIGHT_COMBAT_ANIM_V2: only animation pose keys change, never skill values.
+  if (kit === "knight" && element === "light") {
+    const asterMoves: Record<string, [string, string]> = {
+      heavy: ["aster_heavy_w", "aster_heavy_s"],
+      z: ["aster_bash_w", "aster_bash_s"],
+      x: ["aster_rise_w", "aster_rise_s"],
+      c: ["aster_wave_w", "aster_wave_s"],
+      v: ["aster_judgment", "aster_judgment"],
+    };
+    for (const [key, [wind, swing]] of Object.entries(asterMoves)) {
+      if (t[key]) { t[key].pose_w = wind; t[key].pose_s = swing; }
+    }
+  }
   // NESA_MOMENTUM_V3: every hammer blow carries weight through ordinary blocks;
   // perfect parries are disabled for this kit, but dodges still beat the attack.
   if (kit === "hammer") for (const move of Object.values(t)) {
@@ -255,10 +268,10 @@ function assassin(): Record<string, Attack> {
     l2: a({ wind: 0.08, active: 0.06, recover: 0.16, dmg: 41, guard: 10, reach: 1.55, lunge: 3, knock: 1.2, stun: 0.26, pose_w: "as2_w", pose_s: "as2_s", next: "l3" }),
     l3: a({ wind: 0.1, active: 0.06, recover: 0.18, dmg: 51, guard: 12, reach: 1.7, lunge: 4, knock: 1.5, stun: 0.28, pose_w: "as3_w", pose_s: "as3_s", next: "l4" }),
     l4: a({ wind: 0.16, active: 0.08, recover: 0.36, dmg: 86, guard: 22, reach: 1.7, lunge: 3, knock: 4, stun: 0.45, pose_w: "as4_w", pose_s: "as4_s" }),
-    heavy: a({ wind: 0.12, active: 0.16, recover: 0.5, dmg: 170, guard: 45, reach: 2, lunge: 7, knock: 5, stun: 0.7, heavy: true, pose_w: "ash_w", pose_s: "ash_s" }),
-    z: a({ name: "Smoke Step", desc: "Vanish and reappear behind the enemy.", cd: 5, type: "blink", mode: "behind", wind: 0.06, recover: 0.12, pose_w: "ash_w", pose_s: "idle" }),
-    x: a({ name: "Shuriken Fan", desc: "Throw three spinning shuriken.", cd: 6, type: "projectile", wind: 0.12, recover: 0.3, dmg: 48, guard: 14, knock: 1.5, stun: 0.35, speed: 22, count: 3, spread: 0.3, style: "shuriken", pose_w: "as1_w", pose_s: "as1_s" }),
-    c: a({ name: "Phantom Rush", desc: "A blinding dash that cuts through the enemy.", cd: 10, wind: 0.18, active: 0.18, recover: 0.55, dmg: 260, guard: 70, reach: 2.2, lunge: 16, knock: 6, stun: 0.9, heavy: true, stagger: true, pose_w: "ash_w", pose_s: "ash_s" }),
+    heavy: a({ wind: 0.12, active: 0.16, recover: 0.5, dmg: 170, guard: 45, reach: 2, lunge: 7, knock: 5, stun: 0.7, heavy: true, pose_w: "nyx_heavy_w", pose_s: "nyx_heavy_s" }),
+    z: a({ name: "Smoke Step", desc: "Vanish and reappear behind the enemy.", cd: 5, type: "blink", mode: "behind", wind: 0.06, recover: 0.12, pose_w: "nyx_smoke_w", pose_s: "nyx_smoke_s" }),
+    x: a({ name: "Shuriken Fan", desc: "Throw three spinning shuriken.", cd: 6, type: "projectile", wind: 0.12, recover: 0.3, dmg: 48, guard: 14, knock: 1.5, stun: 0.35, speed: 22, count: 3, spread: 0.3, style: "shuriken", pose_w: "nyx_throw_w", pose_s: "nyx_throw_s" }),
+    c: a({ name: "Phantom Rush", desc: "A blinding dash that cuts through the enemy.", cd: 10, wind: 0.18, active: 0.18, recover: 0.55, dmg: 260, guard: 70, reach: 2.2, lunge: 16, knock: 6, stun: 0.9, heavy: true, stagger: true, pose_w: "nyx_rush_w", pose_s: "nyx_rush_s" }),
   };
 }
 
@@ -598,6 +611,42 @@ const ASTER_SWINGS: Record<string, Pose> = {
   heavy_s: P([0.38, 1.02, 0.04], [-0.13, -0.76, 0], [-1.48, 1.25, -0.06], [0.2, 0, 0], [-1.28, -0.22, 0.15], [0, 0, -0.8], [-0.7, 0, 0.1], [0.5, 0, -0.1], -0.2),
 };
 
+// ASTER_KNIGHT_COMBAT_ANIM_V2: Aster-only sword/shield choreography.
+// Each entry is a body pose at a timed combat phase; hitboxes and frame timing stay the same.
+// Distinct chamber / release / reset; shield positioning is handled by Aster's VRM arm IK.
+const ASTER_COMBAT_V2: Record<string, Pose> = {
+  idle: P([0.065, -0.25, 0], [-0.025, 0.19, 0], [-0.84, -0.18, -0.16], [-0.28, 0, -0.03], [-1.12, -0.24, 0.21], [0.05, 0, -0.16], [-0.18, 0, 0.10], [0.15, 0, -0.11], -0.03),
+  block: P([0.105, -0.07, -0.02], [-0.09, 0.06, 0], [-0.96, 0.20, -0.20], [-0.25, 0, 0], [-1.40, -0.42, 0.11], [0, 0, -0.1], [-0.26, 0, 0.12], [0.22, 0, -0.12], -0.062),
+  aster_reset: P([0.095, -0.14, 0], [-0.025, 0.11, 0], [-1.00, -0.11, -0.12], [-0.17, 0, 0], [-1.18, -0.23, 0.18], [0, 0, -0.14], [-0.20, 0, 0.11], [0.17, 0, -0.1], -0.045),
+  // Slash 1: sword comes to the right shoulder, then cuts horizontally across the body.
+  l1_w: P([0.12, -0.58, -0.04], [0, 0.38, 0], [-1.18, -0.82, -0.20], [0.34, 0, 0], [-1.22, -0.20, 0.20], [0, 0, -0.12], [-0.31, 0, 0.11], [0.27, 0, -0.10], -0.063),
+  l1_s: P([0.21, 0.60, 0.06], [-0.07, -0.29, 0], [-1.60, 0.75, -0.02], [-0.04, 0, 0], [-1.32, -0.15, 0.19], [0, 0, -0.08], [-0.48, 0, 0.12], [0.37, 0, -0.10], -0.092),
+  // Slash 2: controlled reverse cut, shield still covering the center.
+  l2_w: P([0.12, 0.55, 0.05], [0, -0.27, 0], [-1.52, 0.86, 0.05], [0.19, 0, 0], [-1.23, -0.16, 0.20], [0, 0, -0.1], [-0.30, 0, 0.12], [0.28, 0, -0.11], -0.066),
+  l2_s: P([0.23, -0.62, -0.055], [-0.055, 0.36, 0], [-1.51, -0.81, -0.01], [0.04, 0, 0], [-1.35, -0.2, 0.17], [0, 0, -0.09], [-0.47, 0, 0.12], [0.34, 0, -0.1], -0.095),
+  // Slash 3: overhead finisher, longer visual anticipation then heavy diagonal follow-through.
+  l3_w: P([-0.075, -0.28, 0.015], [0.07, 0.18, 0], [-2.58, -0.48, -0.14], [0.43, 0, 0], [-1.36, -0.19, 0.22], [0, 0, -0.11], [-0.31, 0, 0.12], [0.30, 0, -0.11], -0.053),
+  l3_s: P([0.37, 0.48, -0.05], [-0.13, -0.31, 0], [-0.91, 0.78, -0.045], [0.11, 0, 0], [-1.39, -0.22, 0.19], [0, 0, -0.08], [-0.57, 0, 0.12], [0.44, 0, -0.11], -0.13),
+  // Charged slash: blade drawn behind right hip, weight transfers through front boot.
+  aster_heavy_w: P([0.12, -0.83, -0.04], [0, 0.40, 0], [-0.74, -1.33, -0.16], [0.65, 0, 0], [-1.43, -0.23, 0.22], [0, 0, -0.11], [-0.39, 0, 0.12], [0.36, 0, -0.1], -0.107),
+  aster_heavy_s: P([0.38, 0.92, 0.07], [-0.15, -0.47, 0], [-1.25, 1.18, -0.08], [0.10, 0, 0], [-1.43, -0.12, 0.22], [0, 0, -0.08], [-0.66, 0, 0.12], [0.53, 0, -0.10], -0.16),
+  // Shield Bash: retract shield into the chest, then drive it forward with a planted step.
+  aster_bash_w: P([0.07, -0.23, -0.01], [-0.035, 0.11, 0], [-0.79, 0.31, -0.25], [-0.18, 0, 0], [-1.48, -0.24, 0.12], [0, 0, -0.12], [-0.41, 0, 0.12], [0.33, 0, -0.11], -0.105),
+  aster_bash_s: P([0.36, 0.18, -0.035], [-0.105, -0.14, 0], [-0.75, 0.15, -0.28], [-0.15, 0, 0], [-1.66, -0.06, 0.12], [0, 0, -0.1], [-0.66, 0, 0.12], [0.48, 0, -0.11], -0.13),
+  // Rising Slash: load the sword low and drive an uppercut through the jump.
+  aster_rise_w: P([0.21, -0.29, 0], [-0.03, 0.25, 0], [-0.39, -0.58, -0.21], [0.44, 0, 0], [-1.3, -0.2, 0.18], [0, 0, -0.1], [-0.45, 0, 0.11], [0.39, 0, -0.09], -0.095),
+  aster_rise_s: P([-0.22, 0.37, 0], [-0.14, -0.25, 0], [-2.73, 0.43, -0.13], [0.34, 0, 0], [-1.18, -0.17, 0.22], [0, 0, -0.1], [-0.59, 0, 0.09], [0.23, 0, -0.09], -0.025),
+  // Blade Wave: shoulder-level coil, sharp release into a broad projecting cut.
+  aster_wave_w: P([-0.025, -0.49, 0.02], [0.025, 0.32, 0], [-2.06, -0.65, -0.20], [0.30, 0, 0], [-1.27, -0.14, 0.19], [0, 0, -0.1], [-0.34, 0, 0.11], [0.30, 0, -0.1], -0.057),
+  aster_wave_s: P([0.24, 0.61, -0.03], [-0.06, -0.38, 0], [-1.03, 0.98, -0.04], [0.12, 0, 0], [-1.35, -0.13, 0.22], [0, 0, -0.1], [-0.48, 0, 0.12], [0.38, 0, -0.1], -0.093),
+  // Judgment: sword held straight overhead, shield set close while the buff activates.
+  aster_judgment: P([-0.055, -0.04, 0], [-0.20, 0.02, 0], [-2.91, -0.09, 0.035], [0.10, 0, 0], [-1.22, -0.13, 0.19], [0, 0, -0.1], [-0.30, 0, 0.12], [0.27, 0, -0.11], -0.056),
+  // Reactions: shield stays across torso as the knight absorbs the impact.
+  hit: P([-0.15, 0.19, -0.03], [-0.15, -0.13, 0], [-0.79, 0.12, -0.19], [-0.13, 0, 0], [-1.38, -0.20, 0.17], [0, 0, -0.10], [0.03, 0, 0.12], [-0.07, 0, -0.12], -0.065),
+  stagger: P([-0.26, 0.26, -0.04], [-0.22, -0.13, 0], [-0.64, 0.20, -0.17], [-0.10, 0, 0], [-1.34, -0.14, 0.20], [0, 0, -0.11], [0.15, 0, 0.11], [-0.15, 0, -0.1], -0.09),
+  clash: P([-0.19, -0.13, 0], [-0.07, 0.1, 0], [-1.06, -0.20, -0.20], [0.11, 0, 0], [-1.45, -0.17, 0.22], [0, 0, -0.1], [-0.20, 0, 0.12], [0.15, 0, -0.11], -0.095),
+};
+
 // Slow, braced two-handed cutting arcs. The chest and feet transfer the weight;
 // left hand is held to the blade grip by FighterModel / VrmRig IK.
 const GARRICK_SWINGS: Record<string, Pose> = {
@@ -653,6 +702,35 @@ const ASSASSIN: Record<string, Pose> = {
   as4_s: P([0.3, 0, 0], [-0.1, 0, 0], [-1.4, 0.9, 0], [1.3, 0, 0], [-1.4, -0.9, 0], [1.3, 0, 0], [-0.6, 0, 0.1], [0.55, 0, -0.1], -0.18),
   ash_w: P([0.5, -0.2, 0], [-0.35, 0.2, 0], [-0.4, -0.8, -0.6], [1.2, 0, 0], [-0.4, 0.8, 0.6], [1.2, 0, 0], [-0.7, 0, 0.12], [0.6, 0, -0.12], -0.25),
   ash_s: P([0.4, 0, 0], [-0.25, 0, 0], [-1.5, 0.6, 0], [1.4, 0, 0], [-1.5, -0.6, 0], [1.4, 0, 0], [-0.8, 0, 0.12], [0.7, 0, -0.12], -0.22),
+};
+
+// NYX_SHADOW_COMBAT_AIR_2_V1: asymmetrical, knife-forward assassin choreography.
+// Changes pose data only; existing ground damage and skill cooldowns are untouched.
+const NYX_SHADOW_V1: Record<string, Pose> = {
+  idle: P([0.10, -0.38, 0.02], [-0.04, 0.32, -0.03], [-0.95, -0.43, -0.24], [0.70, -0.10, -0.05], [-1.12, 0.40, 0.31], [0.58, 0.09, 0.04], [-0.26, 0.0, 0.12], [0.21, 0.0, -0.12], -0.045),
+  block: P([0.12, 0.02, -0.05], [-0.08, -0.02, 0.02], [-1.35, 0.38, -0.36], [1.10, 0, 0.08], [-1.40, -0.35, 0.28], [1.08, 0, -0.10], [-0.36, 0, 0.11], [0.28, 0, -0.10], -0.075),
+  jump: P([0.05, -0.18, 0], [0.04, 0.18, 0], [-1.22, -0.50, -0.32], [0.82, 0, 0], [-1.30, 0.51, 0.31], [0.85, 0, 0], [-0.73, 0, 0.10], [-0.55, 0, -0.10], -0.035),
+  // Four distinct dagger cuts: right cross, left reverse, forward double stab, crossing finisher.
+  as1_w: P([0.12, -0.75, -0.08], [-0.03, 0.55, 0.05], [-0.68, -1.12, -0.23], [1.03, 0.18, -0.06], [-1.11, 0.40, 0.40], [0.80, 0, 0], [-0.32, 0, 0.14], [0.30, 0, -0.12], -0.08),
+  as1_s: P([0.24, 0.49, 0.08], [-0.08, -0.32, 0], [-1.41, 1.06, -0.11], [1.30, -0.14, 0], [-1.05, -0.25, 0.38], [0.62, 0, -0.05], [-0.43, 0, 0.13], [0.45, 0, -0.09], -0.095),
+  as2_w: P([0.14, 0.65, 0.05], [-0.04, -0.50, 0], [-1.02, -0.18, -0.32], [0.80, 0.02, 0], [-0.60, 1.18, 0.26], [1.08, -0.12, 0.05], [-0.35, 0, 0.12], [0.28, 0, -0.10], -0.07),
+  as2_s: P([0.22, -0.52, -0.06], [-0.04, 0.41, 0], [-1.04, 0.33, -0.34], [0.75, 0, 0], [-1.47, -1.04, 0.05], [1.37, 0.08, 0], [-0.40, 0, 0.10], [0.46, 0, -0.13], -0.09),
+  as3_w: P([0.05, -0.20, 0], [-0.08, 0.20, 0], [-0.63, -0.45, -0.52], [1.42, 0, 0], [-0.65, 0.52, 0.48], [1.39, 0, 0], [-0.51, 0, 0.14], [0.46, 0, -0.13], -0.095),
+  as3_s: P([0.31, 0.08, 0], [-0.06, -0.04, 0], [-1.63, 0.06, -0.18], [1.25, 0, 0], [-1.65, -0.08, 0.18], [1.27, 0, 0], [-0.73, 0, 0.13], [0.62, 0, -0.13], -0.13),
+  as4_w: P([-0.02, -0.19, 0.01], [0.03, 0.16, 0], [-0.80, -1.16, -0.30], [1.18, 0, 0], [-0.82, 1.16, 0.30], [1.18, 0, 0], [-0.39, 0, 0.12], [0.29, 0, -0.12], -0.07),
+  as4_s: P([0.38, 0.10, 0], [-0.12, -0.11, 0], [-1.59, 0.61, -0.05], [1.45, 0, 0], [-1.60, -0.59, 0.03], [1.46, 0, 0], [-0.67, 0, 0.15], [0.56, 0, -0.15], -0.15),
+  // Charged dagger lunge, with the arms gathered before releasing a cross-cut.
+  nyx_heavy_w: P([0.12, -0.70, -0.08], [-0.03, 0.53, 0], [-0.50, -1.15, -0.53], [1.02, 0, -0.11], [-0.53, 1.08, 0.48], [1.03, 0, 0.05], [-0.47, 0, 0.13], [0.45, 0, -0.11], -0.11),
+  nyx_heavy_s: P([0.35, 0.24, 0], [-0.12, -0.17, 0], [-1.85, 0.43, -0.24], [1.47, 0, 0], [-1.83, -0.43, 0.25], [1.45, 0, 0], [-0.78, 0, 0.12], [0.65, 0, -0.12], -0.16),
+  // Smoke Step: dip into the disappearance, spring out of the reappearance.
+  nyx_smoke_w: P([0.42, -0.22, 0.08], [-0.24, 0.20, 0], [-0.62, -0.26, -0.53], [0.82, 0, 0], [-0.59, 0.35, 0.43], [0.79, 0, 0], [-0.68, 0, 0.16], [0.59, 0, -0.14], -0.20),
+  nyx_smoke_s: P([0.12, 0.37, -0.06], [0.01, -0.27, 0], [-1.26, 0.64, -0.23], [0.78, 0, 0], [-1.21, -0.65, 0.23], [0.75, 0, 0], [-0.36, 0, 0.10], [0.35, 0, -0.09], -0.06),
+  // Shuriken Fan: both forearms snap from the ribs into a wide fan throw.
+  nyx_throw_w: P([0.08, -0.41, 0], [-0.05, 0.33, 0], [-0.54, -1.0, -0.33], [1.17, 0, 0], [-0.60, 0.95, 0.34], [1.14, 0, 0], [-0.29, 0, 0.13], [0.32, 0, -0.12], -0.07),
+  nyx_throw_s: P([0.29, 0.11, 0], [-0.07, -0.05, 0], [-1.70, -0.52, -0.10], [1.35, 0, 0], [-1.66, 0.56, 0.13], [1.35, 0, 0], [-0.52, 0, 0.13], [0.50, 0, -0.13], -0.10),
+  // Phantom Rush: low coiled posture, driving double-dagger cut, immediate compact recover.
+  nyx_rush_w: P([0.49, -0.52, 0], [-0.27, 0.37, 0], [-0.31, -0.95, -0.38], [1.18, 0, 0], [-0.33, 0.90, 0.42], [1.18, 0, 0], [-0.71, 0, 0.17], [0.54, 0, -0.14], -0.19),
+  nyx_rush_s: P([0.30, 0.41, -0.02], [-0.14, -0.30, 0], [-1.70, 0.71, -0.14], [1.36, 0, 0], [-1.66, -0.72, 0.15], [1.34, 0, 0], [-0.87, 0, 0.17], [0.63, 0, -0.15], -0.12),
 };
 
 // Bow in the left hand. The bow arm points at the target; the right hand draws the string.
@@ -890,7 +968,7 @@ const TABLES: Record<string, Record<string, Pose>> = {
 };
 
 export function poses(kit: string, element?: string): Record<string, Pose> {
-  const t = { ...COMMON, ...(TABLES[kit] ?? KNIGHT), ...(kit === "knight" && element === "light" ? ASTER_SWINGS : {}) };
+  const t = { ...COMMON, ...(TABLES[kit] ?? KNIGHT), ...(kit === "knight" && element === "light" ? { ...ASTER_SWINGS, ...ASTER_COMBAT_V2 } : {}), ...(kit === "assassin" ? NYX_SHADOW_V1 : {}) };
   if (!t.charge) t.charge = t.mh_w ?? t.ash_w ?? KNIGHT.charge;
   return t;
 }

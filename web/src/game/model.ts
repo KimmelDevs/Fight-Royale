@@ -1347,7 +1347,7 @@ export class FighterModel extends THREE.Group {
 
   // --- posing ------------------------------------------------------------------------
   /** Exponentially blends joints toward `pose` and applies overlays (walk, breathing, cloth). */
-  blend(pose: Pose, dt: number, speed: number) {
+  blend(pose: Pose, dt: number, speed: number, actionPose = "") {
     if (this.nesaHammerPivot) {
       // NESA_HEART_SMASH_V4: horizontal, Beyblade-style hammer shaft during charged spin.
       const value = THREE.MathUtils.clamp(this.nesaHammerScale, 1, 4);
@@ -1370,7 +1370,7 @@ export class FighterModel extends THREE.Group {
     // 0.64 = ordinary walking; 1 = full sprint; each kit uses its own gait rate.
     const running = THREE.MathUtils.clamp((this.walk - 0.66) / 0.34, 0, 1);
     const moving = Math.min(1, this.walk / 0.64);
-    this.walkPhase += dt * ((this.kit === "greatsword" || this.kit === "hammer") ? 8.5 : 11) * moving * (1 + 0.46 * running);
+    this.walkPhase += dt * (this.kit === "knight" && this.look.element === "light" ? 9.2 : (this.kit === "greatsword" || this.kit === "hammer") ? 8.5 : 11) * moving * (1 + 0.46 * running);
     const s = Math.sin(this.walkPhase);
     if (this.kit === "hammer") {
       // Weight-specific walking is handled below by short steps and shoulder lag.
@@ -1380,7 +1380,7 @@ export class FighterModel extends THREE.Group {
     this.hips.position.y = HIP + this.hipsY + Math.abs(s) * 0.03 * this.walk + Math.sin(this.t * 2.4) * 0.005;
     for (const j of JOINTS) this.joints[j].rotation.set(this.cur[j].x, this.cur[j].y, this.cur[j].z);
     this.torso.rotation.x += -this.recoil * 0.3 + Math.sin(this.t * 2.4) * 0.012;
-    const stride = (this.kit === "greatsword" || this.kit === "hammer") ? 0.36 : 0.55;
+    const stride = this.kit === "knight" && this.look.element === "light" ? 0.44 : (this.kit === "greatsword" || this.kit === "hammer") ? 0.36 : 0.55;
     this.leg_l.rotation.x += s * stride * moving * (1 + 0.34 * running);
     this.leg_r.rotation.x -= s * stride * moving * (1 + 0.34 * running);
     // Distinct full-body running pose for the procedural fallback body.
@@ -1388,6 +1388,14 @@ export class FighterModel extends THREE.Group {
     this.arm_l.rotation.x -= s * 0.17 * running;
     this.arm_r.rotation.x += s * 0.14 * running;
     this.hips.position.y += Math.abs(s) * 0.018 * running;
+    if (this.kit === "knight" && this.look.element === "light") {
+      // ASTER_KNIGHT_COMBAT_ANIM_V2: grounded, upright armor gait; shoulders, not hips, do the work.
+      this.torso.rotation.x += 0.025 + 0.045 * running;
+      this.torso.rotation.y += Math.sin(this.walkPhase) * 0.018 * moving;
+      this.head.rotation.x -= 0.025;
+      this.arm_l.rotation.x -= 0.045 * moving; // shield stays near the center while walking
+      this.hips.position.y -= 0.008 * (1 - running);
+    }
     if (this.kit === "hammer") {
       // NESA_NO_FOOT_HEAVINESS_V1:
       // keep the burden in her upper body, not in dragging heavy feet.
@@ -1403,6 +1411,15 @@ export class FighterModel extends THREE.Group {
       this.arm_r.rotation.x += 0.04 + 0.02 * moving;
       this.arm_l.rotation.z -= 0.06;
       this.arm_r.rotation.z += 0.04;
+    }
+    // NYX_SHADOW_COMBAT_AIR_2_V1: lively side-to-side ninja footwork, not a heavy gait.
+    // While moving she shifts through her shoulders; in guard she stays compact.
+    if (this.kit === "assassin") {
+      this.torso.rotation.x += 0.035 + 0.060 * moving;
+      this.torso.rotation.y += Math.sin(this.walkPhase) * 0.045 * moving;
+      this.torso.rotation.z += Math.sin(this.walkPhase * 0.5) * 0.018 * moving;
+      this.head.rotation.y -= Math.sin(this.walkPhase) * 0.025 * moving;
+      this.hips.position.y += Math.abs(Math.sin(this.walkPhase * 2)) * 0.009 * moving;
     }
     // Veyr's low stalking posture also animates the procedural fallback (no VRM yet).
     if (this.kit === "sickle") {
@@ -1456,7 +1473,7 @@ export class FighterModel extends THREE.Group {
       this.glaivePivot.quaternion.slerp(q, 1 - Math.exp(-rate * dt));
     }
     if (this.gripL) this.reachGrip();
-    this.vrmRig?.update(dt, { t: this.t, walk: this.walk, phase: this.walkPhase, crouch: this.hipsY, combat: this.combat, hurt: this.hurt, draw: this.draw, knee: this.knee });
+    this.vrmRig?.update(dt, { t: this.t, walk: this.walk, phase: this.walkPhase, crouch: this.hipsY, combat: this.combat, hurt: this.hurt, draw: this.draw, knee: this.knee, pose: actionPose });
     if (this.bowPivot) this.updateBow();
     if (this.kit === "chainblade") this.updateChainblade(dt);
     // Visible only for the 3-second festival; client puppet uses replicated timer too.
@@ -1519,7 +1536,7 @@ export class FighterModel extends THREE.Group {
     this.vrmRig.followArm = this.kit === "chainblade" ? 0.14 : this.kit === "glaive" ? 0.24 : this.kit === "sickle" ? 0.18 : this.kit === "mage" ? 0.4 : this.kit === "bow" ? 0.5 : 0.3;
     this.vrmRig.staff = this.kit === "mage";
     this.vrmRig.glaive = this.kit === "glaive";
-    this.vrmRig.style = this.kit === "chainblade" ? "chainblade" : this.kit === "glaive" ? "storm" : this.kit === "sickle" ? "feral" : this.kit === "hammer" ? "nesa" : this.kit === "greatsword" ? "greatsword" : this.look.body === "m" ? "heavy" : "light";
+    this.vrmRig.style = this.kit === "knight" && this.look.element === "light" ? "aster" : this.kit === "chainblade" ? "chainblade" : this.kit === "glaive" ? "storm" : this.kit === "sickle" ? "feral" : this.kit === "hammer" ? "nesa" : this.kit === "greatsword" ? "greatsword" : this.look.body === "m" ? "heavy" : "light";
     if (this.kit === "knight") { this.buildHeaterShield(); this.vrmRig.shield = true; }
     if (this.gripL) { this.vrmRig.gripL = this.gripL; this.vrmRig.bladed = this.kit === "chainblade" ? 0.58 : this.kit === "glaive" ? 0.4 : 1; }
     if (["knight", "greatsword", "hammer", "katana"].includes(this.kit) && this.bladeBase.parent) {

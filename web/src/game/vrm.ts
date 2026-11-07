@@ -61,7 +61,7 @@ const rx = (a: number) => new THREE.Quaternion().setFromAxisAngle(new THREE.Vect
 const rz = (a: number) => new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), a);
 
 /** What the procedural model is doing, for the natural-motion layer. */
-export interface MotionInfo { t: number; walk: number; phase: number; crouch: number; combat?: boolean; hurt?: boolean; draw?: number; knee?: [number, number] }
+export interface MotionInfo { t: number; walk: number; phase: number; crouch: number; combat?: boolean; hurt?: boolean; draw?: number; knee?: [number, number]; pose?: string }
 
 /** Per-bone follow-through speed (1/s): lower = more lag and overlap. */
 const RATE: Partial<Record<VRMHumanBoneName, number>> = {
@@ -78,6 +78,15 @@ export const STYLES = {
   light: { stance: 0, toeOut: D(4), knee: D(5), drop: 0, lean: 0, chin: 0, shoulderUp: 0, elbowOut: 0,
     hipSway: 0.03, hipRoll: D(4), contra: D(3), relaxKnee: D(14), headTilt: D(3), headYaw: D(7),
     breath: 1, armSwing: D(16), walkRoll: D(3), walkYaw: D(5) },
+  // ASTER_KNIGHT_COMBAT_ANIM_V2: armored one-handed swordsman, upright behind his shield.
+  // Less crouched than generic heavy, no feminine hip sway or head tilting.
+  aster: { stance: D(12), toeOut: D(10), knee: D(10), drop: 0.028, lean: D(3.5), chin: D(3), shoulderUp: D(2.5), elbowOut: D(8),
+    hipSway: 0.002, hipRoll: D(0.3), contra: D(0.5), relaxKnee: D(1.2), headTilt: D(0.3), headYaw: D(3),
+    breath: 0.48, armSwing: D(7), walkRoll: D(0.7), walkYaw: D(2) },
+  // NYX_SHADOW_COMBAT_AIR_2_V1: low-bladed but light-footed dual-dagger assassin.
+  shadow: { stance: D(7), toeOut: D(7), knee: D(10), drop: 0.018, lean: D(6), chin: D(2), shoulderUp: D(1), elbowOut: D(5),
+    hipSway: 0.010, hipRoll: D(1.2), contra: D(2.0), relaxKnee: D(4), headTilt: D(1), headYaw: D(7),
+    breath: 0.76, armSwing: D(17), walkRoll: D(2), walkYaw: D(5) },
   // Feral dual-sickle hunter: hunched, asymmetrical, with deliberately planted feet.
   feral: { stance: D(11), toeOut: D(13), knee: D(18), drop: 0.055, lean: D(12), chin: D(4), shoulderUp: D(2), elbowOut: D(8),
     hipSway: 0.007, hipRoll: D(0.8), contra: D(1.5), relaxKnee: D(7), headTilt: D(1.0), headYaw: D(5),
@@ -349,7 +358,8 @@ export class VrmRig {
           // whatever the wrist does; it tips forward a little as the arm rises (blocks, bash).
           const raise = THREE.MathUtils.clamp((poseDir.z + 1) * 0.5, 0, 1);
           const basis = new THREE.Matrix4().makeBasis(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, -1), new THREE.Vector3(0, 1, 0));
-          const mount = new THREE.Quaternion().setFromEuler(_e.set(D(8) * raise, -D(12), 0, "YXZ"))
+          const tilt = this.style === "aster" ? (m.pose === "aster_bash_s" ? D(-10) : m.pose === "block" ? D(5) : D(10)) : D(8) * raise;
+          const mount = new THREE.Quaternion().setFromEuler(_e.set(tilt, -D(12), 0, "YXZ"))
             .multiply(new THREE.Quaternion().setFromRotationMatrix(basis));
           hk.joint.quaternion.copy(parentRoot.multiply(mount));
         } else {
@@ -399,7 +409,7 @@ export class VrmRig {
         set(foot, parentQ.clone().slerp(I, 0.75));
       }
     }
-    if (this.shield) this.shieldArm(dt, set);
+    if (this.shield) this.shieldArm(dt, set, m.pose ?? "");
     if (this.archer) this.archerArms(dt, m.draw ?? 0, set);
     const setNow = (b: THREE.Object3D | null, target: THREE.Quaternion) => {
       if (!b) return;
@@ -505,14 +515,26 @@ export class VrmRig {
    * to the left (top near the chin), rising to the face only while the pose blocks; IK puts
    * the hand on the grip behind it, elbow down and out.
    */
-  private shieldArm(dt: number, set: (b: THREE.Object3D | null, q: THREE.Quaternion) => void) {
+  private shieldArm(dt: number, set: (b: THREE.Object3D | null, q: THREE.Quaternion) => void, pose = "") {
     const root = this.j.root, h = this.vrm.humanoid;
     const chest = h.getNormalizedBoneNode("upperChest") ?? h.getNormalizedBoneNode("chest");
     if (!chest) return;
     const r = this.shieldRaise;
-    const want = root.worldToLocal(chest.getWorldPosition(new THREE.Vector3())).add(new THREE.Vector3(0.14 - 0.04 * r, -0.2 + 0.2 * r, 0.27 + 0.06 * r));
+    // ASTER_KNIGHT_COMBAT_ANIM_V2: shield genuinely moves to brace, parry space and bash.
+    // Kept inside the existing real shoulder/elbow IK, with no unreachable teleports.
+    let offset: THREE.Vector3;
+    if (this.style === "aster") {
+      const raised = pose === "block" || pose === "hit" || pose === "clash" || pose === "stagger";
+      const thrust = pose === "aster_bash_s";
+      const loaded = pose === "aster_bash_w";
+      offset = thrust ? new THREE.Vector3(0.02, -0.085, 0.53)
+        : raised ? new THREE.Vector3(0.07, 0.015, 0.37)
+        : loaded ? new THREE.Vector3(0.11, -0.16, 0.25)
+        : new THREE.Vector3(0.11, -0.14, 0.33);
+    } else offset = new THREE.Vector3(0.14 - 0.04 * r, -0.2 + 0.2 * r, 0.27 + 0.06 * r);
+    const want = root.worldToLocal(chest.getWorldPosition(new THREE.Vector3())).add(offset);
     if (this.shieldPos.lengthSq() === 0) this.shieldPos.copy(want);
-    else this.shieldPos.lerp(want, 1 - Math.exp(-14 * dt));
+    else this.shieldPos.lerp(want, 1 - Math.exp(-(this.style === "aster" ? 20 : 14) * dt));
     this.solveArm("left", this.shieldPos.clone().add(new THREE.Vector3(0, 0, -0.06)), new THREE.Vector3(0.6, -1, -0.35), set);
   }
 

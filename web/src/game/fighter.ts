@@ -180,6 +180,9 @@ export class Fighter implements Entity {
   // NESA_DODGE_KIRA_AIR_3_V1: Kira may deliver three separately timed air kicks per jump.
   private kiraAirKicks = 0;
   private kiraAirBuffered = false;
+  // NYX_SHADOW_COMBAT_AIR_2_V1: two separate airborne dagger hits per jump.
+  private nyxAirStrikes = 0;
+  private nyxAirBuffered = false;
 
   private airSliceQueued = false;
   // Space then Click within 0.22s still counts as a grounded anti-air chord.
@@ -379,6 +382,17 @@ export class Fighter implements Entity {
           knock: i === 3 ? 2.1 : 0.8, heavy: false, stagger: false, next: "" };
       }
     }
+    if (this.kit === "assassin") {
+      // Two real aerial melee swings, each with separate block, parry, clash and hit tests.
+      this.attacks.air_l1 = { ...this.attacks.air_l1,
+        name: "Falling Fang", type: "melee", wind: 0.080, active: 0.095, recover: 0.13,
+        dmg: 28, guard: 12, reach: 2.04, lunge: 0,
+        knock: 0.75, heavy: false, stagger: false, next: "" };
+      this.attacks.air_l2 = { ...this.attacks.air_l2,
+        name: "Shadow Cross", type: "melee", wind: 0.095, active: 0.105, recover: 0.23,
+        dmg: 38, guard: 16, reach: 2.17, lunge: 0,
+        knock: 2.2, stun: 0.30, heavy: false, stagger: false, next: "" };
+    }
     this.root.rotation.order = "YXZ";
     this.model = new FighterModel(look);
     this.root.add(this.model);
@@ -454,6 +468,34 @@ export class Fighter implements Entity {
           this.poses[`kira_air_${n}_${direction}_s`] = ks;
         }
       }
+      if (this.kit === "assassin") {
+        // Dagger one sweeps across with the right hand, dagger two reverses with the left.
+        // Both poses are generated for up/level/down aim; they also work for VRM avatars.
+        for (let n = 1; n <= 2; n++) {
+          const nw = copy(w), ns = copy(a);
+          nw.torso[0] += 0.02; ns.torso[0] += 0.10;
+          nw.hips_y -= 0.015;
+          nw.leg_l[0] -= 0.22; nw.leg_r[0] -= 0.16;
+          ns.leg_l[0] += 0.11; ns.leg_r[0] -= 0.15;
+          if (n === 1) {
+            nw.torso[1] -= 0.38; ns.torso[1] += 0.55;
+            nw.arm_r[0] = -0.76; nw.arm_r[1] = -0.98;
+            nw.hand_r[0] = 1.05;
+            ns.arm_r[0] = -1.46; ns.arm_r[1] = 1.11;
+            ns.hand_r[0] = 1.3;
+            nw.arm_l[0] = -1.10; ns.arm_l[0] = -1.18;
+          } else {
+            nw.torso[1] += 0.42; ns.torso[1] -= 0.61;
+            nw.arm_l[0] = -0.73; nw.arm_l[1] = 1.05;
+            nw.hand_l[0] = 1.11;
+            ns.arm_l[0] = -1.57; ns.arm_l[1] = -1.16;
+            ns.hand_l[0] = 1.36;
+            nw.arm_r[0] = -1.03; ns.arm_r[0] = -1.14;
+          }
+          this.poses[`nyx_air_${n}_${direction}_w`] = nw;
+          this.poses[`nyx_air_${n}_${direction}_s`] = ns;
+        }
+      }
     }
   }
 
@@ -480,12 +522,16 @@ export class Fighter implements Entity {
         (this.state !== S.IDLE && this.state !== S.BLOCK)) return;
     // NESA_DODGE_KIRA_AIR_3_V1: 3 taps / connected kicks for Kira, one for others.
     if (this.kit === "kicks") this.kiraAirKicks = Math.min(3, this.kiraAirKicks + 1);
-    this.airSliceUsed = this.kit !== "kicks" || this.kiraAirKicks >= 3;
+    if (this.kit === "assassin") this.nyxAirStrikes = Math.min(2, this.nyxAirStrikes + 1);
+    this.airSliceUsed = this.kit === "kicks" ? this.kiraAirKicks >= 3 :
+      this.kit === "assassin" ? this.nyxAirStrikes >= 2 : true;
     this.kiraAirBuffered = false;
+    this.nyxAirBuffered = false;
     this.airSliceQueued = false;
     this.airSliceAngle = this.airAimAtOpponent();
     this.holding = false;
-    this.startAttack(this.kit === "kicks" ? `air_l${this.kiraAirKicks}` : "air_l1");
+    this.startAttack(this.kit === "kicks" ? `air_l${this.kiraAirKicks}` :
+      this.kit === "assassin" ? `air_l${this.nyxAirStrikes}` : "air_l1");
   }
 
   isDown() { return this.state === S.KO; }
@@ -768,7 +814,7 @@ export class Fighter implements Entity {
     this.model.glaivePose = this.kit === "glaive" ? (this.state === S.WIN ? "show_baton" : this.poseName) : "idle";
     this.model.blend(this.state === S.WIN
       ? presentationPose(this.look.name, this.stateT, this.poses.idle, "victory")
-      : (this.poses[this.poseName] ?? this.poses.idle), dt, this.poseSpeed);
+      : (this.poses[this.poseName] ?? this.poses.idle), dt, this.poseSpeed, this.poseName);
     // Pull the model upright smoothly rather than snapping back to standing.
     if (this.state === S.WAKEUP) {
       const t = THREE.MathUtils.clamp(this.stateT / this.wakeupDuration, 0, 1);
@@ -866,6 +912,10 @@ export class Fighter implements Entity {
           /^air_l[1-3]$/.test(this.atkId) && this.kiraAirKicks < 3) {
         // Queue the next click during a kick; fire it when the active contact ends.
         this.kiraAirBuffered = true;
+      } else if (this.kit === "assassin" && this.state === S.ATTACK &&
+          this.atkId === "air_l1" && this.nyxAirStrikes < 2) {
+        // Buffer second tap during Falling Fang; release into Shadow Cross on recovery.
+        this.nyxAirBuffered = true;
       } else this.tryAirSlice();
       return;
     }
@@ -891,7 +941,7 @@ export class Fighter implements Entity {
     if (pressed && this.onGround && (this.state === S.IDLE || this.state === S.BLOCK)) {
       this.velY = this.jumpV;
       this.onGround = false;
-      this.airSliceUsed = false; this.kiraAirKicks = 0; this.kiraAirBuffered = false;
+      this.airSliceUsed = false; this.kiraAirKicks = 0; this.kiraAirBuffered = false; this.nyxAirStrikes = 0; this.nyxAirBuffered = false;
       if (this.state === S.BLOCK) this.setState(S.IDLE);
       // Space+Click on the same frame: jump, then swing (never anti-air launch).
       if (this.kit === "hammer" && this.nesaAirHolding) this.nesaAirChargeT = 0;
@@ -1204,6 +1254,18 @@ export class Fighter implements Entity {
       return;
     }
 
+    if (this.kit === "assassin" && this.nyxAirBuffered && !this.onGround &&
+        this.atkId === "air_l1" && this.nyxAirStrikes < 2 &&
+        this.stateT >= w + ac) {
+      // A new attack instance: the second cut must hit on its own merits.
+      this.nyxAirBuffered = false;
+      this.nyxAirStrikes = 2;
+      this.airSliceUsed = true;
+      this.airSliceAngle = this.airAimAtOpponent();
+      this.startAttack("air_l2");
+      return;
+    }
+
     if (this.kit === "hammer" && a.name !== "Upsie Daisie" && this.atkPhase === 0 &&
         this.stateT < w && this.intent.block) {
       // Pre-swing cancel is intentional; this move did NOT deal any damage.
@@ -1357,8 +1419,10 @@ export class Fighter implements Entity {
     // No extra i-frames, dash, or sprint: movement uses her ordinary moveSpeed.
     const kiraAirSteer = this.kit === "kicks" && !this.onGround && this.state === S.ATTACK &&
       /^air_l[1-3]$/.test(this.atkId);
+    const nyxAirSteer = this.kit === "assassin" && !this.onGround && this.state === S.ATTACK &&
+      /^air_l[1-2]$/.test(this.atkId);
     const steer = this.state === S.IDLE ? 1 : this.state === S.BLOCK ? 0.5 :
-      this.state === S.CHARGE ? 0.4 : kiraAirSteer ? 0.92 : 0;
+      this.state === S.CHARGE ? 0.4 : kiraAirSteer ? 0.92 : nyxAirSteer ? 0.63 : 0;
     if (steer > 0 && this.intent.move.lengthSq() > 0.0001) {
       const step = this.intent.move.clone().normalize().multiplyScalar(this.moveSpeed * (this.bloodFrenzyT > 0 ? 1.15 : 1) * (this.meteorFistArmor ? 1 : this.status.speedMult()) * (this.intent.sprint && this.state === S.IDLE && this.onGround ? 1.42 : 1) * steer * dt);
       if (dist < MIN_DIST && step.dot(dir) > 0) step.addScaledVector(dir, -step.dot(dir));
@@ -1382,7 +1446,7 @@ export class Fighter implements Entity {
       this.root.position.y = 0;
       this.velY = 0;
       this.onGround = true;
-      this.airSliceUsed = false; this.kiraAirKicks = 0; this.kiraAirBuffered = false;
+      this.airSliceUsed = false; this.kiraAirKicks = 0; this.kiraAirBuffered = false; this.nyxAirStrikes = 0; this.nyxAirBuffered = false;
       this.airSliceQueued = false;
       this.airJump = 0;
       this.airRecoverUsed = false;
@@ -1616,7 +1680,7 @@ export class Fighter implements Entity {
     if (this.chainBoundBy) this.chainBoundBy.releaseChainBind();
     this.chainBoundBy = null;
     this.airChaseT = 0; this.airChaseMoveT = 0; this.airRecoverUsed = false;
-    this.airSliceUsed = false; this.kiraAirKicks = 0; this.kiraAirBuffered = false; this.airSliceQueued = false;
+    this.airSliceUsed = false; this.kiraAirKicks = 0; this.kiraAirBuffered = false; this.nyxAirStrikes = 0; this.nyxAirBuffered = false; this.airSliceQueued = false;
     this.nesaAirHolding = false; this.nesaAirChargeT = 0; this.nesaSpinYaw = 0;
     this.nesaCCharges = 3; this.nesaCRechargeT = 0; this.nesaCArmed = true;
     this.model.nesaSpinHorizontal = 0;
@@ -1642,7 +1706,7 @@ export class Fighter implements Entity {
     if (this.chainBoundBy) this.chainBoundBy.releaseChainBind();
     this.chainBoundBy = null;
     this.airChaseT = 0; this.airChaseMoveT = 0;
-    this.airSliceUsed = false; this.kiraAirKicks = 0; this.kiraAirBuffered = false; this.airSliceQueued = false;
+    this.airSliceUsed = false; this.kiraAirKicks = 0; this.kiraAirBuffered = false; this.nyxAirStrikes = 0; this.nyxAirBuffered = false; this.airSliceQueued = false;
     this.nesaAirHolding = false; this.nesaAirChargeT = 0; this.nesaSpinYaw = 0;
     this.nesaCCharges = 3; this.nesaCRechargeT = 0; this.nesaCArmed = true;
     this.model.nesaSpinHorizontal = 0;
@@ -1782,7 +1846,7 @@ export class Fighter implements Entity {
         pos.y = p.y;
         this.velY = 0;
         this.onGround = true;
-        this.airSliceUsed = false; this.kiraAirKicks = 0; this.kiraAirBuffered = false;
+        this.airSliceUsed = false; this.kiraAirKicks = 0; this.kiraAirBuffered = false; this.nyxAirStrikes = 0; this.nyxAirBuffered = false;
         this.airSliceQueued = false;
         this.ground = p;
         this.airJumps = 1;
@@ -1861,7 +1925,25 @@ export class Fighter implements Entity {
           else { p = a.pose_s; sp = 12; }
           break;
         }
+        // NYX_SHADOW_COMBAT_AIR_2_V1: fast dagger contact, compact recover, no wide robotic arms.
+        if (this.kit === "assassin" && a) {
+          if (this.atkPhase === 0) { p = a.pose_w; sp = 29; }
+          else if (this.atkPhase === 1) { p = a.pose_s; sp = 76; }
+          else if (this.stateT < a.wind + a.active + a.recover * 0.63) { p = a.pose_s; sp = 23; }
+          else { p = "idle"; sp = 19; }
+          break;
+        }
         if (this.poseOverride) { p = this.poseOverride; sp = 40; break; }
+        // ASTER_KNIGHT_COMBAT_ANIM_V2: visual anticipation, explosive contact, shield-first reset.
+        // No changes to attackStep(), active windows, lunge, collision or damage.
+        if (this.kit === "knight" && this.look.element === "light" && a) {
+          if (this.atkPhase === 0) { p = a.pose_w; sp = 19; }
+          else if (this.atkPhase === 1) { p = a.pose_s; sp = 76; }
+          else if (this.stateT < a.wind + a.active + a.recover * 0.46) {
+            p = a.pose_s; sp = 27;
+          } else { p = "aster_reset"; sp = 18; }
+          break;
+        }
         if (a?.mode === "leap" || a?.mode === "dive") {
           if (this.atkPhase === 0) { p = a.pose_w; sp = 16; }
           else if (this.atkPhase === 1) { p = "slam_air"; sp = 14; }
@@ -1948,14 +2030,17 @@ export class Fighter implements Entity {
       case S.WIN: p = "win"; sp = 6; break;
     }
     // Directional air swings use real distinct poses, including for remote VRM models.
-    if (!this.stage && this.state === S.ATTACK && (this.atkId === "air_l1" || (this.kit === "kicks" && /^air_l[2-3]$/.test(this.atkId)))) {
+    if (!this.stage && this.state === S.ATTACK && (this.atkId === "air_l1" || (this.kit === "kicks" && /^air_l[2-3]$/.test(this.atkId)) ||
+        (this.kit === "assassin" && this.atkId === "air_l2"))) {
       const direction = this.airSliceAngle < -0.28 ? "down" :
         this.airSliceAngle > 0.28 ? "up" : "level";
       if (this.kit === "kicks") {
         const number = Math.max(1, Math.min(3, Number(this.atkId.slice(-1)) || 1));
         p = `kira_air_${number}_${direction}_${this.atkPhase === 0 ? "w" : "s"}`;
+      } else if (this.kit === "assassin") {
+        p = `nyx_air_${this.atkId === "air_l2" ? 2 : 1}_${direction}_${this.atkPhase === 0 ? "w" : "s"}`;
       } else p = `air_slice_${direction}_${this.atkPhase === 0 ? "w" : "s"}`;
-      sp = this.atkPhase === 0 ? 24 : 56;
+      sp = this.atkPhase === 0 ? (this.kit === "assassin" ? 34 : 24) : (this.kit === "assassin" ? 74 : 56);
     }
     this.poseName = p;
     this.poseSpeed = sp;
@@ -2043,7 +2128,7 @@ export class Fighter implements Entity {
     this.model.glaivePose = this.kit === "glaive" ? (this.state === S.WIN ? "show_baton" : this.poseName) : "idle";
     this.model.blend(this.state === S.WIN
       ? presentationPose(this.look.name, this.stateT, this.poses.idle, "victory")
-      : (this.poses[this.poseName] ?? this.poses.idle), dt, this.poseSpeed);
+      : (this.poses[this.poseName] ?? this.poses.idle), dt, this.poseSpeed, this.poseName);
     if (this.state === S.WAKEUP) {
       const t = THREE.MathUtils.clamp(this.stateT / this.wakeupDuration, 0, 1);
       this.model.rotation.x = -1.45 * (1 - t * t * (3 - 2 * t));
