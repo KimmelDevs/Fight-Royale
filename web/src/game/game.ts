@@ -1,3 +1,4 @@
+// ZAREK_ARC_FLASH_CPU_SPECTATOR_COOLDOWNS_20261107_V1
 // ASTER_WEAKEN_50S_5_STACKS_V1_20261107
 // FOURTH_SKILL_V_MASTER_AI_TWO_ROW_ROSTER_20261107_V1
 // MARINA_RAVEN_ZAREK_BOB_ABILITIES_20261107_V1
@@ -3847,6 +3848,51 @@ export class Game implements MobHost {
     const me = this.local ?? (this.cfg.spectator ? this.fighters[0] ?? null : null);
     const boss = this.mobs.find((m) => m.def.boss && !m.dead);
     const other = this.isDuel() ? this.fighters.find((f) => f !== me) : null;
+    // CPU VS CPU: read both fighters, not just the local HUD's fighter.
+    // Timers come from their authoritative live cooldowns, including Master AI's V.
+    const spectatorDetail = (f: Fighter | null, rival: Fighter | null) => {
+      if (!f) return null;
+      const slots = ["z", "x", "c", ...(f.bonusSkillUnlocked ? ["v"] : [])].map((key) => {
+        const a = !f.onGround && f.attacks[key + "_air"] ? f.attacks[key + "_air"] : f.attacks[key];
+        let cd = Math.max(0, f.cooldowns[key] ?? 0);
+        let max = Math.max(0.01, f.attacks[key].cd * f.cdMult);
+        if (f.kit === "hammer" && a.style === "nesa_heart_slam") {
+          cd = f.nesaCCharges > 0 ? 0 : f.nesaCRechargeT;
+          max = Math.max(0.01, 7.5 * f.cdMult);
+        }
+        if (f.kit === "chainblade" && f.chainBindT > 0) {
+          if (key === "z" || key === "x") cd = 0;
+          else cd = Math.max(cd, f.chainBindT);
+        }
+        if (f.bloodFestivalT > 0) cd = Math.max(cd, f.bloodFestivalT);
+        return { key, icon: a.id, cd, max };
+      });
+      const passives: Array<{ label: string; value: string }> = [];
+      if (f.look.name === "Zarek") {
+        passives.push({ label: "CLASH", value: `${f.clashMomentum} · ${Math.min(2, 1 + Math.min(5, f.clashMomentum) * 0.2).toFixed(1)}×` });
+      }
+      if (f.look.name === "Garrick") {
+        passives.push({ label: "RESOLVE", value: `${f.garrickResolve}/3` });
+      }
+      if (f.kit === "sickle") {
+        passives.push({ label: f.bloodFrenzyT > 0 ? "FRENZY" : "BLOODLUST",
+          value: f.bloodFrenzyT > 0 ? `${f.bloodFrenzyT.toFixed(1)}s` : `${Math.round(f.bloodlust)}/100` });
+        if (f.bloodFestivalT > 0) passives.push({ label: "FESTIVAL", value: `${f.bloodFestivalT.toFixed(1)}s` });
+      }
+      if (f.kit === "hammer") passives.push({ label: "HEARTS", value: `${f.nesaCCharges}/3` });
+      if (f.kit === "bomb") passives.push({ label: "MINES", value: `${f.bobMineCharges}/4` });
+      if (f.look.name === "Aster" && rival && rival.status.stacks("weaken") > 0)
+        passives.push({ label: "WEAKEN", value: `×${rival.status.stacks("weaken")}/5` });
+      if (f.kit === "chainblade" && f.chainBindT > 0)
+        passives.push({ label: "BIND", value: `${f.chainBindT.toFixed(1)}s` });
+      if (f.perfectDodgeCounterT > 0)
+        passives.push({ label: "RIPOSTE", value: `${f.perfectDodgeCounterT.toFixed(1)}s` });
+      if (f.nyxShadowBoostT > 0)
+        passives.push({ label: "SHADOW", value: `${f.nyxShadowBoostT.toFixed(1)}s` });
+      if (f.rageT > 0) passives.push({ label: "DMG BUFF", value: `${f.rageT.toFixed(1)}s` });
+      if (f.judgmentT > 0) passives.push({ label: "BUFF", value: `${f.judgmentT.toFixed(1)}s` });
+      return { slots, passives, kit: f.kit, element: f.look.element, glow: f.look.glow };
+    };
     const info = (f: Fighter) => ({ id: CHARACTERS[f.charIndex].id, name: f.look.name + (isCpu(f.owner) && f.owner !== "cpu" ? " (CPU)" : ""), hp: f.hp, maxHp: f.maxHp, guard: f.guard, maxGuard: f.maxGuard, down: f.isDown(), glow: f.look.glow,
       pct: f.pct, stocks: f.stocks, out: f.out, team: f.team, status: f.status.kinds(), bloodlust: f.bloodlust, bloodFrenzyT: f.bloodFrenzyT, bloodFestivalT: f.bloodFestivalT, clashMomentum: f.clashMomentum, chainBindT: f.chainBindT,
       chainBindKind: f.chainBindKind }); // KAIZEN_PREDATOR_HOOK_V9
@@ -3860,6 +3906,8 @@ export class Game implements MobHost {
       all: this.plat ? this.fighters.map((f) => ({ ...info(f), me: f === me, cpu: isCpu(f.owner) })) : [],
       me: me ? info(me) : null,
       other: other ? { ...info(other), tag: isCpu(other.owner) ? `CPU - ${LEVELS[this.cfg.difficulty ?? 1]}` : "" } : null,
+      spectatorSkills: this.cfg.spectator && !this.plat
+        ? { left: spectatorDetail(me, other), right: spectatorDetail(other, me) } : null,
       team: !this.isDuel() ? this.fighters.filter((f) => f !== me && f.team === me?.team).map(info) : [],
       foes: this.cfg.mode === "team" ? this.fighters.filter((f) => f.team !== me?.team).map(info) : [],
       atkLock: me && me.attacks.l1.type !== "melee" ? { t: me.atkLock, max: RANGED_COMBO_REST[me.kit] ?? 1.2 } : null,

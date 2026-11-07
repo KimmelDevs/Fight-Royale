@@ -1,3 +1,4 @@
+/* ZAREK_ARC_FLASH_CPU_SPECTATOR_COOLDOWNS_20261107_V1 */
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; overflow: hidden; background: #cfe6ff; font-family: "Segoe UI", system-ui, -apple-system, sans-serif; color: #fff; }
 button { font: inherit; cursor: pointer; }
@@ -341,4 +342,56 @@ input:focus { border-color: #e6c26e; }
 @media (max-width: 430px) {
   .cards { grid-template-columns: repeat(3, minmax(0,1fr)); }
   .actions .row { gap: 4px; }
+}
+
+
+/* CPU vs CPU observer HUD: compact independent left/right timers with real passive counters. */
+.cpu-spectator-column {
+  position: absolute;
+  top: 124px;
+  width: clamp(136px, 15vw, 188px);
+  padding: 9px 10px;
+  border: 1px solid rgba(173, 212, 255, .43);
+  border-radius: 11px;
+  background: rgba(8, 18, 40, .77);
+  backdrop-filter: blur(5px);
+  color: #f8faff;
+  z-index: 4;
+  text-align: left;
+  text-shadow: 0 1px 2px #000;
+  font-variant-numeric: tabular-nums;
+}
+.cpu-spectator-column.left { left: 24px; border-left: 3px solid #75bcff; }
+.cpu-spectator-column.right { right: 24px; border-right: 3px solid #ff9c98; }
+.cpu-spectator-heading {
+  font-weight: 850;
+  font-size: 10px;
+  color: #dce9ff;
+  letter-spacing: .065em;
+  margin-bottom: 7px;
+}
+.cpu-spectator-heading.passive {
+  margin: 8px 0 4px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(230, 239, 255, .23);
+}
+.cpu-spectator-slots { display: flex; flex-direction: column; gap: 4px; }
+.cpu-spectator-skill { display: grid; grid-template-columns: 25px 16px 1fr; gap: 5px; align-items: center; font-size: 12px; }
+.cpu-spectator-skill > b { font-size: 11px; color: #d8e1fd; }
+.cpu-spectator-skill > strong { justify-self: end; font-size: 12px; }
+.cpu-spectator-skill .ready { color: #aaf0ac; }
+.cpu-spectator-skill .waiting { color: #ffe28e; }
+.cpu-spectator-passive { display: flex; gap: 6px; justify-content: space-between; align-items: baseline; font-size: 10px; padding: 2px 0; }
+.cpu-spectator-passive > span { color: #aec4e7; }
+.cpu-spectator-passive > b { color: #fff1be; font-size: 11px; white-space: nowrap; }
+.cpu-spectator-empty { font-size: 10px; color: #b8c6da; }
+@media (max-width: 650px) {
+  .cpu-spectator-column { top: 116px; width: 115px; padding: 6px 5px; }
+  .cpu-spectator-column.left { left: 6px; }
+  .cpu-spectator-column.right { right: 6px; }
+  .cpu-spectator-heading { font-size: 8px; }
+  .cpu-spectator-skill { grid-template-columns: 22px 12px 1fr; gap: 3px; font-size: 10px; }
+  .cpu-spectator-skill > b, .cpu-spectator-skill > strong { font-size: 10px; }
+  .cpu-spectator-passive { font-size: 9px; }
+  .cpu-spectator-passive > b { font-size: 9px; }
 }

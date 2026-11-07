@@ -1,3 +1,4 @@
+// ZAREK_ARC_FLASH_CPU_SPECTATOR_COOLDOWNS_20261107_V1
 // FOURTH_SKILL_V_MASTER_AI_TWO_ROW_ROSTER_20261107_V1
 // MARINA_RAVEN_ZAREK_BOB_ABILITIES_20261107_V1
 // FIGHT_ROYALE_BULLET_SWORDPLAY_GARRICK_RESOLVE_V1
@@ -2235,7 +2236,7 @@ private personalizedSkill(f: Fighter, o: Fighter, distance: number): string | nu
         if (name === "Crimson Execution") points += distance > 2.3 ? 1.45 : 0.2;
         break;
       case "zarek":
-        if (name === "Thunderclap Flash") points += distance > 2.4 && distance < 9.5 ? 2.6 : -0.9;
+        if (name === "Arc Flash") points += distance > 2.4 && distance < 9.5 ? 2.6 : -0.9;
         if (name === "Serpent Wheel") points += blocking || close ? 1.7 : 0;
         if (name === "Phantom Spiral") points += punish ? 2.5 : 0.5;
         if (name === "Infinite Crescent") points += punish || f.clashMomentum >= 3 ? 2.6 : 0.25;

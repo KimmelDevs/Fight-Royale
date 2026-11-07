@@ -1,3 +1,4 @@
+// ZAREK_ARC_FLASH_CPU_SPECTATOR_COOLDOWNS_20261107_V1
 // FOURTH_SKILL_V_MASTER_AI_TWO_ROW_ROSTER_20261107_V1
 // FIGHT_ROYALE_VICTORY_HIGHLIGHTS_V1
 "use client";
@@ -43,6 +44,35 @@ function Bar({ v, color, right }: { v: number; color: string; right?: boolean })
     <div className="bar">
       <div style={{ width: `${Math.max(0, Math.min(1, v)) * 100}%`, background: color, marginLeft: right ? "auto" : 0 }} />
     </div>
+  );
+}
+
+/** CPU-only compact column: skill icons, keys and countdowns, never skill names. */
+function CpuSpectatorSkills({ data, side }: {
+  data: NonNullable<NonNullable<Hud["spectatorSkills"]>["left"]>;
+  side: "left" | "right";
+}) {
+  return (
+    <section className={`cpu-spectator-column ${side}`} aria-label={`${side === "left" ? "CPU 1" : "CPU 2"} cooldowns and passives`}>
+      <div className="cpu-spectator-heading">SKILL COOLDOWNS</div>
+      <div className="cpu-spectator-slots">
+        {data.slots.map((slot) => (
+          <div className="cpu-spectator-skill" key={slot.key}>
+            <Icon src={skillIcon(data.kit, data.element, slot.icon)} alt={`${slot.key.toUpperCase()} icon`} size={25} />
+            <b>{slot.key.toUpperCase()}</b>
+            <strong className={slot.cd <= 0.05 ? "ready" : "waiting"}>
+              {slot.cd <= 0.05 ? "0.0s" : `${slot.cd.toFixed(1)}s`}
+            </strong>
+          </div>
+        ))}
+      </div>
+      <div className="cpu-spectator-heading passive">PASSIVE</div>
+      {data.passives.length ? data.passives.map((p, idx) => (
+        <div className="cpu-spectator-passive" key={`${p.label}-${idx}`}>
+          <span>{p.label}</span><b>{p.value}</b>
+        </div>
+      )) : <div className="cpu-spectator-empty">No active stacks</div>}
+    </section>
   );
 }
 
@@ -222,6 +252,12 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
               <div className="guard"><Bar v={other.guard / other.maxGuard} color="#f2c94c" right /></div>
               <StatusChips list={other.status} right />
             </div>
+          )}
+          {cfg.spectator && !hud.plat && hud.spectatorSkills?.left && (
+            <CpuSpectatorSkills data={hud.spectatorSkills.left} side="left" />
+          )}
+          {cfg.spectator && !hud.plat && hud.spectatorSkills?.right && (
+            <CpuSpectatorSkills data={hud.spectatorSkills.right} side="right" />
           )}
           {hud.mode === "team" && (
             <div className="team foes">

@@ -1,3 +1,4 @@
+// ZAREK_ARC_FLASH_CPU_SPECTATOR_COOLDOWNS_20261107_V1
 // ASTER_WEAKEN_50S_5_STACKS_V1_20261107
 // MARINA_RAVEN_ZAREK_BOB_ABILITIES_20261107_V1
 // FIGHT_ROYALE_BULLET_SWORDPLAY_GARRICK_RESOLVE_V1
@@ -331,7 +332,7 @@ function bonusSkill(kit: string, element: string): Attack {
     case "bow":
       return a({ name: "Piercing Volley", desc: "Five arrows that fly through every enemy in line.", cd: 9, type: "projectile", wind: 0.2, recover: 0.4, dmg: 55, guard: 14, knock: 2, stun: 0.3, speed: 32, count: 5, spread: 0.25, style: "arrow", pierce: true, pose_w: "bow_w", pose_s: "bow_s" });
     case "glaive":
-      return a({ name: "Thunderclap Flash", desc: "A lightning-fast straight-line glaive draw dash, inspired by an anime thunder swordsman. Travels during the active window and cuts at the end; can be blocked, parried or clashed.", cd: 12,
+      return a({ name: "Arc Flash", desc: "A lightning-fast straight-line glaive draw dash, inspired by an anime thunder swordsman. Travels during the active window and cuts at the end; can be blocked, parried or clashed.", cd: 12,
         type: "melee", wind: 0.13, active: 0.21, recover: 0.48, dmg: 190, guard: 49, reach: 2.35, lunge: 38,
         knock: 5.2, stun: 0.60, heavy: true, style: "glaive_thunderflash", pose_w: "glx_w", pose_s: "glx_turn" });
     case "sickle":
