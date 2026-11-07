@@ -1,3 +1,4 @@
+// AI_LOW_HEALTH_LAST_STAND_V2_20261108
 // AI_CHARACTER_FIGHTING_STYLES_V1_20261108
 // AI_LOW_HEALTH_SURVIVAL_V1_20261108
 // AI_ADVANCED_FOOTWORK_V1_20261108
@@ -761,6 +762,17 @@ export class AiBrain implements Brain {
   private advancedSamplePos = new THREE.Vector3();
 
   // LOW_HEALTH_SURVIVAL: decisions stay committed for brief, human-like windows.
+  // LAST_STAND_V2: track *observable HP changes*, never hidden opponent inputs.
+  private lastStandOpponent: Fighter | null = null;
+  private lastStandObservedAt = -1;
+  private lastStandSelfHp = 0;
+  private lastStandEnemyHp = 0;
+  private lastStandLastDamageAt = -1;
+  private lastStandUntil = -1;
+  private survivalPressureUntil = -1;
+  private survivalRetreatStartedAt = -1;
+  private survivalRetreatOrigin = new THREE.Vector3();
+
   private survivalEnemy: Fighter | null = null;
   private survivalMode: "none" | "retreat" | "recover" | "heal" = "none";
   private survivalObserveAt = -1;
@@ -1844,6 +1856,9 @@ export class AiBrain implements Brain {
     if (this.handleKaizenBindFollowup(f, dt)) return;
     this.iqObserve(f, o);
     this.observePatterns(f, o, dt);
+    // LAST_STAND_V2: run this before any early defensive returns so a real
+    // parry/dodge doesn't erase observation of prolonged inactivity.
+    this.observeLastStand(f, o);
     this.personalityRead(f, o); // sample tactics; does not send an input
     // Marked ground impacts outrank defensive guard plans and ordinary offense.
     if (this.evadeGroundStrikes(f)) return;
@@ -1948,7 +1963,10 @@ export class AiBrain implements Brain {
     // AI_ADVANCED_FOOTWORK: positioning refinement only after combat decisions.
     // Fire avoidance stays last so later pattern IQ never steers into fire.
     if (!f.stage) {
-      if (!survivalActed) this.advancedFootwork(f, o, dt);
+      if (!survivalActed) {
+        this.advancedFootwork(f, o, dt);
+        this.lastStandFootwork(f, o);
+      }
       this.avoidFireGround(f);
     }
     // Sprint to close long gaps. A direction aimed at retreat/evade is not sprinted.
@@ -3274,6 +3292,94 @@ export class AiBrain implements Brain {
     this.advancedLastDir.copy(best);
   }
 
+  /** Track elapsed time without damage even when an urgent dodge/parry has
+   *  returned early. Last Stand is based only on visible HP and positions.
+   *  A new opponent or restarted round resets every observation.
+   */
+  private observeLastStand(f: Fighter, o: Fighter) {
+    const now = this.threats.now();
+    const freshRound = this.lastStandOpponent !== o ||
+      now < this.lastStandObservedAt - 0.15 ||
+      (f.hp >= f.maxHp * 0.98 && this.lastStandSelfHp < f.maxHp * 0.40 &&
+        f.hp - this.lastStandSelfHp > f.maxHp * 0.50) ||
+      (o.hp >= o.maxHp * 0.98 && this.lastStandEnemyHp < o.maxHp * 0.40 &&
+        o.hp - this.lastStandEnemyHp > o.maxHp * 0.50);
+    if (freshRound) {
+      this.lastStandOpponent = o;
+      this.lastStandLastDamageAt = now;
+      this.lastStandUntil = -1;
+      this.survivalPressureUntil = -1;
+      this.survivalRetreatStartedAt = -1;
+      this.survivalMode = "none";
+    } else if (f.hp < this.lastStandSelfHp - 0.05 ||
+               o.hp < this.lastStandEnemyHp - 0.05) {
+      this.lastStandLastDamageAt = now;
+    }
+    this.lastStandSelfHp = f.hp;
+    this.lastStandEnemyHp = o.hp;
+    this.lastStandObservedAt = now;
+    if (f.stage || f.isDown() || o.isDown()) return;
+
+    const bothLow = f.hp / Math.max(1, f.maxHp) < 0.30 &&
+      o.hp / Math.max(1, o.maxHp) < 0.30;
+    if (!bothLow || now < this.lastStandUntil) return;
+    // Lower difficulties take longer to realize the fight has stalled.
+    const delay = [6.0, 5.2, 4.5, 4.0][this.iqLevel] ?? 4.0;
+    const quiet = now - this.lastStandLastDamageAt;
+    if (quiet < delay) return;
+    const gap = f.root.position.clone().setY(0).distanceTo(
+      o.root.position.clone().setY(0));
+    const desired = this.effectiveRangeBand(f, o).far;
+    const nearEdge = f.root.position.clone().setY(0).length() > f.arenaRadius - f.radius - 1.5 ||
+      o.root.position.clone().setY(0).length() > o.arenaRadius - o.radius - 1.5;
+    // Also break a face-to-face defensive standoff after another 2.5 seconds.
+    if (gap > Math.max(3.0, desired + 1.25) || nearEdge || quiet > delay + 2.5) {
+      this.lastStandUntil = now + 5.5; // committed 5+ seconds, never frame toggling
+      this.survivalRetreatStartedAt = -1;
+    }
+  }
+
+  /** During pressure or Last Stand, advance only when outside effective range.
+   * Keep regular attacks, parries, blocks, real cooldowns and fire avoidance.
+   * This runs AFTER regular footwork, BEFORE the final fire safety veto.
+   */
+  private lastStandFootwork(f: Fighter, o: Fighter) {
+    if (this.survivalMode !== "lastStand" && this.survivalMode !== "pressure") return;
+    if (f.stage || !f.onGround || f.state !== S.IDLE || f.intent.block ||
+        f.intent.jump || f.intent.skill || f.intent.dash.lengthSq() > 0.001 ||
+        this.blockHold > 0 || this.projectileSwordCommit > 0) return;
+    const from = f.root.position.clone().setY(0);
+    const enemy = o.root.position.clone().setY(0);
+    const toward = enemy.sub(from);
+    const gap = toward.length();
+    if (gap < 0.001) return;
+    toward.divideScalar(gap);
+    const band = this.effectiveRangeBand(f, o);
+    const cap = f.arenaRadius - f.radius - 0.28;
+    const edge = from.length() > cap - 0.8;
+    // For ranged fighters, close to casting distance, not melee face-hugging.
+    if (gap <= band.ideal + 0.75 && !edge) return;
+    let dir = toward.clone();
+    if (edge) {
+      const inward = from.clone().negate().normalize();
+      // Prevent the old retreat/orbit planner from continuing to press the wall.
+      if (dir.dot(inward) < 0.15) dir.addScaledVector(inward, 0.70).normalize();
+    }
+    const projected = from.clone().addScaledVector(dir, Math.min(1.35, f.moveSpeed * 0.30));
+    if (projected.length() > cap && projected.length() >= from.length()) return;
+    for (const patch of this.threats.firePatches(f)) {
+      if (Math.abs(patch.pos.y - f.root.position.y) > 1.6) continue;
+      const radius = patch.radius + f.radius * 0.35 + 0.25;
+      const here = Math.hypot(from.x - patch.pos.x, from.z - patch.pos.z);
+      const next = Math.hypot(projected.x - patch.pos.x, projected.z - patch.pos.z);
+      if (next < radius && next < here + 0.08) return;
+    }
+    // Don't force the fighter into the active range of an incoming melee hit.
+    if (o.state === S.ATTACK && o.atk?.type === "melee" &&
+        gap < o.atk.reach + 0.55) return;
+    f.intent.move.copy(dir);
+  }
+
   /** Low-health survival is a *choice of normal inputs*, not a defensive buff.
    * The AI sees its own HP/guard, visible enemy recovery and real friendly
    * healing circles. Reactive block/dodge/parry, grabs and committed attacks
@@ -3289,6 +3395,24 @@ export class AiBrain implements Brain {
       this.survivalUntil = -1;
       this.survivalHealConsumed = false;
       this.survivalDashConsidered = false;
+    }
+    // LAST_STAND_V2: a mutual low-HP standoff beats voluntary retreat, but
+    // reactive defense and legal offense still run in their existing order.
+    if (this.lastStandUntil > now &&
+        f.hp / Math.max(1, f.maxHp) < 0.35 &&
+        o.hp / Math.max(1, o.maxHp) < 0.35) {
+      this.survivalMode = "lastStand";
+      return false;
+    }
+    // After a capped retreat, force several seconds of regular combat logic.
+    if (this.survivalPressureUntil > now) {
+      this.survivalMode = "pressure";
+      return false;
+    }
+    if (this.survivalPressureUntil > 0 && now >= this.survivalPressureUntil) {
+      this.survivalPressureUntil = -1;
+      this.survivalRetreatStartedAt = -1;
+      this.survivalMode = "none";
     }
     if (f.stage || f.isDown() || o.isDown() || !f.onGround ||
         f.state !== S.IDLE || f.intent.block || f.intent.skill ||
@@ -3355,6 +3479,27 @@ export class AiBrain implements Brain {
         : "none";
     }
     if (this.survivalMode === "none") return false;
+
+    // LAST_STAND_V2: survival is tactical, not an endless retreat loop.
+    // Retreatment may last at most 2 seconds, travel at most 5 meters, and
+    // cannot continue outward at the edge of the arena.
+    if (this.survivalMode === "retreat" || this.survivalMode === "recover") {
+      if (this.survivalRetreatStartedAt < 0) {
+        this.survivalRetreatStartedAt = now;
+        this.survivalRetreatOrigin.copy(from);
+      }
+      const elapsed = now - this.survivalRetreatStartedAt;
+      const moved = from.distanceTo(this.survivalRetreatOrigin);
+      const boundary = f.arenaRadius - f.radius - 1.0;
+      const nearWall = from.length() >= boundary;
+      const maxSeconds = this.survivalMode === "recover" ? 1.4 : 2.0;
+      if (elapsed >= maxSeconds || moved >= 5.0 || nearWall) {
+        this.survivalMode = "pressure";
+        this.survivalPressureUntil = now + (this.iqLevel >= 2 ? 3.4 : 2.7);
+        this.survivalUntil = -1;
+        return false; // let whiff punish, combo and normal offense run
+      }
+    }
 
     if (this.survivalMode === "heal" && wounded) {
       // Only attempt a legitimately equipped and ready healing skill. Guests
