@@ -1,3 +1,4 @@
+// AI_ENEMY_COOLDOWN_MEMORY_V1_20261107
 // KAIZEN_V_SERPENT_DIRECTION_AI_20261107_V1
 // BALANCE_KIRA_KAEDE_PATTERN_AI_AIR_ICON_20261107_V1
 // COMBAT_IQ_HITCONFIRM_WHIFF_BAIT_V1_20261107
@@ -56,6 +57,21 @@ export interface Threats {
 
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
 const RANGED = new Set(["mage", "bow", "bomb"]);
+
+// Enemy cooldowns are *estimated* from witnessed casts, never read from
+// opponent.cooldowns. Variance and recognition delay prevent psychic CPU plays.
+const ENEMY_CD_IQ = [
+  { observe: 0.00, error: 0.00, react: [0.0, 0.0] }, // Easy: no tracking
+  { observe: 0.70, error: 0.30, react: [0.40, 0.73] }, // Normal: big skills only
+  { observe: 0.86, error: 0.17, react: [0.24, 0.42] }, // Hard: most threatening skills
+  { observe: 0.96, error: 0.09, react: [0.12, 0.24] }, // Master: all cast skills
+] as const;
+
+type EnemyCooldownMemory = {
+  slot: string; castAt: number; observedAt: number;
+  predictedReadyAt: number; nominalCd: number; threat: number;
+};
+
 
 // COMBAT_IQ: Easy seldom recognizes openings, Master is perceptive, not psychic.
 // All reads are visible fighter state (active swings, HP/guard changes, recovery).
@@ -269,6 +285,11 @@ export class AiBrain implements Brain {
     return true;
   }
 
+  // AI_ENEMY_COOLDOWN_MEMORY_V1: only skills this brain observed are tracked.
+  private cdEnemy: Fighter | null = null;
+  private cdEnemySwing = -1;
+  private cdEnemyMemory = new Map<string, EnemyCooldownMemory>();
+
   private iqLevel = 1;
   private iqEnemySerial = -1;
   private iqEnemySawActive = false;
@@ -298,6 +319,80 @@ export class AiBrain implements Brain {
    * clean whiff we must have seen the enemy OUT of range/arc for its full active
    * animation, not just seen an attack go into recovery.
    */
+  /** Record a publicly visible Z/X/C/V cast one time per swing. Never inspect
+   * the opponent's private cooldown state, upcoming input, or skill queue.
+   * Air variants share their normal button's cooldown.
+   */
+  private observeEnemyCooldown(o: Fighter) {
+    if (o !== this.cdEnemy) {
+      this.cdEnemy = o;
+      this.cdEnemySwing = -1;
+      this.cdEnemyMemory.clear();
+    }
+    if (this.iqLevel === 0 || o.state !== S.ATTACK || !o.atk ||
+        o.swingSerial === this.cdEnemySwing) return;
+    this.cdEnemySwing = o.swingSerial;
+    const match = /^(z|x|c|v)(?:_air)?$/.exec(o.atkId);
+    if (!match) return; // Basics, parry counters and special recasts are not skills.
+    const slot = match[1];
+    const attack = o.attacks[slot] ?? o.atk;
+    const cd = attack.cd;
+    // Barrel detonation and other recasts do not behave like ordinary cooldowns.
+    if (!Number.isFinite(cd) || cd < 1 || attack.type === "barrel") return;
+    const major = slot === "v" || cd >= 15 ||
+      (attack.dmg >= 155 && cd >= 11) ||
+      (attack.repeat >= 3 && cd >= 11);
+    if (this.iqLevel === 1 && !major) return;
+    if (this.iqLevel === 2 && !major && cd < 8) return;
+    const profile = ENEMY_CD_IQ[this.iqLevel];
+    if (Math.random() > profile.observe) return; // A missed observation stays missed.
+    const now = this.threats.now();
+    // Nominal kit CD is visible game knowledge, but perks/charges and temporary
+    // modifiers can make the estimate wrong. No o.cooldowns or o.cdMult reads.
+    const predicted = cd * (1 + rand(-profile.error, profile.error));
+    const power = attack.dmg * Math.min(2.4, Math.sqrt(Math.max(1, attack.repeat)));
+    const threat = THREE.MathUtils.clamp(
+      0.34 + cd / 46 + power / 630 + (slot === "v" ? 0.18 : 0) +
+      (attack.type === "buff" && ["counter", "ward", "static_field", "blood_festival"].includes(attack.mode) ? 0.2 : 0),
+      0.28, 1.00);
+    this.cdEnemyMemory.set(slot, {
+      slot, castAt: now,
+      observedAt: now + rand(profile.react[0], profile.react[1]),
+      predictedReadyAt: now + predicted,
+      nominalCd: cd, threat,
+    });
+  }
+
+  /** Estimate an offensive window after a visible cast. As the predicted
+   * cooldown nears zero, become a little more cautious. Unknown slots remain
+   * unknown; a timer that has probably expired never grants free safety.
+   */
+  private enemyCooldownRead(o: Fighter): { pressure: number; caution: number } {
+    if (this.iqLevel === 0 || this.cdEnemy !== o) return { pressure: 0, caution: 0 };
+    const now = this.threats.now();
+    let pressure = 0, caution = 0;
+    for (const [key, memory] of this.cdEnemyMemory) {
+      const left = memory.predictedReadyAt - now;
+      if (left < -2.0) {
+        this.cdEnemyMemory.delete(key); // forget stale estimates
+        continue;
+      }
+      if (now < memory.observedAt) continue;
+      // A cast may still be active; memory never tells us to run into it.
+      if (left > Math.max(2.1, memory.nominalCd * 0.18)) {
+        const confidence = THREE.MathUtils.clamp(
+          (left - 1.5) / Math.max(3, memory.nominalCd * 0.28), 0, 1);
+        pressure = Math.max(pressure, memory.threat * confidence);
+      } else if (left >= -1.4) {
+        const soon = 1 - Math.min(1, Math.abs(left - 0.30) / 2.4);
+        caution = Math.max(caution, memory.threat * Math.max(0.22, soon));
+      }
+    }
+    // Positioning/offense modifiers are deliberately modest, even on Master.
+    const intelligence = [0, 0.45, 0.74, 1.0][this.iqLevel];
+    return { pressure: pressure * intelligence, caution: caution * intelligence };
+  }
+
   private iqObserve(f: Fighter, o: Fighter) {
     const now = this.threats.now();
     if (o.state === S.ATTACK && o.atk && o.swingSerial !== this.iqEnemySerial) {
@@ -1534,6 +1629,7 @@ export class AiBrain implements Brain {
         f.atk?.style === "chain_razor_cyclone") f.intent.skillHeld = "z";
     const o = f.opponent as Fighter | null;
     if (!o || o.isDown()) return;
+    this.observeEnemyCooldown(o);
     // An active grab locks both fighters. Commit to Z/X before other tactics.
     if (this.handleKaizenBindFollowup(f, dt)) return;
     this.iqObserve(f, o);
@@ -2571,6 +2667,13 @@ private tacticalFootwork(f: Fighter, o: Fighter, dt: number) {
     o.atk?.type === "melee" && distance < o.atk.reach + 0.7;
   if (danger) { this.tacticsT = 0; return; }
   const band = this.effectiveRangeBand(f, o);
+  const cdIntel = this.enemyCooldownRead(o);
+  // Follow a known opening modestly; keep ranged kits at ranged distance.
+  const shift = THREE.MathUtils.clamp(cdIntel.pressure * (RANGED.has(f.kit) ? 0.26 : 0.48) -
+    cdIntel.caution * (RANGED.has(f.kit) ? 0.28 : 0.43), -0.43, 0.48);
+  band.ideal = Math.max(1.05, band.ideal - shift);
+  band.near = Math.max(0.88, band.near - shift);
+  band.far = Math.max(band.near + 0.24, band.far - shift);
   // A threatened block can be baited, but not endlessly or beyond the arena edge.
   if (this.tacticsT <= 0 && this.tacticsCd <= 0 &&
       distance < band.far + 0.4 && !punish &&
@@ -2803,25 +2906,34 @@ private offense(f: Fighter, o: Fighter, dt: number) {
       ? 1.7 : f.kit === "greatsword" ? 2.3 : f.kit === "glaive" ? 2.1 : 1.9;
   const punish = this.hasPunishWindow(o);
   const blocked = o.state === S.BLOCK;
+  const cdIntel = this.enemyCooldownRead(o);
   const danger = o.state === S.ATTACK && o.atkPhase === 0 &&
     o.atk?.type === "melee" && distance < o.atk.reach + 0.65;
-  this.skillCd -= dt;
+  this.skillCd -= dt * (1 + cdIntel.pressure * 0.38);
   if (this.skillCd <= 0) {
-    this.skillCd = rand(this.p.skill[0], this.p.skill[1]);
+    this.skillCd = rand(this.p.skill[0], this.p.skill[1]) *
+      (1 - cdIntel.pressure * 0.22 + cdIntel.caution * 0.22);
     // Festival disables all Veyr skills until it expires; pressure with basics.
     const skill = this.personalizedSkill(f, o, distance);
     if (skill && (punish || Math.random() < 0.80) && this.trySkill(f, skill, true)) return;
   }
   if (distance > reach) return;
   if (danger && !punish && id !== "zarek" && id !== "aster" && Math.random() < 0.80) return;
-  this.thinkCd -= dt;
+  // Near predicted enemy skill return, favor movement/defense over a risky commit.
+  if (cdIntel.caution > 0.43 && !punish && o.state === S.IDLE &&
+      Math.random() < cdIntel.caution * dt * 0.90) return;
+  this.thinkCd -= dt * (1 + cdIntel.pressure * 0.30);
   if (this.thinkCd > 0) return;
   const fast = ["assassin", "knuckles", "kicks", "sickle", "glaive"].includes(f.kit);
   this.thinkCd = (fast ? rand(0.45, 0.96) : rand(0.7, 1.45)) * this.p.think;
   if (punish) this.thinkCd *= 0.45; // uses an observed recovery, not foreknowledge
-  const heavyChance = style ? Math.min(0.78, style.heavy +
+  if (!punish) this.thinkCd *= 1 + cdIntel.caution * 0.24;
+  let heavyChance = style ? Math.min(0.78, style.heavy +
       (punish ? 0.14 : 0) + (blocked ? 0.28 : 0))
     : o.state === S.STAGGER ? 0.5 : blocked ? 0.45 : 0.22;
+  // Exploit learned cooldown openings; do not swing into an active cast.
+  if (o.state !== S.ATTACK) heavyChance = THREE.MathUtils.clamp(
+    heavyChance + cdIntel.pressure * 0.16 - cdIntel.caution * 0.16, 0.08, 0.80);
   // Veyr's festival specifically favors sustained lights and real guard pressure.
   const festival = id === "veyr" && f.bloodFestivalT > 0;
   if (!festival && Math.random() < heavyChance) {
