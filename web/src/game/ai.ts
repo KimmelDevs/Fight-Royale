@@ -1,3 +1,5 @@
+// KAIZEN_V_SERPENT_DIRECTION_AI_20261107_V1
+// BALANCE_KIRA_KAEDE_PATTERN_AI_AIR_ICON_20261107_V1
 // COMBAT_IQ_HITCONFIRM_WHIFF_BAIT_V1_20261107
 // AI_EFFECTIVE_RANGE_KAIZEN_AIR_HOOK_20261107_V1
 // ZAREK_ARC_FLASH_CPU_SPECTATOR_COOLDOWNS_20261107_V1
@@ -118,6 +120,9 @@ export class AiBrain implements Brain {
   private staticFieldChoices = new Map<number, { reactAt: number; evade: boolean }>();
   // KAIZEN_PREDATOR_HOOK_V9: use the second X press instead of waiting for WASD.
   private chainDecisionT = 0;
+  // Cache one direction per V bind: don't reroll an animation choice every frame.
+  private chainVFollowup: "z" | "x" | "" = "";
+  private chainVAlternate = false;
   // EMBER_GROUND_HAZARD_AI_V1_NOV06: bias the detour to one side until clear.
   private fireAvoidSide = 1;
   private fireAvoidKey = "";
@@ -159,6 +164,111 @@ export class AiBrain implements Brain {
   // EFFECTIVE_RANGE_AWARENESS: choices use the fighter's REAL reach and ready skills.
   // Do not grant AI extra attack range: this only steers its regular movement.
   // COMBAT IQ — situational reads, never direct damage, cooldown edits or teleports.
+  // PATTERN_AI_V1: observable habits within a short window. Never reads hidden inputs.
+  private patternEnemyId = -1;
+  private patternSawSwing = -1;
+  private patternWasBlocking = false;
+  private patternProjectiles: number[] = [];
+  private patternMelee: number[] = [];
+  private patternGuard: number[] = [];
+  private patternDecisionCd = 2.0;
+  private patternReadAt = -1;
+  private patternPending: "none" | "ranged" | "melee" | "guard" = "none";
+  private patternMode: "none" | "ranged" | "melee" | "guard" = "none";
+  private patternModeT = 0;
+  private patternOrbitSign = Math.random() < 0.5 ? -1 : 1;
+
+  /** Learning only from observed swing animations and shield raises; no enemy cooldown reads. */
+  private observePatterns(f: Fighter, o: Fighter, dt: number) {
+    const now = this.threats.now();
+    if (this.patternEnemyId !== o.id) {
+      this.patternEnemyId = o.id;
+      this.patternSawSwing = -1;
+      this.patternWasBlocking = false;
+      this.patternProjectiles = []; this.patternMelee = []; this.patternGuard = [];
+      this.patternMode = "none"; this.patternPending = "none";
+      this.patternModeT = 0; this.patternDecisionCd = 2.0;
+    }
+    const window = 10.0;
+    this.patternProjectiles = this.patternProjectiles.filter(t => now - t <= window);
+    this.patternMelee = this.patternMelee.filter(t => now - t <= window);
+    this.patternGuard = this.patternGuard.filter(t => now - t <= window);
+    if (o.state === S.ATTACK && o.atk && o.swingSerial !== this.patternSawSwing) {
+      this.patternSawSwing = o.swingSerial;
+      const a = o.atk;
+      if (["projectile", "lob", "barrel"].includes(a.type))
+        this.patternProjectiles.push(now);
+      else if (a.type === "melee" || a.type === "phantom")
+        this.patternMelee.push(now);
+    }
+    const blocking = o.state === S.BLOCK;
+    if (blocking && !this.patternWasBlocking && o.stateT < 0.32)
+      this.patternGuard.push(now);
+    this.patternWasBlocking = blocking;
+    this.patternModeT = Math.max(0, this.patternModeT - dt);
+    this.patternDecisionCd = Math.max(0, this.patternDecisionCd - dt);
+    if (this.patternModeT <= 0) this.patternMode = "none";
+    const learn = [0, 0.35, 0.68, 0.87][this.iqLevel];
+    if (learn <= 0 || f.isDown() || o.isDown() || this.patternDecisionCd > 0) return;
+    if (this.patternPending !== "none") {
+      if (now < this.patternReadAt) return;
+      if (Math.random() < learn) {
+        this.patternMode = this.patternPending;
+        this.patternModeT = [0, 0.65, 1.1, 1.55][this.iqLevel];
+        this.patternOrbitSign = Math.random() < 0.5 ? -1 : 1;
+      }
+      this.patternPending = "none";
+      this.patternDecisionCd = [7.5, 6.0, 4.8, 3.7][this.iqLevel];
+      return;
+    }
+    // Require three distinct events in ten seconds; ties favor the more immediate threat.
+    const shots = this.patternProjectiles.length;
+    const melee = this.patternMelee.length;
+    const guard = this.patternGuard.length;
+    const most = Math.max(shots, melee, guard);
+    if (most < 3) return;
+    this.patternPending = shots === most ? "ranged" : melee === most ? "melee" : "guard";
+    this.patternReadAt = now + [1, 0.48, 0.26, 0.16][this.iqLevel];
+  }
+
+  /** Footwork adaptation; emergency dodges, hit-confirm, blocking, and cooldowns win. */
+  private patternFootwork(f: Fighter, o: Fighter): boolean {
+    if (this.patternMode === "none" || this.patternModeT <= 0 || f.isDown() ||
+        f.stage || !f.onGround || f.state !== S.IDLE || f.intent.skill ||
+        f.intent.block || f.intent.dash.lengthSq() > 0.01 ||
+        this.blockWait >= 0 || this.blockHold > 0 || this.sideT > 0 ||
+        this.threats.firePatches(f).length > 0 || this.comboParryTarget > this.threats.now())
+      return false;
+    const delta = o.root.position.clone().sub(f.root.position).setY(0);
+    const gap = delta.length();
+    if (gap < 0.02) return false;
+    const toward = delta.divideScalar(gap);
+    const flank = new THREE.Vector3(-toward.z, 0, toward.x).multiplyScalar(this.patternOrbitSign);
+    let desired: THREE.Vector3 | null = null;
+    if (this.patternMode === "ranged" && gap > 2.35) {
+      // Repeated ranged attacks: close diagonally instead of walking straight in.
+      desired = toward.clone().multiplyScalar(0.72).addScaledVector(flank, 0.68);
+    } else if (this.patternMode === "melee" && gap < (o.attacks.l1?.reach ?? 1.7) + 0.35) {
+      // Repeated light rushes: circle outside the enemy weapon's real reach.
+      desired = toward.clone().multiplyScalar(-0.64).addScaledVector(flank, 0.72);
+    } else if (this.patternMode === "guard" && o.state === S.BLOCK && gap < 2.7) {
+      // Frequent shielding: don't mindlessly swing into guard; bait a release.
+      desired = toward.clone().multiplyScalar(gap < 1.6 ? -0.8 : -0.15).addScaledVector(flank, 0.8);
+    }
+    if (!desired || desired.lengthSq() < 0.01) return false;
+    desired.normalize();
+    // Arena boundary: reverse orbit before choosing an impossible step.
+    const next = f.root.position.clone().setY(0).addScaledVector(desired, 1.1);
+    if (next.length() > f.arenaRadius - f.radius - 0.25) {
+      desired.addScaledVector(flank, -1.8).normalize();
+      if (f.root.position.clone().setY(0).addScaledVector(desired, 1.1).length() >
+          f.arenaRadius - f.radius - 0.25) return false;
+    }
+    f.intent.move.copy(desired);
+    f.intent.attack = false;
+    return true;
+  }
+
   private iqLevel = 1;
   private iqEnemySerial = -1;
   private iqEnemySawActive = false;
@@ -1363,6 +1473,59 @@ export class AiBrain implements Brain {
     this.p = PRESETS[this.iqLevel];
   }
 
+  /** Kaizen's V Serpent Bind has TWO existing legal follow-ups:
+   * Z = Serpent Lift (forward), X = Serpent Overthrow (backward).
+   * Consider arena boundaries, then alternate where both throws are safe.
+   */
+  private chooseSerpentVFollowup(f: Fighter): "z" | "x" {
+    const heading = f.stage
+      ? new THREE.Vector3(f.facing, 0, 0)
+      : new THREE.Vector3(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
+    const roomAt = (distance: number): number => {
+      const p = f.root.position.clone().addScaledVector(heading, distance);
+      if (f.stage) return Math.min(p.x - (f.stage.blast.l + 1), f.stage.blast.r - 1 - p.x);
+      return f.arenaRadius - Math.hypot(p.x, p.z);
+    };
+    // The full animated victim trajectories end about +1.10m and -1.35m.
+    const frontRoom = Math.min(roomAt(1.10), roomAt(0.80));
+    const backRoom = Math.min(roomAt(-1.35), roomAt(-0.90));
+    let forward: boolean;
+    if (frontRoom < 0.65 && backRoom > frontRoom + 0.30) forward = false;
+    else if (backRoom < 0.65 && frontRoom > backRoom + 0.30) forward = true;
+    else if (Math.abs(frontRoom - backRoom) > 0.75) forward = frontRoom > backRoom;
+    else forward = this.chainVAlternate;
+    this.chainVAlternate = !this.chainVAlternate;
+    return forward ? "z" : "x";
+  }
+
+  /** Handle an active bind before ordinary defense returns can skip the recast.
+   * Uses only normal input, respects the real chain-choice arming and delay.
+   */
+  private handleKaizenBindFollowup(f: Fighter, dt: number): boolean {
+    if (!f.chainBindTarget || f.chainBindT <= 0) {
+      this.chainDecisionT = 0;
+      this.chainVFollowup = "";
+      return false;
+    }
+    this.chainDecisionT += dt;
+    f.intent.attack = false;
+    f.intent.block = false;
+    const target = f.chainBindTarget;
+    if (f.chainBindKind === "x" && f.chainBindFinishT <= 0) {
+      const move = target.root.position.clone().sub(f.root.position).setY(0);
+      if (move.length() > 2.3) {
+        move.normalize();
+        f.intent.move.copy(f.stage ? new THREE.Vector3(Math.sign(move.x), 0, 0) : move);
+      }
+    } else if (f.chainBindKind === "v" && !this.chainVFollowup) {
+      this.chainVFollowup = this.chooseSerpentVFollowup(f);
+    }
+    if (f.chainBindFinishT <= 0 && f.chainChoiceArmed && this.chainDecisionT >= 0.48) {
+      f.intent.skill = f.chainBindKind === "x" ? "x" : this.chainVFollowup;
+    }
+    return true;
+  }
+
   think(f: Fighter, dt: number) {
     // KAIZEN_SPIN_HIT_RELIABILITY_V9: unlike LocalBrain, AiBrain does not
     // receive a held Z key. Keep it virtually held for the full active spin.
@@ -1371,7 +1534,10 @@ export class AiBrain implements Brain {
         f.atk?.style === "chain_razor_cyclone") f.intent.skillHeld = "z";
     const o = f.opponent as Fighter | null;
     if (!o || o.isDown()) return;
+    // An active grab locks both fighters. Commit to Z/X before other tactics.
+    if (this.handleKaizenBindFollowup(f, dt)) return;
     this.iqObserve(f, o);
+    this.observePatterns(f, o, dt);
     // Marked ground impacts outrank defensive guard plans and ordinary offense.
     if (this.evadeGroundStrikes(f)) return;
     if (this.evadeStaticField(f)) return;
@@ -1382,24 +1548,6 @@ export class AiBrain implements Brain {
     if (this.spinCounterResponse(f, o, dt)) return;
     if (this.counterThreatDefense(f, o, dt)) return;
     if (this.zarekShieldResponse(f, o, dt)) return;
-    // During X binding, decide when to yank. AI can step nearer while the enemy is held.
-    // During V, choose Z/X as before. Neither fighter casts ordinary skills in this state.
-    if (f.chainBindTarget && f.chainBindT > 0) {
-      this.chainDecisionT += dt;
-      const target = f.chainBindTarget;
-      if (f.chainBindKind === "x" && f.chainBindFinishT <= 0) {
-        const move = target.root.position.clone().sub(f.root.position).setY(0);
-        if (move.length() > 2.3) {
-          move.normalize();
-          f.intent.move.copy(f.stage ? new THREE.Vector3(Math.sign(move.x), 0, 0) : move);
-        }
-      }
-      if (f.chainBindFinishT <= 0 && f.chainChoiceArmed && this.chainDecisionT >= 0.7) {
-        f.intent.skill = f.chainBindKind === "x" ? "x" : Math.random() < 0.5 ? "z" : "x";
-      }
-      return;
-    }
-    this.chainDecisionT = 0;
     if (f.chainBoundBy && f.chainBoundBy.chainBindT > 0) return;
     // During Blood Festival Veyr chases with basics rather than blocking.
     if (this.veyrFestivalPressure(f, o, dt)) return;
@@ -1477,7 +1625,9 @@ export class AiBrain implements Brain {
     // opportunistic skills, scripted personality follow-ups and random offense.
     const iqActed = !this.aiAirTap && !f.intent.skill &&
       this.projectileSwordCommit <= 0 && this.combatIQAction(f, o, dt);
-    if (!this.aiAirTap && !f.intent.skill && !iqActed &&
+    const patternActed = !iqActed && !this.aiAirTap && !f.intent.skill &&
+      this.projectileSwordCommit <= 0 && this.patternFootwork(f, o);
+    if (!this.aiAirTap && !f.intent.skill && !iqActed && !patternActed &&
         this.projectileSwordCommit <= 0 &&
         !this.readySkillOpportunity(f, o, dt) && !this.theaterOffense(f, o))
       this.offense(f, o, dt);

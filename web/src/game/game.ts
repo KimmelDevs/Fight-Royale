@@ -1,3 +1,5 @@
+// KAIZEN_PARRY_SPEED_MINUS_10_PERCENT_20261107_V1
+// BALANCE_KIRA_KAEDE_PATTERN_AI_AIR_ICON_20261107_V1
 // AI_EFFECTIVE_RANGE_KAIZEN_AIR_HOOK_20261107_V1
 // ZAREK_ARC_FLASH_CPU_SPECTATOR_COOLDOWNS_20261107_V1
 // ASTER_WEAKEN_50S_5_STACKS_V1_20261107
@@ -1120,11 +1122,11 @@ export class Game implements MobHost {
   }
   /** After a real parry, stretch only this Kaizen spin's upcoming pulses.
    * Existing 0.20s parry pause is preserved (not multiplied), keeping the
-   * scheduled hits and Fighter.stateT at the same effective 25% tempo. */
+   * scheduled hits and Fighter.stateT at the same effective 90% tempo. */
   private slowKaizenSpinFollowups(f: Fighter) {
     const factor = f.kaizenSpinTimerScale;
     f.kaizenSpinTimerScale = 1;
-    if (factor <= 1) return; // already at the 25%-speed floor
+    if (factor <= 1) return; // later parries reverse only (no extra slowdown)
     const pauseEnd = this.time + 0.20;
     for (const timer of this.timers) {
       if (timer.owner !== f || timer.serial !== f.swingSerial || timer.t <= this.time) continue;
@@ -3215,7 +3217,7 @@ export class Game implements MobHost {
             // The SAME parry reverses the orbit. Further parries flip it again.
             this.slowKaizenSpinFollowups(attacker);
             this.fxp("num", attacker.chest().add(new THREE.Vector3(0, 1.13, 0)),
-              attacker.kaizenSpinDirection < 0 ? "SPIN 25% - REVERSED CCW" : "SPIN 25% - REVERSED CW",
+              attacker.kaizenSpinDirection < 0 ? "SPIN -10% - REVERSED CCW" : "SPIN -10% - REVERSED CW",
               "#9de7ff", 0.84);
           }
             this.fxp("num", attacker.chest().add(new THREE.Vector3(0, 0.9, 0)),

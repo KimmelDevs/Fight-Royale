@@ -1,3 +1,4 @@
+// BALANCE_KIRA_KAEDE_PATTERN_AI_AIR_ICON_20261107_V1
 // AI_EFFECTIVE_RANGE_KAIZEN_AIR_HOOK_20261107_V1
 // ZAREK_ARC_FLASH_CPU_SPECTATOR_COOLDOWNS_20261107_V1
 // ASTER_WEAKEN_50S_5_STACKS_V1_20261107
@@ -349,7 +350,7 @@ function bonusSkill(kit: string, element: string): Attack {
     case "knuckles":
       return a({ name: "Iron Body", desc: "Shrug off every hit for 2.5 seconds.", cd: 13, type: "buff", mode: "ward", duration: 2.5, wind: 0.1, recover: 0.25, pose_w: "block", pose_s: "block" });
     case "kicks":
-      return a({ name: "Hundred Kicks", desc: "Blitz the target with a storm of eight rapid kicks.", cd: 10, type: "strike", wind: 0.15, recover: 0.6, dmg: 40, guard: 10, knock: 0.8, stun: 0.3, delay: 0.2, radius: 1.5, repeat: 8, interval: 0.06, style: "slashes", pose_w: "kk1_w", pose_s: "kk1_s" });
+      return a({ name: "Hundred Kicks", desc: "Stand completely still and vanish while casting eight phantom strikes. Damage reduced by 25%. Can be interrupted and hit while invisible.", cd: 10, type: "strike", wind: 0.15, recover: 0.6, dmg: 30, guard: 10, knock: 0.8, stun: 0.3, delay: 0.2, radius: 1.5, repeat: 8, interval: 0.06, style: "slashes", pose_w: "kira_hundred_cast_w", pose_s: "kira_hundred_cast_s" });
     default:
       if (element === "light") return a({ name: "Judgment",
         desc: "Raise your sword, receive harmless lightning, and merge your sword and shield for 10s. Defense converts to power, missing HP adds damage, and health drains while blocking weakens.",
@@ -476,7 +477,7 @@ function katana(): Record<string, Attack> {
     heavy: a({ wind: 0.16, active: 0.14, recover: 0.5, dmg: 230, guard: 55, reach: 2.2, lunge: 8, knock: 5, stun: 0.75, heavy: true, pose_w: "charge", pose_s: "heavy_s" }),
     z: a({ name: "Counter Stance", desc: "Brace for a moment; the next hit is parried and punished.", cd: 6, type: "buff", mode: "counter", duration: 0.9, wind: 0.04, recover: 0.9, pose_w: "block", pose_s: "block" }),
     x: a({ name: "Crescent Wind", desc: "A cutting gust that flies through enemies.", cd: 6, type: "projectile", wind: 0.14, recover: 0.35, dmg: 120, guard: 30, knock: 3, stun: 0.45, speed: 20, size: 1.4, style: "wave", pierce: true, pose_w: "l1_w", pose_s: "l1_s" }),
-    c: a({ name: "Thousand Cuts", desc: "Seven blinding slashes rip through the target area.", cd: 11, type: "strike", wind: 0.2, recover: 0.6, dmg: 48, guard: 12, knock: 1, stun: 0.3, delay: 0.3, radius: 1.5, repeat: 7, interval: 0.07, style: "slashes", pose_w: "charge", pose_s: "heavy_s" }),
+    c: a({ name: "Thousand Cuts", desc: "Kaede slides her katana into its sheath, then seven blinding cuts strike the marked area.", cd: 11, type: "strike", wind: 0.2, recover: 0.6, dmg: 48, guard: 12, knock: 1, stun: 0.3, delay: 0.3, radius: 1.5, repeat: 7, interval: 0.07, style: "slashes", pose_w: "kaede_sheathe_w", pose_s: "kaede_sheathe_s" }),
   };
 }
 
@@ -1079,7 +1080,17 @@ const TABLES: Record<string, Record<string, Pose>> = {
   greatsword: { ...twoHanded(KNIGHT), ...GARRICK_SWINGS },
   hammer: { ...twoHanded(KNIGHT), ...NESA_SWINGS },
   chainblade: CHAINBLADE,
-  katana: twoHanded(KNIGHT),
+  katana: {
+    ...twoHanded(KNIGHT),
+    // Kaede C: right hand slides the blade toward left-hip scabbard; left hand steadies it.
+    // Feet remain planted and shoulders settle as the blade goes home.
+    kaede_sheathe_w: P([0.18, -0.34, 0.10], [-0.13, 0.24, 0.03],
+      [0.32, -0.62, -0.62], [0.24, 0.10, 0.34], [-0.50, 0.50, 0.38],
+      [-0.22, -0.10, -0.22], [-0.18, 0, 0.11], [0.17, 0, -0.11], -0.055),
+    kaede_sheathe_s: P([0.07, -0.20, 0.02], [-0.12, 0.14, 0],
+      [0.62, -0.78, -0.49], [0.30, 0.08, 0.36], [-0.64, 0.48, 0.33],
+      [-0.32, -0.16, -0.24], [-0.12, 0, 0.11], [0.14, 0, -0.11], -0.055),
+  },
   bow: BOW,
   knuckles: KNUCKLES,
   bomb: {
@@ -1116,7 +1127,15 @@ const TABLES: Record<string, Record<string, Pose>> = {
     // Double jump: riding a burst of wind (knees tucked, arms spread low to push off the air).
     wind_jump: K(P([0.3, 0, 0], [0.2, 0, 0], [0.35, 0, -1.15], [0, 0, 0], [0.35, 0, 1.15], [0, 0, 0], [-1.0, 0, 0.12], [-0.45, 0, -0.12], 0), 1.5, 1.15),
   },
-  kicks: KICKS,
+  kicks: {
+    ...KICKS,
+    kira_hundred_cast_w: K(P([0.04, 0.12, 0], [0.02, -0.06, 0],
+      [-0.45, 0.28, -0.34], [0, 0, 0], [-0.45, -0.28, 0.34], [0, 0, 0],
+      [-0.12, 0, 0.10], [0.12, 0, -0.10], -0.04), 0.10, 0.10),
+    kira_hundred_cast_s: K(P([0, 0, 0], [-0.02, 0, 0],
+      [-0.42, 0.12, -0.24], [0, 0, 0], [-0.42, -0.12, 0.24], [0, 0, 0],
+      [-0.10, 0, 0.09], [0.10, 0, -0.09], -0.04), 0.07, 0.07),
+  },
 };
 
 export function poses(kit: string, element?: string): Record<string, Pose> {

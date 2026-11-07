@@ -1,3 +1,5 @@
+// KAIZEN_PARRY_SPEED_MINUS_10_PERCENT_20261107_V1
+// BALANCE_KIRA_KAEDE_PATTERN_AI_AIR_ICON_20261107_V1
 // FOURTH_SKILL_V_MASTER_AI_TWO_ROW_ROSTER_20261107_V1
 // MARINA_RAVEN_ZAREK_BOB_ABILITIES_20261107_V1
 // FIGHT_ROYALE_BULLET_SWORDPLAY_GARRICK_RESOLVE_V1
@@ -277,8 +279,8 @@ export class Fighter implements Entity {
   comboDamageMult = 1;
   comboPauseT = 0;
   // KAIZEN_PARRY_SPIN_SLOW_REVERSE_V10: per-attack spin tempo.
-  // The first perfect parry drops a circular skill to 1/4 speed.
-  // Subsequent parries flip direction, without slowing below that floor.
+  // A parry reduces Kaizen circular spin speed BY 10% (90% remains).
+  // Further parries reverse direction without additional slowdown.
   kaizenSpinSpeed = 1;
   kaizenSpinDirection = 1;
   kaizenSpinTimerScale = 1; // one-shot rescaling factor for remaining timed hits
@@ -293,7 +295,7 @@ export class Fighter implements Entity {
     if (this.kit === "chainblade" && this.atk &&
         (this.atk.style === "chain_razor_cyclone" || this.atk.style === "chain_death_spiral")) {
       const previous = this.kaizenSpinSpeed;
-      this.kaizenSpinSpeed = 0.25;
+      this.kaizenSpinSpeed = 0.90;
       this.kaizenSpinTimerScale = previous / this.kaizenSpinSpeed;
       this.kaizenSpinDirection *= -1;
     }
@@ -961,6 +963,8 @@ export class Fighter implements Entity {
     this.model.presentationT = this.stateT;
     this.model.presentationMode = "victory";
     this.model.glaivePose = this.kit === "glaive" ? (this.state === S.WIN ? "show_baton" : this.poseName) : "idle";
+    this.updateKiraCastVisual();
+    this.updateKaedeSheathVisual();
     this.model.blend(this.state === S.WIN
       ? presentationPose(this.look.name, this.stateT, this.poses.idle, "victory")
       : (this.poses[this.poseName] ?? this.poses.idle), dt, this.poseSpeed, this.actionPoseTag());
@@ -994,6 +998,30 @@ export class Fighter implements Entity {
     return this.kit === "katana" && this.state === S.ATTACK && !!this.atk &&
       this.atk.name === "Thousand Cuts" && this.atk.style === "slashes";
   }
+  /** Kira's Hundred Kicks is an immobile hidden casting stance, not a kick animation.
+   * The authoritative fighter root remains hittable (invisible != invulnerable).
+   */
+  isKiraHundredKicksCasting(): boolean {
+    return this.kit === "kicks" && this.state === S.ATTACK &&
+      this.atkId === "v" && this.atk?.name === "Hundred Kicks";
+  }
+  /** Hide render model only, leaving root and server hitboxes intact. */
+  private updateKiraCastVisual() {
+    if (this.kit !== "kicks" || this.model.loading) return;
+    const casting = this.puppet
+      ? this.state === S.ATTACK && this.poseName.startsWith("kira_hundred_cast_")
+      : this.isKiraHundredKicksCasting();
+    this.model.visible = !casting;
+  }
+  /** Compute sheathing progress locally or from networked attack pose. */
+  private updateKaedeSheathVisual() {
+    if (this.kit !== "katana") return;
+    const casting = this.puppet
+      ? this.state === S.ATTACK && this.poseName.startsWith("kaede_sheathe_")
+      : this.isKaedeThousandCutsCasting();
+    this.model.katanaSheathProgress = casting
+      ? Math.min(1, Math.max(0, this.stateT / 0.25)) : 0;
+  }
   /** Called only after the THIRD unsuccessful slice on the authoritative host. */
   cancelKaedeThousandCuts() {
     if (!this.isKaedeThousandCutsCasting()) return;
@@ -1008,6 +1036,7 @@ export class Fighter implements Entity {
   }
 
   private readDash() {
+    if (this.isKiraHundredKicksCasting()) return;
     if (this.chainBindT > 0 || (this.chainBoundBy && this.chainBoundBy.chainBindT > 0)) return;
     if (this.isKaedeThousandCutsCasting()) return; // committed, immobile cast
     const d = this.intent.dash;
@@ -1047,7 +1076,9 @@ export class Fighter implements Entity {
     const pressed = on && !this.atkPrev;
     const released = !on && this.atkPrev;
     this.atkPrev = on;
-    if (this.isKaedeThousandCutsCasting()) { this.holding = false; return; }
+    if (this.isKaedeThousandCutsCasting() || this.isKiraHundredKicksCasting()) {
+      this.holding = false; return;
+    }
     if ([S.HITSTUN, S.STAGGER, S.KO, S.WIN].includes(this.state)) {
       this.holding = false; this.nesaAirHolding = false; return;
     }
@@ -1249,7 +1280,7 @@ export class Fighter implements Entity {
   }
 
   private readSkill() {
-    if (this.isKaedeThousandCutsCasting()) return;
+    if (this.isKaedeThousandCutsCasting() || this.isKiraHundredKicksCasting()) return;
     const k = this.intent.skill;
     if (!k || !["z", "x", "c", "v"].includes(k)) return;
     // Prevent key spoofing, old remapped skills and online requests from using locked V.
@@ -1595,6 +1626,9 @@ export class Fighter implements Entity {
       ["chain_razor_cyclone", "chain_death_spiral", "chain_carousel"].includes(this.atk.style);
   }
   private move(dt: number) {
+    if (this.isKiraHundredKicksCasting()) {
+      this.model.walk = 0; this.model.rotation.y = this.viewBias; return;
+    }
     if (this.isKaedeThousandCutsCasting()) {
       this.model.walk = 0; this.model.rotation.y = this.viewBias; return;
     }
@@ -2063,6 +2097,9 @@ export class Fighter implements Entity {
   }
 
   private movePlat(dt: number) {
+    if (this.isKiraHundredKicksCasting()) {
+      this.vx = 0; this.model.walk = 0; return;
+    }
     if (this.isKaedeThousandCutsCasting()) {
       this.vx = 0; this.model.walk = 0; return;
     }
@@ -2473,6 +2510,8 @@ export class Fighter implements Entity {
     this.model.presentationT = this.stateT;
     this.model.presentationMode = "victory";
     this.model.glaivePose = this.kit === "glaive" ? (this.state === S.WIN ? "show_baton" : this.poseName) : "idle";
+    this.updateKiraCastVisual();
+    this.updateKaedeSheathVisual();
     this.model.blend(this.state === S.WIN
       ? presentationPose(this.look.name, this.stateT, this.poses.idle, "victory")
       : (this.poses[this.poseName] ?? this.poses.idle), dt, this.poseSpeed, this.actionPoseTag());

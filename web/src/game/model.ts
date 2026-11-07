@@ -1,3 +1,4 @@
+// BALANCE_KIRA_KAEDE_PATTERN_AI_AIR_ICON_20261107_V1
 // KAIZEN_PARRY_SPIN_SLOW_REVERSE_V10
 // FIGHT_ROYALE_PARRY_SPIN_COUNTERS_V2
 // FIGHT_ROYALE_PARRY_SPIN_COUNTERS_V1
@@ -137,6 +138,10 @@ export class FighterModel extends THREE.Group {
   /** Extra knee bend from the pose (smoothed). */
   private knee: [number, number] = [0, 0];
   private bowPivot: THREE.Group | null = null;
+  /** Katana blade retracts into the visible left-hip scabbard during Kaede C. */
+  katanaSheathProgress = 0;
+  private katanaBladePivot: THREE.Group | null = null;
+  private katanaSheathAmount = 0;
   private bowString: THREE.Mesh[] | null = null;
   private bowArrow: THREE.Group | null = null;
   private bowNockTop: THREE.Vector3 | null = null;
@@ -850,7 +855,7 @@ export class FighterModel extends THREE.Group {
     const bound = this.chainBindTargetWorld !== null;
     const bindCenter = bound ? this.worldToLocal(this.chainBindTargetWorld!.clone()) : null;
     // The counter-parried circular skill genuinely rotates in reverse and at
-    // one quarter speed. Kaizen's normal spinning shield is NOT affected.
+    // 10% speed after a perfect parry. Kaizen's normal spinning shield is NOT affected.
     const spinRate = this.kaizenSpinActive ? this.kaizenSpinSpeed : 1;
     const spinDirection = this.kaizenSpinActive ? this.kaizenSpinDirection : 1;
     this.chainOrbit += dt * (blocking ? 15 : orbit ? (strike ? 20 : 11) : attack ? 8 : 1.4)
@@ -1083,14 +1088,17 @@ export class FighterModel extends THREE.Group {
     const s = pivot(this.hand_r, [0, 0, 0], [PI / 2, 0, 0]);
     mesh(s, cyl(0.016, 0.016, 0.26, 10), this.tn(L.band), [0, -0.02, 0]);
     mesh(s, cyl(0.048, 0.048, 0.014, 16), this.tn(L.trim), [0, 0.12, 0]);
-    // A slight curve from three tilted segments.
+    // Keep handle in the right hand; slide the cutting blade into the scabbard
+    // as the right hand reaches left hip. Default transform is identical to before.
+    const blade = pivot(s, [0, 0, 0]);
+    this.katanaBladePivot = blade;
     for (let i = 0; i < 3; i++) {
-      mesh(s, box(0.032, 0.34, 0.008), this.steel(), [0.004 * i * i, 0.3 + i * 0.32, 0], [0, 0, -0.025 * i]);
-      mesh(s, box(0.006, 0.32, 0.011), this.glowMat, [0.016 + 0.004 * i * i, 0.3 + i * 0.32, 0], [0, 0, -0.025 * i]);
+      mesh(blade, box(0.032, 0.34, 0.008), this.steel(), [0.004 * i * i, 0.3 + i * 0.32, 0], [0, 0, -0.025 * i]);
+      mesh(blade, box(0.006, 0.32, 0.011), this.glowMat, [0.016 + 0.004 * i * i, 0.3 + i * 0.32, 0], [0, 0, -0.025 * i]);
     }
-    mesh(s, cyl(0, 0.017, 0.08, 4), this.steel(), [0.022, 1.1, 0], [0, 0, -0.1], [1, 1, 0.3]);
-    this.bladeBase = pivot(s, [0, 0.35, 0]);
-    this.bladeTip = pivot(s, [0.02, 1.12, 0]);
+    mesh(blade, cyl(0, 0.017, 0.08, 4), this.steel(), [0.022, 1.1, 0], [0, 0, -0.1], [1, 1, 0.3]);
+    this.bladeBase = pivot(blade, [0, 0.35, 0]);
+    this.bladeTip = pivot(blade, [0.02, 1.12, 0]);
     this.gripL = pivot(s, [0, -0.1, 0]);
     this.shieldNode = pivot(s, [0, 0.5, 0]);
     this.castPoint = this.bladeTip;
@@ -1361,6 +1369,14 @@ export class FighterModel extends THREE.Group {
   // --- posing ------------------------------------------------------------------------
   /** Exponentially blends joints toward `pose` and applies overlays (walk, breathing, cloth). */
   blend(pose: Pose, dt: number, speed: number, actionPose = "") {
+    if (this.katanaBladePivot) {
+      // The hand moves to the scabbard via the Kaede-C pose; the curved blade
+      // slides through the hilt into its sheathed position with smooth follow-through.
+      this.katanaSheathAmount = THREE.MathUtils.damp(
+        this.katanaSheathAmount, this.katanaSheathProgress, 18, dt);
+      this.katanaBladePivot.position.y = -1.05 * this.katanaSheathAmount;
+      this.katanaBladePivot.visible = this.katanaSheathAmount < 0.99;
+    }
     if (this.nesaHammerPivot) {
       // NESA_HEART_SMASH_V4: horizontal, Beyblade-style hammer shaft during charged spin.
       const value = THREE.MathUtils.clamp(this.nesaHammerScale, 1, 4);
