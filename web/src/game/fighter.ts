@@ -175,6 +175,13 @@ export class Fighter implements Entity {
   onLanded: (f: Fighter) => void = () => {};
 
   private stun = 0;
+  /** Public, read-only remaining hitstun for timing legitimate Combat IQ follow-ups. */
+  get stunRemaining(): number {
+    return (this.state === S.HITSTUN || this.state === S.STAGGER)
+      ? Math.max(0, this.stun - this.stateT)
+      : 0;
+  }
+
   private leapVel = new THREE.Vector3();
   private stunPose = "hit";
   private comboNext = "l1";

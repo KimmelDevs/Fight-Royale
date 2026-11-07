@@ -658,7 +658,7 @@ export class AiBrain implements Brain {
         this.iqOwnHitConfirmed && this.iqOwnSkillWanted &&
         !this.iqOwnFollowSpent && f.atkPhase === 2 &&
         (o.state === S.HITSTUN || o.state === S.STAGGER)) {
-      const left = Math.max(0, o.stun - o.stateT);
+      const left = Math.max(0, o.stunRemaining);
       const key = this.iqFollowSkill(f, o, gap, left);
       if (key) {
         f.intent.skill = key;
@@ -774,7 +774,7 @@ export class AiBrain implements Brain {
   private survivalRetreatOrigin = new THREE.Vector3();
 
   private survivalEnemy: Fighter | null = null;
-  private survivalMode: "none" | "retreat" | "recover" | "heal" = "none";
+  private survivalMode: "none" | "retreat" | "recover" | "heal" | "lastStand" | "pressure" = "none";
   private survivalObserveAt = -1;
   private survivalUntil = -1;
   private survivalSide = Math.random() < 0.5 ? -1 : 1;
