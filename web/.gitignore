@@ -9,3 +9,9 @@ next-env.d.ts
 supabase/.temp
 web.rar
 scripts.zip
+
+# Fight Royale generated installer backups (never deploy)
+backup_*/
+backup-*/
+*_backups/
+.*_backups/
