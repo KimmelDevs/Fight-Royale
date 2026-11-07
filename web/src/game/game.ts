@@ -1,3 +1,4 @@
+// AI_LOW_HEALTH_SURVIVAL_V1_20261108
 // AI_ROOK_NESA_KIRA_MERGED_V1_20261108
 // KAIZEN_PARRY_SPEED_MINUS_10_PERCENT_20261107_V1
 // BALANCE_KIRA_KAEDE_PATTERN_AI_AIR_ICON_20261107_V1
@@ -1152,6 +1153,11 @@ export class Game implements MobHost {
     strikes: () => this.strikeMarks,
     fields: (f: Fighter) => this.magicPools.filter(p => p.kind === "static_field" && p.team !== f.team && p.time > 0)
       .map(p => ({ id: p.id, center: p.center, radius: p.radius })),
+    // AI_LOW_HEALTH_SURVIVAL: visible, friendly Healing Water zones; no hidden enemy info.
+    healingPools: (f: Fighter) => this.magicPools
+      .filter(p => p.kind === "healing_water" && p.team === f.team && p.time > 0.48 &&
+        p.owner && !p.owner.isDown())
+      .map(p => ({ center: p.center, radius: p.radius, remaining: p.time })),
     ignitions: (f: Fighter) => this.emberIgnitions
       .filter(i => i.round === this.round && i.land > this.time &&
         i.caster.team !== f.team && !i.caster.isDown())

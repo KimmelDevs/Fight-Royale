@@ -1,3 +1,4 @@
+// AI_LOW_HEALTH_SURVIVAL_V1_20261108
 // AI_ADVANCED_FOOTWORK_V1_20261108
 // AI_ROOK_NESA_KIRA_MERGED_V1_20261108
 //AI_PROJECTILE_CLASH_IQ_V1_20261108
@@ -45,6 +46,8 @@ export interface Threats {
   projectiles(): { target: any; pos: THREE.Vector3; vel: THREE.Vector3; id: number; team?: number; style?: string; size?: number; atkType?: string; heavy?: boolean }[];
   /** Real telegraphed damage circles, not guessed from enemy animation. */
   fields(f: Fighter): { id: number; center: THREE.Vector3; radius: number }[];
+  /** Visible friendly healing circles; only legitimate water pulse heals. */
+  healingPools?(f: Fighter): { center: THREE.Vector3; radius: number; remaining: number }[];
   strikes(): {
     target: any; land: number; id: number;
     center?: THREE.Vector3; radius?: number; caster?: Fighter;
@@ -61,6 +64,16 @@ export interface Threats {
 
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
 const RANGED = new Set(["mage", "bow", "bomb"]);
+
+// LOW_HEALTH_SURVIVAL: recognition is sampled once per planned decision, never
+// re-rolled every frame. No added health, invincibility or cooldown reductions.
+const SURVIVAL_IQ = [
+  { notice: 0.12, hp: 0.18, guard: 0.13, react: [0.62, 0.90], hold: [0.34, 0.52], heal: 0.32 },
+  { notice: 0.46, hp: 0.30, guard: 0.22, react: [0.39, 0.62], hold: [0.42, 0.68], heal: 0.57 },
+  { notice: 0.77, hp: 0.38, guard: 0.29, react: [0.22, 0.39], hold: [0.51, 0.84], heal: 0.82 },
+  { notice: 0.95, hp: 0.43, guard: 0.34, react: [0.11, 0.22], hold: [0.60, 0.96], heal: 0.98 },
+] as const;
+
 
 // AI_ADVANCED_FOOTWORK: movement choices are made in short plans, not every
 // frame. Reaction delays and imperfect reads scale with the selected difficulty.
@@ -703,6 +716,15 @@ export class AiBrain implements Brain {
   private advancedLastDir = new THREE.Vector3();
   private advancedSampleAt = -1;
   private advancedSamplePos = new THREE.Vector3();
+
+  // LOW_HEALTH_SURVIVAL: decisions stay committed for brief, human-like windows.
+  private survivalEnemy: Fighter | null = null;
+  private survivalMode: "none" | "retreat" | "recover" | "heal" = "none";
+  private survivalObserveAt = -1;
+  private survivalUntil = -1;
+  private survivalSide = Math.random() < 0.5 ? -1 : 1;
+  private survivalHealConsumed = false;
+  private survivalDashConsidered = false;
 
   private rangeOrbitCd = 0;
   private rangeOrbitSign = Math.random() < 0.5 ? -1 : 1;
@@ -1822,6 +1844,8 @@ export class AiBrain implements Brain {
     // NESA_DODGE_KIRA_AIR_3_V1: opponent dodges Nesa's real wind-up; leave
     // Nesa's own AI and every fighter's damage, guard and parry rules untouched.
     if (!f.stage && this.evadeNesa(f, o, dt)) return;
+    // LOW_HEALTH_SURVIVAL: all immediate threat reactions already ran.
+    const survivalActed = this.lowHealthSurvival(f, o);
     this.antiAirCd = Math.max(0, this.antiAirCd - dt);
     this.airSliceCd = Math.max(0, this.airSliceCd - dt);
     this.aiAirTap = false;
@@ -1830,14 +1854,14 @@ export class AiBrain implements Brain {
     // Airborne CPUs swing toward an opponent's current elevation, just like players.
     const flatGap = f.root.position.clone().setY(0)
       .distanceTo(o.root.position.clone().setY(0));
-    if (!f.stage && f.onGround && f.state === S.IDLE && !RANGED.has(f.kit) &&
+    if (!survivalActed && !f.stage && f.onGround && f.state === S.IDLE && !RANGED.has(f.kit) &&
         this.antiAirCd <= 0 && flatGap > 0.65 && flatGap < 2.3 &&
         (this.shouldAerialJump(f, o, flatGap) ||
           (o.onGround && Math.random() < dt * 0.12))) {
       f.intent.jump = true;
       this.antiAirCd = rand(2.2, 3.8);
     }
-    if (!f.stage && !f.onGround &&
+    if (!survivalActed && !f.stage && !f.onGround &&
         (f.state === S.IDLE || (f.state === S.ATTACK &&
           (f.kit === "kicks" ? /^air_l[1-3]$/.test(f.atkId) :
             f.kit === "assassin" && f.atkId === "air_l1"))) &&
@@ -1856,26 +1880,26 @@ export class AiBrain implements Brain {
       (f.cooldowns.x ?? 1) <= 0 && !f.chainBindT && o.state !== S.BLOCK &&
       flatGap > 1.3 && flatGap <= f.attacks.x_air.reach - 0.4 &&
       Math.abs(o.root.position.y - f.root.position.y) <= 2.7;
-    if (!this.aiAirTap && airHook && this.skillCd <= 0) {
+    if (!survivalActed && !this.aiAirTap && airHook && this.skillCd <= 0) {
       f.intent.skill = "x";
       this.skillCd = rand(this.p.skill[0], this.p.skill[1]);
     }
     // Combat IQ runs after emergency dodges and ordinary footwork, before
     // opportunistic skills, scripted personality follow-ups and random offense.
-    const landedActed = !this.aiAirTap && !f.intent.skill &&
+    const landedActed = !survivalActed && !this.aiAirTap && !f.intent.skill &&
       this.aerialLandingPunish(f, o);
-    const iqActed = !landedActed && !this.aiAirTap && !f.intent.skill &&
+    const iqActed = !survivalActed && !landedActed && !this.aiAirTap && !f.intent.skill &&
       this.projectileSwordCommit <= 0 && this.combatIQAction(f, o, dt);
-    const patternActed = !landedActed && !iqActed && !this.aiAirTap && !f.intent.skill &&
+    const patternActed = !survivalActed && !landedActed && !iqActed && !this.aiAirTap && !f.intent.skill &&
       this.projectileSwordCommit <= 0 && this.patternFootwork(f, o);
-    if (!landedActed && !this.aiAirTap && !f.intent.skill && !iqActed && !patternActed &&
+    if (!survivalActed && !landedActed && !this.aiAirTap && !f.intent.skill && !iqActed && !patternActed &&
         this.projectileSwordCommit <= 0 &&
         !this.readySkillOpportunity(f, o, dt) && !this.theaterOffense(f, o))
       this.offense(f, o, dt);
     // AI_ADVANCED_FOOTWORK: positioning refinement only after combat decisions.
     // Fire avoidance stays last so later pattern IQ never steers into fire.
     if (!f.stage) {
-      this.advancedFootwork(f, o, dt);
+      if (!survivalActed) this.advancedFootwork(f, o, dt);
       this.avoidFireGround(f);
     }
     // Sprint to close long gaps. A direction aimed at retreat/evade is not sprinted.
@@ -3195,6 +3219,191 @@ export class AiBrain implements Brain {
       this.advancedMode === "orbit" ? 0.68 : 0.86;
     f.intent.move.copy(best).multiplyScalar(pace);
     this.advancedLastDir.copy(best);
+  }
+
+  /** Low-health survival is a *choice of normal inputs*, not a defensive buff.
+   * The AI sees its own HP/guard, visible enemy recovery and real friendly
+   * healing circles. Reactive block/dodge/parry, grabs and committed attacks
+   * take priority; a critically injured bot can still punish a clear whiff.
+   */
+  private lowHealthSurvival(f: Fighter, o: Fighter): boolean {
+    const now = this.threats.now();
+    if (this.survivalEnemy !== o) {
+      this.survivalEnemy = o;
+      this.survivalMode = "none";
+      this.survivalObserveAt = now + rand(SURVIVAL_IQ[this.iqLevel].react[0],
+        SURVIVAL_IQ[this.iqLevel].react[1]);
+      this.survivalUntil = -1;
+      this.survivalHealConsumed = false;
+      this.survivalDashConsidered = false;
+    }
+    if (f.stage || f.isDown() || o.isDown() || !f.onGround ||
+        f.state !== S.IDLE || f.intent.block || f.intent.skill ||
+        f.intent.jump || f.intent.dash.lengthSq() > 0.01 ||
+        this.blockWait >= 0 || this.blockHold > 0 || this.sideT > 0 ||
+        this.queue.length > 0 && this.hold > 0 ||
+        this.chainDecisionT > 0 && f.chainBindT > 0 || f.chainBoundBy ||
+        this.projectileSwordCommit > 0 ||
+        this.comboParryTarget > now || this.iqBaitPhase !== "none") return false;
+
+    const profile = SURVIVAL_IQ[this.iqLevel];
+    const hpRatio = f.hp / Math.max(1, f.maxHp);
+    const guardRatio = f.guard / Math.max(1, f.maxGuard);
+    const wounded = hpRatio <= profile.hp;
+    const guardCritical = guardRatio <= profile.guard;
+    const fullGuard = guardRatio > Math.min(0.70, profile.guard + 0.27);
+    const healedEnough = hpRatio > profile.hp + 0.16;
+    if (healedEnough && fullGuard) this.survivalMode = "none";
+    if (!wounded && !guardCritical && this.survivalMode !== "heal") {
+      this.survivalMode = "none";
+      return false;
+    }
+
+    const from = f.root.position.clone().setY(0);
+    const foe = o.root.position.clone().setY(0);
+    const toFoe = foe.clone().sub(from);
+    const gap = toFoe.length();
+    if (gap < 0.001) toFoe.set(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
+    else toFoe.divideScalar(gap);
+    const reach = o.attacks.l1?.reach ?? 1.8;
+    const rangedEnemy = RANGED.has(o.kit);
+    const threatened = o.state === S.ATTACK && o.atkPhase <= 1 &&
+      gap < (o.atk?.type === "melee" ? (o.atk.reach + 0.8) : 5.0);
+    // Real threat handling happens earlier; do not override a combat reaction.
+    if (threatened) return false;
+    // Desperation is NOT cowardice: a visible punish window against a near-KO
+    // opponent is a rational chance to win. Normal hitboxes still decide.
+    if (this.hasPunishWindow(o) &&
+        o.hp / Math.max(1, o.maxHp) < 0.20 &&
+        gap < (f.attacks.l1?.reach ?? 1.8) + 0.45) {
+      this.survivalMode = "none";
+      this.survivalObserveAt = now + 0.45;
+      return false;
+    }
+
+    const pools = (this.threats.healingPools?.(f) ?? []).filter(pool =>
+      pool.remaining > 0.48 &&
+      Math.abs(pool.center.y - f.root.position.y) < 1.65);
+    const inside = pools.find(pool =>
+      from.distanceTo(pool.center.clone().setY(0)) < pool.radius * 0.78);
+    const safeToHeal = gap > reach + (rangedEnemy ? 2.7 : 1.5) &&
+      o.state !== S.ATTACK;
+    // Refresh decisions only after the next observable, difficulty-scaled read.
+    if (now >= this.survivalUntil && now >= this.survivalObserveAt) {
+      const choose = Math.random() < profile.notice;
+      this.survivalObserveAt = now + rand(profile.react[0], profile.react[1]);
+      this.survivalUntil = now + rand(profile.hold[0], profile.hold[1]);
+      this.survivalSide = Math.random() < 0.5 ? -1 : 1;
+      this.survivalHealConsumed = false;
+      this.survivalDashConsidered = false;
+      this.survivalMode = choose ?
+        wounded && (inside || pools.length > 0 || safeToHeal) ? "heal" :
+          guardCritical && !wounded ? "recover" : "retreat"
+        : "none";
+    }
+    if (this.survivalMode === "none") return false;
+
+    if (this.survivalMode === "heal" && wounded) {
+      // Only attempt a legitimately equipped and ready healing skill. Guests
+      // cannot use V, and AI below Master cannot sneak in a fourth skill.
+      if (!this.survivalHealConsumed && safeToHeal && !inside) {
+        const healKey = ["z", "x", "c", ...(f.bonusSkillUnlocked ? ["v"] : [])]
+          .find(key => {
+            const skill = f.attacks[key];
+            return skill && (f.cooldowns[key] ?? 1) <= 0 &&
+              skill.type === "buff" &&
+              (skill.mode === "healing_water" || skill.mode === "heal");
+          });
+        if (healKey && Math.random() < profile.heal) {
+          f.intent.skill = healKey;
+          f.intent.attack = false;
+          this.queue = [];
+          this.hold = 0;
+          this.survivalHealConsumed = true;
+          return true;
+        }
+      }
+      if (inside && safeToHeal) {
+        // Standing in the WATER is necessary for the legitimate 0.6s heal
+        // pulses; do not wander out to continue orbiting for no reason.
+        f.intent.move.set(0, 0, 0);
+        f.intent.attack = false;
+        this.queue = [];
+        this.hold = 0;
+        return true;
+      }
+      // Seek a reachable friendly healing pool, but never rush through an
+      // opponent in order to reach it. Nearby ground fire is handled last.
+      if (!inside && pools.length > 0 && !threatened) {
+        const pool = pools.slice().sort((a, b) =>
+          from.distanceToSquared(a.center.clone().setY(0)) -
+          from.distanceToSquared(b.center.clone().setY(0)))[0];
+        const towardPool = pool.center.clone().setY(0).sub(from);
+        if (towardPool.length() > 0.15 && towardPool.length() < 6.5) {
+          const move = towardPool.normalize();
+          const next = from.clone().addScaledVector(move, Math.min(1.2, f.moveSpeed * 0.33));
+          if (next.distanceTo(foe) > reach + 0.75 &&
+              next.length() < f.arenaRadius - f.radius - 0.18) {
+            f.intent.move.copy(move);
+            f.intent.attack = false;
+            this.queue = [];
+            this.hold = 0;
+            return true;
+          }
+        }
+      }
+    }
+
+    // Choose between retreat and diagonal orbit by comparing actual walk
+    // destinations. Don't repeatedly walk into the same arena wall.
+    const away = toFoe.clone().negate();
+    const tangent = new THREE.Vector3(-toFoe.z, 0, toFoe.x)
+      .multiplyScalar(this.survivalSide);
+    const inward = from.lengthSq() > 0.01 ? from.clone().negate().normalize() : away.clone();
+    const candidates = [away.clone(),
+      away.clone().addScaledVector(tangent, 0.70),
+      away.clone().addScaledVector(tangent, -0.70),
+      tangent.clone(), tangent.clone().negate(),
+      inward.clone(), inward.clone().addScaledVector(tangent, 0.45),
+      inward.clone().addScaledVector(tangent, -0.45)];
+    const arena = f.arenaRadius - f.radius - 0.25;
+    const look = Math.min(1.75, Math.max(0.95, f.moveSpeed * 0.35));
+    const fire = this.threats.firePatches(f);
+    let best: THREE.Vector3 | null = null;
+    let score = -1e10;
+    for (const candidate of candidates) {
+      if (candidate.lengthSq() < 0.01) continue;
+      const dir = candidate.normalize();
+      const next = from.clone().addScaledVector(dir, look);
+      if (next.length() > arena && next.length() >= from.length() - 0.02) continue;
+      let value = next.distanceTo(foe) - gap;
+      if (this.survivalMode === "recover") value *= 0.80;
+      value += dir.dot(tangent) * 0.23;
+      if (next.length() < from.length()) value += 0.16;
+      for (const patch of fire) {
+        if (Math.abs(patch.pos.y - f.root.position.y) > 1.6) continue;
+        const nextDist = Math.hypot(next.x - patch.pos.x, next.z - patch.pos.z);
+        const hereDist = Math.hypot(from.x - patch.pos.x, from.z - patch.pos.z);
+        const limit = patch.radius + f.radius * 0.35 + 0.28;
+        if (nextDist < limit && nextDist < hereDist + 0.08)
+          value -= 15 + (limit - nextDist) * 5;
+      }
+      if (value > score) { score = value; best = dir.clone(); }
+    }
+    if (!best || score < -8) return false;
+    f.intent.move.copy(best).multiplyScalar(this.survivalMode === "recover" ? 0.75 : 1);
+    f.intent.attack = false;
+    this.queue = [];
+    this.hold = 0;
+    // Critical HP can spend a REAL dash on separation; no invulnerability or
+    // cooldown cheating. A clear whiff instead encourages a counterattack.
+    if (!this.survivalDashConsidered && hpRatio < 0.14 &&
+        gap < reach + 0.65 && f.dashCd <= 0 && this.iqLevel >= 2 &&
+        this.survivalMode === "retreat") {
+      this.survivalDashConsidered = true; // one chance per plan, not per frame
+      if (Math.random() < profile.notice * 0.46) f.intent.dash.copy(best);
+    }
+    return true;
   }
 
   private position(f: Fighter, o: Fighter, dt: number) {
