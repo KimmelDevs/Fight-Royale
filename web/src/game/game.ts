@@ -1,3 +1,4 @@
+// ASTER_WEAKEN_50S_5_STACKS_V1_20261107
 // FOURTH_SKILL_V_MASTER_AI_TWO_ROW_ROSTER_20261107_V1
 // MARINA_RAVEN_ZAREK_BOB_ABILITIES_20261107_V1
 // FIGHT_ROYALE_BULLET_SWORDPLAY_GARRICK_RESOLVE_V1
@@ -3165,11 +3166,16 @@ export class Game implements MobHost {
         this.hitStop(a.heavy ? 0.11 : heavy ? 0.07 : 0.045);
         if (result === "ko" && d instanceof Mob) this.creditMobKill(attacker instanceof Fighter ? attacker : null, d);
         const info = STATUS[a.effect as StatusKind];
-        if (info && result !== "ko" && this.time - (this.statusLabelAt.get(d) ?? -9) > 1.2) {
+        // Aster's Weaken shows its current stack on every successful follow-up,
+        // rather than hiding stack increases behind the usual status-text throttle.
+        const weakenStack = a.effect === "weaken" && (d instanceof Fighter || d instanceof Mob)
+          ? d.status.stacks("weaken") : 0;
+        if (info && result !== "ko" && (weakenStack > 0 || this.time - (this.statusLabelAt.get(d) ?? -9) > 1.2)) {
           this.statusLabelAt.set(d, this.time);
           const ss: Record<string, string> = { burn: "burn", paralyze: "shock", poison: "poison", bleed: "bleed" };
           if (ss[a.effect]) this.snd(ss[a.effect], 0.6);
-          this.fxp("num", d.chest().add(new THREE.Vector3(0, 0.95, 0)), info.label, info.color, 0.85);
+          const statusText = weakenStack > 0 ? `WEAKEN x${weakenStack}` : info.label;
+          this.fxp("num", d.chest().add(new THREE.Vector3(0, 0.95, 0)), statusText, info.color, 0.85);
         }
         break;
       }

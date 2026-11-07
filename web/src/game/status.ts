@@ -1,3 +1,4 @@
+// ASTER_WEAKEN_50S_5_STACKS_V1_20261107
 // Status effects that skills leave on whoever they hit (fighters and survival mobs).
 //   burn     - fire damage over time
 //   poison   - weaker damage over time that lasts longer and stacks up to 3 times
@@ -15,11 +16,12 @@ export const STATUS: Record<StatusKind, { label: string; color: string; bit: num
   bleed: { label: "BLEED", color: "#e0303e", bit: 4, text: (t, p) => `Bleed: ${p} dmg/s for ${t}s (x1.5 while moving)` },
   paralyze: { label: "PARALYZED", color: "#ffe066", bit: 8, text: (t) => `Paralyze: ${t}s (slowed, jolted every second)` },
   slow: { label: "SLOWED", color: "#7fc8ff", bit: 16, text: (t, p) => `Slow: -${Math.round((1 - p) * 100)}% speed for ${t}s` },
-  weaken: { label: "WEAKENED", color: "#fff2b0", bit: 32, text: (t, p) => `Weaken: -${Math.round((1 - p) * 100)}% damage for ${t}s` },
+  weaken: { label: "WEAKENED", color: "#fff2b0", bit: 32, text: (t, p) => `Weaken: -${Math.round((1 - p) * 100)}% outgoing damage per stack (multiplicative); up to 5 stacks (${Math.round((1 - Math.pow(p, 5)) * 100)}% max). Lasts ${t}s; each hit adds a stack and refreshes the timer.` },
 };
 
 const DOT_TICK = 0.5;
 const POISON_STACKS = 3;
+const WEAKEN_STACKS = 5;
 const JOLT_EVERY = 1.0;
 const PARALYZE_SPEED = 0.6;
 
@@ -36,9 +38,13 @@ export class StatusSet {
     if (src) this.src = src;
     const cur = this.m.get(kind);
     if (cur) {
-      cur.t = Math.max(cur.t, t);
+      // Weaken always refreshes its entire 50s duration when another hit lands.
+      cur.t = kind === "weaken" ? t : Math.max(cur.t, t);
       if (kind === "poison") cur.stacks = Math.min(cur.stacks + 1, POISON_STACKS);
-      else cur.p = kind === "slow" || kind === "weaken" ? Math.min(cur.p, p) : Math.max(cur.p, p);
+      else if (kind === "weaken") {
+        cur.stacks = Math.min(cur.stacks + 1, WEAKEN_STACKS);
+        cur.p = Math.min(cur.p, p); // each stack uses the strongest existing reduction
+      } else cur.p = kind === "slow" ? Math.min(cur.p, p) : Math.max(cur.p, p);
     } else {
       this.m.set(kind, { t, p, stacks: 1, tick: DOT_TICK, jolt: JOLT_EVERY * 0.5 });
     }
@@ -59,8 +65,11 @@ export class StatusSet {
     return k;
   }
 
-  /** Outgoing damage multiplier (weaken). */
-  dmgMult() { return this.m.get("weaken")?.p ?? 1; }
+  /** Every Weaken stack multiplies outgoing damage by the skill's power (0.8^stacks for Aster). */
+  dmgMult() {
+    const weaken = this.m.get("weaken");
+    return weaken ? Math.pow(weaken.p, weaken.stacks) : 1;
+  }
 
   /**
    * Advance timers. Returns damage-over-time ticks and whether a paralyze jolt fires this frame.

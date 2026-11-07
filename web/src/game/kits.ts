@@ -1,3 +1,4 @@
+// ASTER_WEAKEN_50S_5_STACKS_V1_20261107
 // MARINA_RAVEN_ZAREK_BOB_ABILITIES_20261107_V1
 // FIGHT_ROYALE_BULLET_SWORDPLAY_GARRICK_RESOLVE_V1
 // FIGHT_ROYALE_KAIZEN_MOBILE_SPIN_V8
@@ -200,7 +201,7 @@ export function attacks(kit: string, element: string): Record<string, Attack> {
   }
   t.pc = parryCounterAttack(kit, element, t);
   // BULLET_SWORDPLAY_V1: Aster's X now sweeps forward instead of jumping.
-  // Keep its existing name, damage and cooldown; Weaken reduces outgoing damage 20% for 4s.
+  // Keep its existing name, damage and cooldown; each Weaken stack reduces outgoing damage 20% multiplicatively for 50s, up to x5.
   if (kit === "knight" && element === "light" && t.x?.name === "Rising Slash") {
     t.x.self_jump = 0;
     t.x.wind = 0.18;
@@ -212,9 +213,9 @@ export function attacks(kit: string, element: string): Record<string, Attack> {
     t.x.pose_w = "aster_sweep_low_w";
     t.x.pose_s = "aster_sweep_low_s";
     t.x.effect = "weaken";
-    t.x.effect_t = 4;
+    t.x.effect_t = 50;
     t.x.effect_p = 0.80;
-    t.x.desc = "Crouch low, advance, and sweep the blade forward. A hit weakens the enemy for 4 seconds.";
+    t.x.desc = "Crouch low, advance, and sweep the blade forward. A hit adds Weaken (50s, max 5 stacks). Each stack reduces enemy outgoing damage by 20% multiplicatively. Another Weaken hit refreshes all stacks.";
   }
   // FIGHT_ROYALE_GARRICK_BOB_KAIZEN_ROOK_V7: targeted kit changes.
   if (kit === "knuckles") {
@@ -282,7 +283,7 @@ export function attacks(kit: string, element: string): Record<string, Attack> {
 const ELEMENT_EFFECT: Record<string, [StatusKind, number, number, string[]]> = {
   fire: ["burn", 4, 20, ["z", "x", "c", "v"]],        // Ember
   flame: ["burn", 4, 25, ["c", "v"]],                 // Vesper: Blade Wave, Judgment
-  light: ["weaken", 4, 0.8, ["c", "v"]],              // Aster: Blade Wave, Judgment
+  light: ["weaken", 50, 0.8, ["x", "c"]],             // Aster: Rising Slash / low sweep + Blade Wave (Judgment is a self-buff)
   electric: ["paralyze", 2.5, 0, ["x", "c", "v"]],    // Raven
   water: ["slow", 3, 0.6, ["z", "x", "c"]],           // Marina
   shadow: ["poison", 6, 10, ["x", "c", "v"]],         // Nyx: Shuriken Fan, Phantom Rush, Venom Fan
