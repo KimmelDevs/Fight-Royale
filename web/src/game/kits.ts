@@ -196,8 +196,8 @@ export function attacks(kit: string, element: string): Record<string, Attack> {
   // ZENITH_SOVEREIGN_METAL_BLOOM_V12_20261108 — protected V windup; 17+14 spears.
   // ZENITH_MAGNETIC_CHARGE_24X_V12_20261108 — C caps basic speed at 2.4x.
   // ZENITH_PHANTOM_FANG_MAGNETIC_CHARGE_V9_20261108
-  // C: 20s real-time buff. Spear 2.4x attack tempo; twin blades 2x normally / 2.4x buffed.
-  // Guard damage only is reduced by 20% while buffed; base health damage does NOT rise.
+  // Zenith tempo: each real damaging hit grants +0.01x action speed for 5s (14 stacks max).
+  // Current max at 14 stacks: 1.14x spear, 2.14x twin blades. C is a dash attack.
   // l5 spear Phantom Fang splits a single finisher into five contact windows.
   // ZENITH_IRON_SOVEREIGN_V1_20261108: Metal spear kit is independent of Zarek.
   if (kit === "glaive" && element === "metal") {
@@ -208,11 +208,11 @@ export function attacks(kit: string, element: string): Record<string, Attack> {
       [68, 0.24, "zn5_w", "zn5_s"] ];
     for (let i=0;i<5;i++) base(`l${i+1}`, { name: `Steel Fang ${i+1}`, type: "melee",
       wind: 0.085 + 0.014 * i, active: 0.075, recover: combo[i][1],
-      dmg: combo[i][0], guard: 13+i*2, reach: 2.14, lunge: 2.35, knock: i===4?3.0:0.65,
+      dmg: Math.round(combo[i][0] * 0.75 * 100) / 100, guard: 13+i*2, /* ZENITH_BASIC_DMG_25P_V8 */ reach: 2.14, lunge: 2.35, knock: i===4?3.0:0.65,
       stun: i===4?0.32:0.16, style: "zenith_basic", pose_w: combo[i][2], pose_s: combo[i][3],
       next: i<4?`l${i+2}`:"" });
     // A true multi-hit l5 needs enough active time to play five rapid thrusts.
-    // The total damage (68) and guard damage (21) are split, not multiplied.
+    // Phantom Fang now totals 51 damage (-25% from 68); guard damage 21 is split, not multiplied.
     t.l5.name = "Phantom Fang";
     t.l5.active = 0.40;
     t.l5.recover = 0.12;
@@ -227,9 +227,10 @@ export function attacks(kit: string, element: string): Record<string, Attack> {
       cd: 10, type: "melee", wind: 0.12, active: 0.75, recover: 0.33,
       dmg: 25, guard: 9, reach: 2.35, knock: 0.35, stun: 0.13,
       style: "zenith_barrage", pose_w: "znx_w", pose_s: "znx_s" });
-    base("c", { name: "Magnetic Charge", desc: "20s buff: spear and twin blade basics 2.4x speed (twin blades normally 2x). Basic guard damage -20%. Health damage unchanged.",
-      cd: 30, type: "buff", mode: "zenith_charge", duration: 20, wind: 0.12, active: 0.08, recover: 0.36,
-      pose_w: "znc_w", pose_s: "znc_s" });
+    base("c", { name: "Spearstep", desc: "Surge forward with a silver spear thrust. A real dash strike that can be dodged, blocked, parried or clashed. Each successful hit grants +0.01x speed for 5s (14 stacks max).",
+      cd: 11, type: "melee", mode: "", wind: 0.16, active: 0.22, recover: 0.38,
+      dmg: 110, guard: 34, reach: 2.63, lunge: 16, knock: 4.2, stun: 0.45,
+      style: "zenith_dash", pose_w: "znz_w", pose_s: "znz_s" });
     base("v", { name: "Sovereign Arsenal", desc: "17 protective bloom spears erupt during cast; 12 elegant directional spears and 2 guided rail finishers follow.",
       cd: 53, type: "projectile", wind: 0.55, active: 1.35, recover: 0.70,
       dmg: 43, guard: 15, knock: 1.4, stun: 0.18, speed: 17, size: 1.2,
@@ -409,9 +410,9 @@ function bonusSkill(kit: string, element: string): Attack {
     case "bow":
       return a({ name: "Piercing Volley", desc: "Five arrows that fly through every enemy in line.", cd: 9, type: "projectile", wind: 0.2, recover: 0.4, dmg: 55, guard: 14, knock: 2, stun: 0.3, speed: 32, count: 5, spread: 0.25, style: "arrow", pierce: true, pose_w: "bow_w", pose_s: "bow_s" });
     case "scythe":
-      return a({ name: "Black Star Requiem", desc: "Draw an eclipse, lift only enemies caught by a real opening hit, then cut a falling star through them. Final crush can be dodged after recovery.",
-        cd: 48, type: "melee", wind: 0.47, active: 1.10, recover: 0.68,
-        dmg: 35, guard: 14, reach: 2.75, knock: 1, stun: 0.18, style: "gravity_requiem",
+      return a({ name: "Black Star Requiem", desc: "A graceful four-beat eclipse dance ending in a falling-star scythe cut. All beats play even on miss, block, parry or clash; each hit can be defended, clashed or dodged independently.",
+        cd: 43, type: "melee", wind: 0.36, active: 1.04, recover: 0.53,
+        dmg: 40, guard: 15, reach: 2.90, knock: 1, stun: 0.18, style: "gravity_requiem",
         pose_w: "grv_w", pose_s: "grv_float", heavy: false });
     case "glaive":
       return a({ name: "Arc Flash", desc: "A lightning-fast straight-line glaive draw dash, inspired by an anime thunder swordsman. Travels during the active window and cuts at the end; can be blocked, parried or clashed.", cd: 12,
@@ -645,44 +646,43 @@ function sickle(): Record<string, Attack> {
  * Mode-specific damage, types, and poses are resolved in Fighter.startAttack. */
 function gravityScythe(): Record<string, Attack> {
   return {
-    l1: a({ name: "Open Crescent", wind: 0.105, active: 0.08, recover: 0.145,
-      dmg: 60, guard: 14, reach: 2.40, lunge: 2.2, knock: 0.38, stun: 0.15,
+    // Six flowing, alternating cuts with a quick natural animation reset.
+    l1: a({ name: "Open Crescent", wind: 0.085, active: 0.08, recover: 0.115,
+      dmg: 65, guard: 15, reach: 2.40, lunge: 2.35, knock: 0.38, stun: 0.15,
       style: "gravity_crescent", pose_w: "gr1_w", pose_s: "gr1_s", next: "l2" }),
-    l2: a({ name: "Reverse Veil", wind: 0.11, active: 0.08, recover: 0.15,
-      dmg: 64, guard: 15, reach: 2.42, lunge: 2.1, knock: 0.42, stun: 0.16,
+    l2: a({ name: "Reverse Veil", wind: 0.09, active: 0.08, recover: 0.120,
+      dmg: 69, guard: 16, reach: 2.42, lunge: 2.25, knock: 0.42, stun: 0.16,
       style: "gravity_crescent", pose_w: "gr2_w", pose_s: "gr2_s", next: "l3" }),
-    l3: a({ name: "Sky Hook", wind: 0.115, active: 0.08, recover: 0.17,
-      dmg: 70, guard: 17, reach: 2.48, lunge: 2.3, knock: 0.55, stun: 0.18,
+    l3: a({ name: "Sky Hook", wind: 0.10, active: 0.08, recover: 0.13,
+      dmg: 76, guard: 17, reach: 2.48, lunge: 2.40, knock: 0.55, stun: 0.18,
       style: "gravity_crescent", pose_w: "gr3_w", pose_s: "gr3_s", next: "l4" }),
-    // Nythera V3: the original heavy fourth hit becomes a flowing setup,
-    // followed by a reverse hook and a committed crescent finisher.
-    l4: a({ name: "Orbit Bloom", wind: 0.125, active: 0.10, recover: 0.18,
-      dmg: 78, guard: 19, reach: 2.52, lunge: 2.4, knock: 0.58, stun: 0.19,
+    l4: a({ name: "Orbit Bloom", wind: 0.105, active: 0.09, recover: 0.145,
+      dmg: 83, guard: 19, reach: 2.52, lunge: 2.50, knock: 0.58, stun: 0.19,
       style: "gravity_bloom", pose_w: "gr4_w", pose_s: "gr4_s", next: "l5" }),
-    l5: a({ name: "Reversal Hook", wind: 0.13, active: 0.09, recover: 0.18,
-      dmg: 78, guard: 20, reach: 2.54, lunge: 2.25, knock: 0.55, stun: 0.18,
+    l5: a({ name: "Reversal Hook", wind: 0.11, active: 0.09, recover: 0.15,
+      dmg: 84, guard: 21, reach: 2.54, lunge: 2.30, knock: 0.55, stun: 0.18,
       style: "gravity_crescent", pose_w: "gr5_w", pose_s: "gr5_s", next: "l6" }),
-    l6: a({ name: "Eclipse Reap", wind: 0.17, active: 0.11, recover: 0.29,
-      dmg: 108, guard: 28, reach: 2.56, lunge: 2.50, knock: 2.65, stun: 0.32,
+    l6: a({ name: "Eclipse Reap", wind: 0.145, active: 0.11, recover: 0.24,
+      dmg: 120, guard: 30, reach: 2.56, lunge: 2.60, knock: 2.65, stun: 0.32,
       style: "gravity_bloom", pose_w: "gr6_w", pose_s: "gr6_s" }),
-    heavy: a({ name: "Grave Descent", wind: 0.25, active: 0.10, recover: 0.58,
-      dmg: 148, guard: 42, reach: 2.53, lunge: 3.15, knock: 4.4, stun: 0.46, heavy: true,
+    heavy: a({ name: "Grave Descent", wind: 0.24, active: 0.10, recover: 0.52,
+      dmg: 155, guard: 44, reach: 2.53, lunge: 3.15, knock: 4.4, stun: 0.46, heavy: true,
       style: "gravity_grave", pose_w: "grh_w", pose_s: "grh_s" }),
-    z: a({ name: "Crescent Snare", desc: "Moonfloat: a curving hook pulls on a confirmed hit and adds Orbit Mark. Dreadfall: a slower guard-crushing hook consumes marks.",
-      cd: 7.0, wind: 0.20, active: 0.10, recover: 0.34,
-      dmg: 100, guard: 25, reach: 2.7, lunge: 2.5, knock: 0.85, stun: 0.24,
+    z: a({ name: "Crescent Snare", desc: "Three elegant alternating hooked scythe cuts. Each beat can be dodged, blocked, parried, or clashed; no hit-confirm required. Moonfloat pulls on successful cuts; Dreadfall consumes Orbit Marks on damage.",
+      cd: 6.5, wind: 0.15, active: 0.45, recover: 0.25,
+      dmg: 45, guard: 12, reach: 2.68, lunge: 2.6, knock: 0.75, stun: 0.18,
       style: "gravity_snare", pose_w: "grz_w", pose_s: "grz_s" }),
-    x: a({ name: "Zero-G Ascension", desc: "Moonfloat: launch and pursue on a confirmed hit. Dreadfall: overhead scythe strike. Dreadfall X in midair is a landing crush.",
-      cd: 10.0, wind: 0.25, active: 0.11, recover: 0.42,
-      dmg: 114, guard: 30, reach: 2.64, lunge: 2.9, knock: 1.4, stun: 0.32,
+    x: a({ name: "Zero-G Ascension", desc: "Three rapid, rising scythe arcs that continue even if the first is defended or misses. Moonfloat lifts on a real hit; Dreadfall cleaves with three heavy cuts. Each beat uses ordinary melee defenses.",
+      cd: 9.0, wind: 0.18, active: 0.54, recover: 0.28,
+      dmg: 49, guard: 13, reach: 2.68, lunge: 2.95, knock: 1.2, stun: 0.21,
       style: "gravity_ascend", pose_w: "grx_w", pose_s: "grx_s" }),
-    x_air: a({ name: "Mass Descent", desc: "Dreadfall only: descend toward the enemy with the scythe, then crash down in an avoidable circle.",
+    x_air: a({ name: "Mass Descent", desc: "Dreadfall only: descend with the scythe and crash down in an avoidable circle.",
       cd: 10.0, type: "strike", at: "self", mode: "dive", speed: 24,
       wind: 0.11, active: 0.12, recover: 0.51,
       dmg: 158, guard: 49, radius: 2.10, lunge: 7.0, knock: 5.8, stun: 0.51, heavy: true,
       style: "gravity_meteor", pose_w: "grx_air_w", pose_s: "grx_air_s" }),
-    c: a({ name: "Event Horizon", desc: "Moonfloat: summon a small, escapable pulling field for 2.6s. Dreadfall: collapse an active field for area damage or make a short-range burst.",
-      cd: 15.0, type: "buff", mode: "gravity_well", wind: 0.36, active: 0.10, recover: 0.52,
+    c: a({ name: "Event Horizon", desc: "Moonfloat: summon an escapable pulling field for 2.6s. Dreadfall: collapse the field after a visible warning. The shock can be defended or evaded.",
+      cd: 14.0, type: "buff", mode: "gravity_well", wind: 0.32, active: 0.10, recover: 0.43,
       dmg: 0, radius: 2.8, style: "gravity_well", pose_w: "grc_w", pose_s: "grc_s" }),
   };
 }

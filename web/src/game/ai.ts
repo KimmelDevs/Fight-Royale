@@ -288,6 +288,14 @@ export class AiBrain implements Brain {
   private zarekGuardPredictCd = 1.3;
   private zarekGuardSeenShots = new Set<number>();
 
+  // ANTI_ZENITH_CPU_V1: reaction and one input decision per observed spear swing.
+  private antiZenithSerial = -1;
+  private antiZenithReactAt = 0;
+  private antiZenithChoice: "guard" | "flank" | "clash" | "none" = "none";
+  private antiZenithGuardUntil = 0;
+  private antiZenithPunishSerial = -1;
+  private antiZenithSide = Math.random() < 0.5 ? -1 : 1;
+
   // Continuous attacks: react to a real incoming beat, not to every animation frame.
   private lastUndodgeableCombo = -1;
   private continuousDodgeReaction = 0;
@@ -583,8 +591,14 @@ export class AiBrain implements Brain {
       this.iqOwnHitConfirmed = true;
       this.iqOwnHitAt = now;
       // Roll once per connected swing, never reroll every frame until success.
-      this.iqOwnFollowWanted = Math.random() < COMBAT_IQ[this.iqLevel].combo;
-      this.iqOwnSkillWanted = Math.random() < COMBAT_IQ[this.iqLevel].combo * 0.55;
+      // A successful Zenith contact earns actual Tempo and Bleed. Continue her
+      // light string more consistently, especially during the twin-blade phase.
+      const zenith = f.kit === "glaive" && f.look.element === "metal";
+      this.iqOwnFollowWanted = Math.random() < (zenith
+        ? [0.24, 0.67, 0.89, 0.98][this.iqLevel]
+        : COMBAT_IQ[this.iqLevel].combo);
+      this.iqOwnSkillWanted = Math.random() < COMBAT_IQ[this.iqLevel].combo *
+        (zenith ? 0.25 : 0.55); // preserve the light chain over skill cancels
     }
   }
 
@@ -1276,13 +1290,13 @@ export class AiBrain implements Brain {
     return true;
   }
 
-  // ZENITH_SOVEREIGN_HUNTRESS_V10_20261108
-  // Three-phase signature: Measure with spear -> Release spear to engage with
-  // fast blades -> Reclaim spear for the protected magnetic-catch reset.
+  // ZENITH_BLEED_DANCE_AI_V11_20261108
+  // Spearstep entry -> landed hits build +0.01x tempo (5s refresh) and 5x Bleed ->
+  // twin blade pressure -> timed spear recall. No AI-only stats or free hits.
   // Tunable AI parameters (seconds and arena meters; NOT new combat stats).
   private readonly zenithTactics = {
-    spearGuard: 2.05, twinRange: 1.54, throwMin: 2.65, throwMax: 8.25,
-    twinMinTime: 0.85, twinPreferTime: 1.35, twinMaxTime: 2.32,
+    spearGuard: 1.97, twinRange: 1.42, throwMin: 2.72, throwMax: 8.25,
+    twinMinTime: 1.25, twinPreferTime: 3.0, twinMaxTime: 5.8,
     xRange: 2.62, vMin: 2.85, vMax: 7.40,
   };
   private zenithTwinSwings = 0;
@@ -1299,7 +1313,7 @@ export class AiBrain implements Brain {
       this.zenithSpearObservedAt = -1;
       this.zenithTwinLastSerial = -1;
       this.zenithTwinSwings = 0;
-      this.zenithSkillNextAt = now + 0.25;
+      this.zenithSkillNextAt = now + 0.24;
     }
     if (f.zenithSpearOut !== this.zenithSpearWasOut) {
       this.zenithSpearWasOut = f.zenithSpearOut;
@@ -1312,65 +1326,80 @@ export class AiBrain implements Brain {
       this.zenithTwinLastSerial = f.swingSerial;
       this.zenithTwinSwings++;
     }
-    // Catch recoil must finish. Emergency defenses and genuine attack commitments
-    // win over scripted personality choices. No cheating through skill cooldowns.
+    // Don't cancel a genuine light-combo opportunity with X, Z, C or V.
+    // Emergency shield, parry and dash have priority over ALL offensive plans.
     if (!f.onGround || f.chainBindT > 0 || f.chainBoundBy ||
         f.zenithCatchRecoilT > 0.08 || f.status.has("freeze") ||
         now < this.zenithSkillNextAt || f.intent.skill || f.intent.attack ||
         f.intent.dash.lengthSq() > 0.01 || f.intent.block ||
         this.blockWait >= 0 || this.blockHold > 0 ||
         this.comboParryTarget > now || this.projectileSwordCommit > 0) return false;
+    if (f.state === S.ATTACK && f.atk && /^l[1-5]$/.test(f.atkId) &&
+        !!f.atk.next && this.iqOwnHitConfirmed) return false;
     const free = f.state === S.IDLE || f.state === S.BLOCK || f.state === S.CHARGE ||
       (f.state === S.ATTACK && f.atkPhase === 2 && !!f.atk);
     if (!free) return false;
     const gap = f.root.position.clone().setY(0).distanceTo(o.root.position.clone().setY(0));
-    const enemyRecovery = this.hasPunishWindow(o) || o.state === S.HITSTUN ||
-      o.state === S.STAGGER;
-    const enemyPreparing = o.state === S.ATTACK && o.atkPhase === 0 &&
+    const recovery = this.hasPunishWindow(o) || o.state === S.HITSTUN ||
+      o.state === S.STAGGER || o.state === S.KNOCKDOWN;
+    const windupThreat = o.state === S.ATTACK && o.atkPhase === 0 &&
       gap < (o.atk?.reach ?? 2) + 0.8;
-    const guardWeak = o.guard < o.maxGuard * 0.37;
+    const guarding = o.state === S.BLOCK;
+    const guardWeak = o.guard < o.maxGuard * 0.36;
+    // Visible enemy bleed and our own tempo counter; never private enemy cooldowns.
+    const bleed = o.status.stacks("bleed");
+    const tempo = f.zenithTempoStacks;
+    const expiring = tempo > 0 && f.zenithMagneticChargeT < 1.5;
+    const activeTempo = tempo >= 2 && f.zenithMagneticChargeT > 0;
     const ready = (key: "z" | "x" | "c" | "v") => !!f.attacks[key] &&
       (f.cooldowns[key] ?? 1) <= 0 && (key !== "v" || f.bonusSkillUnlocked);
     let key: "z" | "x" | "c" | "v" | "" = "";
     const t = this.zenithTactics;
     if (f.zenithSpearOut) {
       const sinceThrow = now - (this.zenithSpearObservedAt >= 0 ? this.zenithSpearObservedAt : now);
-      // Aerial spear phase is intentionally aggressive, not passive waiting.
-      // X uses the legal twin-blade version when the main spear is absent.
-      if (!enemyPreparing && ready("x") && gap < t.xRange && gap > 0.55 &&
-          (enemyRecovery || guardWeak || this.zenithTwinSwings > 0)) {
+      // Twin blades already have a 2.0x base. Keep them out long enough to land
+      // a legitimate combo, earn 5 Bleed stacks, then refresh the 5s tempo.
+      // Do NOT cast a spear dash while the spear is visibly flying elsewhere.
+      if (!windupThreat && ready("x") && !guarding &&
+          gap >= 0.6 && gap < t.xRange &&
+          (recovery || (activeTempo && bleed < 5 && this.zenithTwinSwings >= 1))) {
         key = "x";
-      } else if (!enemyPreparing && ready("c") && f.zenithMagneticChargeT <= 0 &&
-          sinceThrow < t.twinMinTime && gap > 2.1) {
-        key = "c"; // Charge the blades without instantly calling the spear back.
-      } else if (sinceThrow >= t.twinMinTime &&
-          ((gap > 4.3 && sinceThrow > t.twinPreferTime) ||
-           (this.zenithTwinSwings >= 3 && sinceThrow > t.twinPreferTime && gap > 2.0) ||
-           sinceThrow > t.twinMaxTime)) {
-        // Z recast is specifically allowed by Fighter while the spear is away,
-        // EVEN when Z is on cooldown. It returns on its ordinary flight path.
+      } else if (sinceThrow > t.twinMinTime &&
+          ((gap > 4.7 && sinceThrow > 1.8) ||
+           (gap > 3.15 && sinceThrow > t.twinPreferTime) ||
+           (guarding && !guardWeak && sinceThrow > t.twinPreferTime) ||
+           (sinceThrow > t.twinMaxTime && (this.zenithTwinSwings >= 2 || gap > 2.4)) ||
+           sinceThrow > 7.0)) {
+        // Z recast is a normal spear return, not a free cooldown bypass.
         key = "z";
       }
     } else {
-      // C starts the duel: get to Magnetic Charge before entering melee.
-      if (!enemyPreparing && ready("c") && f.zenithMagneticChargeT <= 0 &&
-          (gap < 6.9 || enemyRecovery)) {
+      // C is a normal dash thrust with a telegraphed hitbox. Use it to catch a
+      // retreat or punish recovery, not to suicidally dash into a raised guard.
+      if (!windupThreat && !guarding && ready("c") &&
+          gap > 2.05 && gap < 5.1 &&
+          (recovery || gap > 2.75 || expiring)) {
         key = "c";
-      } else if (!enemyPreparing && ready("v") && gap >= t.vMin && gap <= t.vMax &&
-          (enemyRecovery || (guardWeak && o.state === S.BLOCK)) &&
-          this.iqLevel >= 1) {
-        key = "v"; // 53s V reserved for an observable opening, not wasted at random.
-      } else if (!enemyPreparing && ready("x") && gap > 0.70 && gap < t.xRange &&
-          (enemyRecovery || guardWeak || (f.zenithMagneticChargeT > 0 && this.iqLevel >= 2))) {
+      } else if (!windupThreat && ready("x") &&
+          gap > 0.67 && gap < t.xRange &&
+          (recovery || (guardWeak && guarding) ||
+           (activeTempo && !guarding && bleed < 5))) {
         key = "x";
-      } else if (!enemyPreparing && ready("z") && gap >= t.throwMin && gap <= t.throwMax &&
-          (enemyRecovery || f.zenithMagneticChargeT > 0 || gap > 4.5 || o.state === S.BLOCK)) {
-        key = "z"; // Open a two-weapon phase, not an instant recall gimmick.
+      } else if (!windupThreat && ready("v") && this.iqLevel >= 1 &&
+          gap >= t.vMin && gap <= t.vMax &&
+          (recovery || (guardWeak && guarding && this.iqLevel >= 2))) {
+        key = "v";
+      } else if (!windupThreat && ready("z") &&
+          gap >= t.throwMin && gap <= t.throwMax &&
+          (recovery || (gap > 4.2 && !expiring) ||
+           (guarding && !guardWeak && gap > 3.1))) {
+        key = "z"; // Set up a purposeful twin-blade phase.
       }
     }
-    // A missed tactical read has a real reaction delay, especially on Easy.
-    this.zenithSkillNextAt = now + [0.92, 0.64, 0.38, 0.23][this.iqLevel];
-    if (!key || Math.random() > [0.27, 0.57, 0.82, 0.95][this.iqLevel]) return false;
+    // Failed reads cost reaction time. Hard and Master get better *decisions*,
+    // never shorter engine cooldowns, invisible information, or guaranteed hits.
+    this.zenithSkillNextAt = now + [0.80, 0.51, 0.30, 0.18][this.iqLevel];
+    if (!key || Math.random() > [0.27, 0.60, 0.85, 0.96][this.iqLevel]) return false;
     this.queue = [];
     this.hold = 0;
     f.intent.attack = false;
@@ -1401,13 +1430,19 @@ export class AiBrain implements Brain {
     }
     const side = new THREE.Vector3(-toward.z, 0, toward.x)
       .multiplyScalar(this.zenithOrbitSide);
+    const bleeding = o.status.stacks("bleed");
+    const earnedTempo = f.zenithTempoStacks > 0 && f.zenithMagneticChargeT > 0;
+    const urgent = earnedTempo && f.zenithMagneticChargeT < 1.3;
     const ideal = f.zenithSpearOut ? this.zenithTactics.twinRange :
-      this.zenithTactics.spearGuard;
+      (earnedTempo ? 1.82 : this.zenithTactics.spearGuard);
     const dir = new THREE.Vector3();
-    if (gap > ideal + 0.35) dir.copy(toward).addScaledVector(side, 0.25);
-    else if (gap < 0.98 && !f.zenithSpearOut)
-      dir.copy(side).addScaledVector(toward, -0.28); // redirect, never corner-hide
-    else dir.copy(side).addScaledVector(toward, gap > ideal ? 0.32 : -0.10);
+    if (o.state === S.BLOCK && !urgent && gap <= ideal + 0.7 && !f.zenithSpearOut)
+      dir.copy(side).addScaledVector(toward, -0.02); // don't dash straight into block
+    else if (gap > ideal + (urgent ? 0.16 : 0.35))
+      dir.copy(toward).addScaledVector(side, urgent || bleeding < 5 ? 0.16 : 0.26);
+    else if (gap < 0.95 && !f.zenithSpearOut)
+      dir.copy(side).addScaledVector(toward, -0.28);
+    else dir.copy(side).addScaledVector(toward, gap > ideal ? 0.32 : -0.09);
     if (dir.lengthSq() < 0.01) return;
     dir.normalize();
     if (f.stage) {
@@ -1424,7 +1459,9 @@ export class AiBrain implements Brain {
         dir.normalize();
       }
     }
-    f.intent.move.copy(dir).multiplyScalar(f.zenithSpearOut ? 0.94 : 0.79);
+    // Press to maintain earned 5s tempo, without forcing suicidal approaches.
+    f.intent.move.copy(dir).multiplyScalar(f.zenithSpearOut ? 0.99 :
+      f.zenithTempoStacks > 0 ? 0.93 : 0.81);
   }
 
   // NYTHERA_REAPER_SCYTHE_HARVESTER_AI_V2_20261108
@@ -1605,9 +1642,9 @@ export class AiBrain implements Brain {
     const pressure = o.state === S.HITSTUN || o.state === S.STAGGER || this.hasPunishWindow(o);
     const opportunity = [0.24, 0.54, 0.79, 0.94][this.iqLevel];
     let key: "z"|"x"|"c"|"v"|"" = "";
-    if (ready("c") && f.zenithMagneticChargeT <= 0 &&
-        (gap <= 6.5 || f.zenithSpearOut || pressure)) {
-      key = "c"; // pre-buff the next basic combo, with or without the spear
+    if (ready("c") && gap > 1.4 && gap < 5.4 &&
+        (pressure || gap > 2.8)) {
+      key = "c"; // spear dash entry or recovery punish
     } else if (f.zenithSpearOut) {
       const held = now - Math.max(0, this.zenithSpearObservedAt);
       const anchorDist = f.zenithSpearAnchor.clone().setY(0).distanceTo(f.root.position.clone().setY(0));
@@ -1616,16 +1653,16 @@ export class AiBrain implements Brain {
           (gap < 3.3 || held > 2.4 || anchorDist > 7.5)) key = "z";
     } else if (ready("v") && gap >= 2.3 && gap < 7.3 && pressure && this.iqLevel >= 2) {
       key = "v";
-    } else if (ready("c") && f.zenithMagneticChargeT <= 0 && gap < 6) {
-      key = "c"; // self-buff, no more magnet pull
+    } else if (ready("c") && gap > 1.3 && gap < 5.4 && pressure) {
+      key = "c"; // real spearstep contact
     } else if (ready("x") && gap > 0.65 && gap < 2.8 &&
           (pressure || marked === 1 || this.iqLevel >= 2)) {
       key = "x";
     } else if (ready("z") && gap >= 3.5 && gap <= 9.2 &&
           (marked !== -1 || pressure)) {
       key = "z";
-    } else if (ready("c") && f.zenithMagneticChargeT <= 0) {
-      key = "c"; // optional pre-engagement Magnetic Charge
+    } else if (ready("c") && gap > 2.1 && gap < 5.1) {
+      key = "c"; // close a gap with real forward movement
     } else if (ready("x") && gap < 2.5 && pressure) {
       key = "x";
     }
@@ -1862,6 +1899,127 @@ export class AiBrain implements Brain {
    * Clashes and affordable blocks are preferred; attacking never gets cancelled unless
    * a real dodge can be executed. Skill pressure resumes on the next frame.
    */
+  /** Observe Zenith's ACTUAL fast spear swings; evade, raise guard or meet
+   * the blade with a real light attack. Never read hidden future inputs.
+   * In recovery, retaliate instead of standing still or holding a stale shield.
+   */
+  private antiZenithDuel(f: Fighter, o: Fighter): boolean {
+    if (o.look.element !== "metal" || o.kit !== "glaive" ||
+        f.isDown() || o.isDown() || f.chainBoundBy || !f.onGround) return false;
+    const now = this.threats.now();
+    const gap = f.root.position.clone().setY(0).distanceTo(o.root.position.clone().setY(0));
+    const a = o.atk;
+    const close = gap < Math.max(2.5, (a?.reach ?? 2.2) + 0.65);
+    const canInput = f.state === S.IDLE || f.state === S.BLOCK;
+    const charged = o.zenithMagneticChargeT > 0 || o.zenithSpearOut ||
+      a?.style === "zenith_barrage";
+    const relative = f.root.position.clone().sub(o.root.position).setY(0);
+    if (relative.lengthSq() < 0.001) relative.set(1,0,0);
+    relative.normalize();
+    const side = new THREE.Vector3(-relative.z, 0, relative.x).multiplyScalar(this.antiZenithSide);
+    const safeDirection = (candidate: THREE.Vector3): THREE.Vector3 => {
+      if (f.stage) return new THREE.Vector3(Math.sign(candidate.x) || 1,0,0);
+      const dest = f.root.position.clone().addScaledVector(candidate, 2.1);
+      if (dest.length() < f.arenaRadius - f.radius - 0.30) return candidate;
+      const towardCenter = f.root.position.clone().setY(0).negate().normalize();
+      return side.clone().addScaledVector(towardCenter, 1.5).normalize();
+    };
+    // ZENITH_TEMPO_GUARD_STALL_V8: the public Tempo bar makes this a visible,
+    // counterable strategy. Keep an ordinary guard up to deny successful hits
+    // until the real 5s timer expires. Never grant invulnerability/extra guard.
+    // At low guard, disengage using actual movement/dash rules to avoid a break.
+    const visibleTempo = o.zenithTempoStacks > 0 && o.zenithMagneticChargeT > 0;
+    if (visibleTempo && canInput && !f.dashing() && gap < 3.85) {
+      const guardLow = f.guard < f.maxGuard * (charged ? 0.47 : 0.39);
+      this.queue = []; this.hold = 0;
+      this.blockWait = -1; this.blockHold = 0;
+      f.intent.attack = false;
+      f.intent.skill = "";
+      if (guardLow) {
+        const escape = safeDirection(relative.clone().addScaledVector(side, 0.43).normalize());
+        f.intent.block = false;
+        f.intent.move.copy(escape);
+        if (f.dashCd <= 0) f.intent.dash.copy(escape);
+      } else {
+        f.intent.block = true;
+        const kite = safeDirection(relative.clone().multiplyScalar(0.70)
+          .addScaledVector(side, 0.38).normalize());
+        f.intent.move.copy(kite).multiplyScalar(0.54);
+      }
+      return true;
+    }
+    // A real cast animation begins. Higher levels notice the faster follow-ups;
+    // Easy still frequently misses the opportunity.
+    if (o.state === S.ATTACK && a?.type === "melee" && close) {
+      if (this.antiZenithSerial !== o.swingSerial) {
+        this.antiZenithSerial = o.swingSerial;
+        this.antiZenithSide *= Math.random() < 0.35 ? -1 : 1;
+        const skill = this.iqLevel;
+        const read = [0.18, 0.56, 0.79, 0.93][skill];
+        this.antiZenithChoice = Math.random() > read ? "none" :
+          f.guard < f.maxGuard * 0.28 || (charged && Math.random() < 0.38)
+            ? "flank" : !RANGED.has(f.kit) && f.attacks.l1?.type === "melee" &&
+              !charged && Math.random() < [0.05,0.14,0.25,0.34][skill]
+              ? "clash" : "guard";
+        this.antiZenithReactAt = now + rand(this.p.react[0], this.p.react[1]) *
+          (charged ? 0.62 : 0.87);
+        this.antiZenithGuardUntil = now + (charged ? 0.37 : 0.30);
+      }
+      if (!canInput || now < this.antiZenithReactAt || this.antiZenithChoice === "none")
+        return false;
+      if (this.antiZenithChoice === "flank") {
+        const move = safeDirection(side.clone().addScaledVector(relative, 0.52).normalize());
+        f.intent.move.copy(move);
+        f.intent.block = false;
+        f.intent.attack = false;
+        f.intent.skill = "";
+        if (f.dashCd <= 0 && !f.dashing()) f.intent.dash.copy(move);
+        // Once committed to a real dash, use normal movement rules next frame.
+        if (f.dashCd <= 0) this.antiZenithChoice = "none";
+        return true;
+      }
+      if (this.antiZenithChoice === "clash" && f.state === S.IDLE &&
+          f.atkLock <= 0 && gap <= f.attacks.l1.reach + 0.12) {
+        f.intent.attack = true;
+        f.intent.block = false;
+        f.intent.move.copy(side).multiplyScalar(0.25);
+        this.antiZenithChoice = "none";
+        return true;
+      }
+      if (this.antiZenithChoice === "guard" && now < this.antiZenithGuardUntil) {
+        this.queue = []; this.hold = 0;
+        this.blockWait = -1; this.blockHold = 0;
+        f.intent.attack = false; f.intent.skill = "";
+        f.intent.block = true;
+        // Guard while *circling* the spear; never stand still indefinitely.
+        f.intent.move.copy(safeDirection(side)).multiplyScalar(0.57);
+        return true;
+      }
+    }
+    // A visible recovery window is the cue to re-enter. No fabricated
+    // cooldown information and no special attack timing advantage.
+    if (canInput && a?.type === "melee" && o.state === S.ATTACK &&
+        o.atkPhase === 2 && o.stateT >= a.wind + a.active + 0.015 &&
+        gap <= (f.attacks.l1?.reach ?? 1.9) + 0.12 &&
+        this.antiZenithPunishSerial !== o.swingSerial &&
+        f.atkLock <= 0 && f.attacks.l1?.type === "melee") {
+      this.antiZenithPunishSerial = o.swingSerial;
+      f.intent.block = false; f.intent.attack = true;
+      f.intent.move.copy(relative).negate().multiplyScalar(0.48);
+      this.blockWait = -1; this.blockHold = 0;
+      return true;
+    }
+    // Briefly reposition when the spear is being recalled; a protected catch
+    // is a poor time to trade. The normal AI resumes immediately afterward.
+    if (canInput && o.zenithCatchShieldT > 0.08 && gap < 2.65 &&
+        f.guard < f.maxGuard * 0.6) {
+      f.intent.move.copy(safeDirection(side)).multiplyScalar(0.67);
+      f.intent.block = false;
+      return true;
+    }
+    return false;
+  }
+
   private dodgeUnsafeContinuous(f: Fighter, o: Fighter, dt: number): boolean {
     const atk = o.atk;
     if (o.state !== S.ATTACK || !atk || !o.isContinuousComboActive() ||
@@ -2334,6 +2492,7 @@ export class AiBrain implements Brain {
     if (this.avoidKaizenSpinGuard(f, o, dt)) return;
     if (this.dodgeUnsafeContinuous(f, o, dt)) return;
     if (this.evadeUnsafeHeavy(f, o, dt)) return;
+    if (this.antiZenithDuel(f, o)) return;
 
     if (this.spinCounterResponse(f, o, dt)) return;
     if (this.counterThreatDefense(f, o, dt)) return;
@@ -4192,7 +4351,8 @@ private personalizedSkill(f: Fighter, o: Fighter, distance: number): string | nu
       case "zenith":
         if (name === "Rail Spear") points += distance > 3.0 && !f.zenithSpearOut ? 2.3 : -1.0;
         if (name === "Phantom Spear Barrage") points += punish && close ? 2.3 : 0.2;
-        if (name === "Magnetic Charge") points += f.zenithMagneticChargeT > 0 ? -3.0 : distance < 6.5 ? 2.5 : 1.0;
+        if (name === "Spearstep") points += distance > 1.3 && distance < 5.3
+          ? (punish ? 3.0 : 1.4) : -2.0;
         if (name === "Sovereign Arsenal") {
           if (f.zenithSpearOut || distance < 2.85 || distance > 7.4 ||
               !(punish || (o.state === S.BLOCK && o.guard < o.maxGuard * 0.37))) viable = false;
@@ -4350,16 +4510,24 @@ private offense(f: Fighter, o: Fighter, dt: number) {
   }
   if (distance > reach) return;
   if (danger && !punish && id !== "zarek" && id !== "aster" && Math.random() < 0.80) return;
+  // Do not donate free parries: Zenith flanks a full guard rather than
+  // mindlessly feeding an opponent stacks with fast spear basics.
+  if (id === "zenith" && blocked && o.guard > o.maxGuard * 0.55 &&
+      !punish && Math.random() < (this.iqLevel >= 2 ? 0.82 : 0.50)) return;
   // Near predicted enemy skill return, favor movement/defense over a risky commit.
   if (cdIntel.caution > 0.43 && !punish && o.state === S.IDLE &&
       Math.random() < cdIntel.caution * dt * 0.90) return;
   this.thinkCd -= dt * (1 + cdIntel.pressure * 0.30);
   if (this.thinkCd > 0) return;
   const fast = ["assassin", "knuckles", "kicks", "sickle", "glaive"].includes(f.kit);
-  this.thinkCd = (fast ? rand(0.45, 0.96) : rand(0.7, 1.45)) * this.p.think;
+  // Zenith's action rhythm speeds up as real hit-earned Tempo accumulates.
+  // These are AI THINK intervals only, not game attacks/cooldowns or free inputs.
+  this.thinkCd = (id === "zenith"
+    ? rand(0.24, f.zenithSpearOut ? 0.43 : 0.49)
+    : fast ? rand(0.45, 0.96) : rand(0.7, 1.45)) * this.p.think;
   if (punish) this.thinkCd *= 0.45; // uses an observed recovery, not foreknowledge
-  if (id === "zenith") this.thinkCd *= f.zenithSpearOut ? 0.46 :
-    f.zenithMagneticChargeT > 0 ? 0.62 : 0.78;
+  if (id === "zenith") this.thinkCd *= f.zenithSpearOut ? 0.55 :
+    f.zenithTempoStacks > 0 ? 0.72 : 0.88;
   if (!punish) this.thinkCd *= 1 + cdIntel.caution * 0.24;
   let heavyChance = style ? Math.min(0.78, style.heavy +
       (punish ? 0.14 : 0) + (blocked ? 0.28 : 0))
@@ -4373,10 +4541,11 @@ private offense(f: Fighter, o: Fighter, dt: number) {
     (this.personaMode === "pressure" ? 0.09 :
       this.personaMode === "probe" ? -0.06 :
       this.personaMode === "reset" ? -0.13 : 0), 0.06, 0.80);
-  // V10 Zenith: use charged basics much less often during a 3x/4x
-  // Magnetic Charge window. Let her natural hit-confirm system reach Phantom Fang.
-  if (id === "zenith" && (f.zenithMagneticChargeT > 0 || f.zenithSpearOut))
-    heavyChance = Math.min(0.14, heavyChance * 0.28);
+  // Zenith: landed light hits build 0.01x tempo (5s) and x5 Bleed; prefer them to
+  // slow charging while preserving occasional guard-break attempts.
+  if (id === "zenith") heavyChance = o.state === S.BLOCK &&
+    o.guard < o.maxGuard * 0.28 ? Math.min(0.26, heavyChance) :
+    Math.min(f.zenithTempoStacks > 0 ? 0.075 : 0.12, heavyChance * 0.25);
   // Veyr's festival specifically favors sustained lights and real guard pressure.
   const festival = id === "veyr" && f.bloodFestivalT > 0;
   if (!festival && Math.random() < heavyChance) {

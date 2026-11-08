@@ -13,7 +13,7 @@ export type StatusKind = "burn" | "poison" | "bleed" | "paralyze" | "slow" | "we
 export const STATUS: Record<StatusKind, { label: string; color: string; bit: number; text: (t: number, p: number) => string }> = {
   burn: { label: "BURN", color: "#ff7a2e", bit: 1, text: (t, p) => `Burn: ${p} dmg/s for ${t}s` },
   poison: { label: "POISON", color: "#8ee05a", bit: 2, text: (t, p) => `Poison: ${p} dmg/s for ${t}s, stacks x3` },
-  bleed: { label: "BLEED", color: "#e0303e", bit: 4, text: (t, p) => `Bleed: ${p} dmg/s for ${t}s (x1.5 while moving)` },
+  bleed: { label: "BLEED", color: "#e0303e", bit: 4, text: (t, p) => `Bleed: ${p} dmg/s per stack for ${t}s (Zenith: up to x5; x1.5 while moving)` },
   paralyze: { label: "PARALYZED", color: "#ffe066", bit: 8, text: (t) => `Paralyze: ${t}s (slowed, jolted every second)` },
   slow: { label: "SLOWED", color: "#7fc8ff", bit: 16, text: (t, p) => `Slow: -${Math.round((1 - p) * 100)}% movement, attack and cast speed for ${t}s` },
   freeze: { label: "FROZEN", color: "#c5f7ff", bit: 64, text: (t) => `Freeze: immobilized and unable to attack for ${t}s` },
@@ -62,6 +62,21 @@ export class StatusSet {
     return true;
   }
 
+  /** Zenith alone can stack bleed. Other bleed sources keep their original one-stack rules. */
+  applyStackingBleed(t: number, p: number, src: unknown = null): number {
+    if (src) this.src = src;
+    const cur = this.m.get("bleed");
+    if (cur) {
+      cur.stacks = Math.min(5, cur.stacks + 1);
+      cur.t = Math.max(cur.t, t);
+      cur.p = Math.max(cur.p, p);
+    } else {
+      this.m.set("bleed", { t, p, stacks: 1, tick: DOT_TICK, jolt: JOLT_EVERY * 0.5 });
+    }
+    this.syncMask();
+    return this.stacks("bleed");
+  }
+
   has(kind: StatusKind) { return (this.mask & STATUS[kind].bit) !== 0; }
   stacks(kind: StatusKind) { return this.m.get(kind)?.stacks ?? 0; }
   consume(kind: StatusKind) { const n = this.stacks(kind); this.m.delete(kind); this.syncMask(); return n; }
@@ -105,7 +120,8 @@ export class StatusSet {
         s.tick -= dt;
         if (s.tick <= 0) {
           s.tick += DOT_TICK;
-          const mult = kind === "poison" ? s.stacks : kind === "bleed" && moving ? 1.5 : 1;
+          const mult = kind === "poison" ? s.stacks :
+            kind === "bleed" ? s.stacks * (moving ? 1.5 : 1) : 1;
           dots.push({ kind, dmg: s.p * DOT_TICK * mult });
         }
       } else if (kind === "paralyze") {

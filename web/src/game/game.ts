@@ -1089,11 +1089,27 @@ export class Game implements MobHost {
     }
   }
 
+  private orbitFxCooldown = 0;
   private statusT = new Map<Entity, number>();
   private statusLabelAt = new Map<Entity, number>();
 
   /** Particles on anyone with an active status (runs on every machine from the synced bitmask). */
   private statusFx(dt: number) {
+    // Three unmistakable purple orbit beads above affected enemies, including
+    // remote opponents via their replicated fighter snapshot fields.
+    this.orbitFxCooldown -= dt;
+    if (this.orbitFxCooldown <= 0) {
+      this.orbitFxCooldown = 0.36;
+      for (const f of this.fighters) {
+        if (f.isDown() || f.orbitDisplayT <= 0 || f.orbitDisplayStacks <= 0) continue;
+        const origin = f.chest().add(new THREE.Vector3(0, 0.65, 0));
+        for (let i = 0; i < f.orbitDisplayStacks; i++) {
+          const ang = this.time * 1.9 + (i * Math.PI * 2) / 3;
+          const bead = origin.clone().add(new THREE.Vector3(Math.cos(ang)*0.46, 0.15*Math.sin(ang*0.8), Math.sin(ang)*0.46));
+          this.fx.motes(bead, i === 2 ? "#f9e3ff" : "#c990fa", 4);
+        }
+      }
+    }
     for (const e of [...this.fighters, ...this.mobs] as (Fighter | Mob)[]) {
       const kinds = e.status.kinds();
       if (!kinds.length || e.isDown() || !e.root.visible) { this.statusT.delete(e); continue; }
@@ -1775,62 +1791,72 @@ export class Game implements MobHost {
       return true;
     }
     if (a.style === "gravity_requiem") {
+      // NYTHERA_ELEGANT_REAPER_V4: no opener hit-confirm or victim-lock.
+      // This is a sequence of four separate physical contact windows, with
+      // ordinary dodge, shield, parry and clash resolution on EVERY beat.
       const round = this.round, serial = f.swingSerial;
-      const hitTargets: Entity[] = [];
-      const near = f.root.position.clone();
-      this.fxp("ring", near.clone().add(new THREE.Vector3(0, 1.4, 0)), "#aa78e2", 3.7, 0.40, 0.96);
-      this.fxp("orb", near.clone().add(new THREE.Vector3(0, 3.0, 0)), 0.48);
-      this.fxp("motes", near.clone().add(new THREE.Vector3(0, 1.5, 0)), "#b38bf8", 36);
-      this.snd("teleport", 0.73);
-      // The opening is blockable/parryable; a defended opponent is NEVER lifted.
-      for (const d of this.enemiesOf(f)) {
-        const to = d.root.position.clone().sub(f.root.position); const dy = Math.abs(to.y); to.y = 0;
-        if (to.length() > 2.8 + d.radius*0.5 || dy > 1.5) continue;
-        const dir = to.lengthSq() > 0.01 ? to.normalize() : new THREE.Vector3(0,0,1);
-        const result = this.applyHit(f, d, a, f.atkPower, d.chest(), dir, false);
-        if (["hit", "crit"].includes(result)) {
-          hitTargets.push(d);
-          if (d instanceof Fighter && !d.stage && !d.isDown()) {
-            d.onGround = false; d.velY = Math.max(d.velY, 6.2); d.gravityFloatT = 0.70;
-          }
-        }
-      }
-      if (hitTargets.length === 0) return true;
-      // Nythera takes the high line of the choreography. This is NOT a teleport or invuln.
-      if (!f.stage) { f.onGround = false; f.velY = Math.max(f.velY, 6.8); }
-      this.laterCombo(f, 0.37, () => {
-        if (round !== this.round || f.isDown() || f.swingSerial !== serial) return;
-        f.poseOverride = "grv_float";
-        this.fxp("ring", f.chest(), "#debdff", 2.4, 0.26, 0.86);
-        this.fxp("sparks", f.model.bladeTip.getWorldPosition(new THREE.Vector3()), "#dbc7ff", 25, 4);
-        for (const d of hitTargets) {
-          if (d.isDown() || d.root.position.distanceTo(f.root.position) > 5.0) continue;
-          const follow: Attack = {...a, dmg:55, guard:15, stun:0.13, knock:0.4};
-          const dir = d.root.position.clone().sub(f.root.position).setY(0).normalize();
-          this.applyHit(f, d, follow, f.atkPower, d.chest(), dir, false);
-        }
+      const cuts = [
+        { t: 0, dmg: 40, guard: 15, reach: 2.86, pose: "grv_float", color: "#d5acff" },
+        { t: 0.24, dmg: 43, guard: 17, reach: 2.85, pose: "gr2_s", color: "#b888fc" },
+        { t: 0.49, dmg: 50, guard: 20, reach: 2.98, pose: "gr5_s", color: "#e0c8ff" },
+        { t: 0.76, dmg: 165, guard: 51, reach: 3.18, pose: "grv_finish", color: "#9553df" },
+      ];
+      this.fxp("ring", f.chest(), "#a97cde", 3.3, 0.42, 0.84);
+      this.fxp("orb", f.chest().add(new THREE.Vector3(0, 1.40, 0)), 0.42);
+      this.fxp("motes", f.chest(), "#e7d1ff", 35);
+      this.snd("teleport", 0.53);
+      cuts.forEach((cut, i) => {
+        const strike = () => {
+          if (round !== this.round || f.isDown() || f.swingSerial !== serial ||
+              f.state !== S.ATTACK) return;
+          f.poseOverride = cut.pose;
+          const tip = f.model.bladeTip.getWorldPosition(new THREE.Vector3());
+          this.fxp("nytheraCrescent", f.chest(), f.root.rotation.y, 3 + i, i === 3);
+          this.fxp("slashes", tip, cut.color);
+          this.fxp("sparks", tip, cut.color, i === 3 ? 37 : 18, i === 3 ? 7 : 4);
+          this.fxp("flash", tip, "#f3dcff", i === 3 ? 0.94 : 0.35, 0.14, 0.87);
+          if (i === 3) {
+            this.fxp("ring", f.root.position.clone(), "#a372ef", 3.2, 0.31, 0.84);
+            this.snd("swing_heavy", 0.82);
+            this.add_trauma(0.26);
+          } else this.snd("swing2", 0.50);
+          this.melee(f, { ...a, id: `v_eclipse_${i}`, type: "melee", style: "gravity_requiem",
+            dmg: cut.dmg, guard: cut.guard, reach: cut.reach, lunge: 0,
+            knock: i === 3 ? 5.4 : 0.55, stun: i === 3 ? 0.43 : 0.17,
+            heavy: i === 3 });
+        };
+        if (cut.t === 0) strike();
+        else this.laterCombo(f, cut.t, strike);
       });
-      this.laterCombo(f, 0.84, () => {
-        if (round !== this.round || f.isDown() || f.swingSerial !== serial) return;
-        f.poseOverride = "grv_finish";
-        f.velY = -Math.max(13, Math.abs(f.velY));
-        const impact = f.root.position.clone().setY(this.plat ? f.root.position.y : 0);
-        this.fxp("ring", impact, "#6a2ba4", 4.1, 0.44, 0.98);
-        this.fxp("flash", impact.clone().add(new THREE.Vector3(0,0.7,0)), "#f1ddff", 1.4, 0.18, 0.9);
-        this.fxp("rocks", impact, 30, 1.4);
-        this.fxp("sparks", impact.clone().add(new THREE.Vector3(0,1,0)), "#b388ff", 45, 7);
-        this.snd("dramatic_metal_explosion_impact", 0.78);
-        this.add_trauma(0.55);
-        const final: Attack = {...a, dmg:200, guard:55, knock:8.2, stun:0.55, heavy:true};
-        for (const d of hitTargets) {
-          if (d.isDown()) continue;
-          const diff = d.root.position.clone().sub(impact);
-          const dy = Math.abs(diff.y); diff.y = 0;
-          if (diff.length() > 4.1 + d.radius*0.4 || dy > 4.4) continue;
-          this.applyHit(f, d, final, f.atkPower, d.chest(),
-            diff.lengthSq() > 0.01 ? diff.normalize() : new THREE.Vector3(0,0,1), false);
-        }
-      });
+      return true;
+    }
+    // Fast elegant Z/X dance; independent contacts (not auto-hit follow-ups).
+    if (["gravity_snare", "gravity_sentence", "gravity_ascend", "gravity_crush"].includes(a.style)) {
+      const round = this.round, serial = f.swingSerial;
+      const dark = ["gravity_sentence", "gravity_crush"].includes(a.style);
+      const color = dark ? "#a864ef" : "#e0c0ff";
+      const poses = a.id === "z" ? ["grz_s", "gr2_s", "gr5_s"] : ["grx_s", "gr3_s", "gr6_s"];
+      const cut = (i: number) => {
+        if (round !== this.round || f.isDown() || f.swingSerial !== serial ||
+            f.state !== S.ATTACK) return;
+        f.poseOverride = poses[i];
+        const tip = f.model.bladeTip.getWorldPosition(new THREE.Vector3());
+        this.fxp("nytheraCrescent", f.chest(), f.root.rotation.y, i + 1, dark);
+        this.fxp("slashes", tip, color);
+        this.fxp("sparks", tip, i === 2 ? "#fff1ff" : color, i === 2 ? 22 : 12, 5);
+        this.fxp("flash", tip, color, i === 2 ? 0.55 : 0.29, 0.12, 0.77);
+        this.snd(i === 2 && dark ? "swing_heavy" : "swing2", dark ? 0.55 : 0.43);
+        this.melee(f, { ...a, id: `${a.id}_cut_${i}`, type: "melee",
+          // Final slash has enough bite to conclude the flourish; total damage
+          // is distributed across three REAL melee contacts.
+          dmg: a.dmg * (i === 2 ? 1.20 : i === 1 ? 1.00 : 0.85),
+          guard: a.guard * (i === 2 ? 1.18 : 0.84),
+          stun: i === 2 ? a.stun : Math.min(a.stun, 0.16),
+          knock: i === 2 ? a.knock : Math.min(0.6, a.knock), lunge: 0 });
+      };
+      cut(0);
+      this.laterCombo(f, 0.155, () => cut(1));
+      this.laterCombo(f, 0.31, () => cut(2));
       return true;
     }
     // NYTHERA_SIX_HIT_REAPER_TRAILS_V3_20261108 — blade-following ribbon,
@@ -1865,6 +1891,17 @@ export class Game implements MobHost {
       if (za.style === "zenith_heavy") { this.zenithChargedOverhead(f, za); return; }
       if (za.style === "zenith_rail") { this.zenithLaunch(f, za); return; }
       if (za.style === "zenith_barrage") { this.zenithBarrage(f, za); return; }
+      if (za.style === "zenith_dash") {
+        // Forward, real collision dash; never a teleport or auto-confirm.
+        const from = f.chest();
+        const direction = new THREE.Vector3(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
+        const tip = f.model.bladeTip.getWorldPosition(new THREE.Vector3());
+        this.fxp("zenithFang", from, from.clone().addScaledVector(direction, 2.6), 4);
+        this.fxp("slashes", tip, "#b8ecf7");
+        this.fxp("sparks", tip, "#d5f2ff", 15, 4.2);
+        this.snd("metal_hit_woosh", 0.7);
+        this.melee(f, za); return;
+      }
       if (za.style === "zenith_arsenal") { this.zenithArsenal(f, za); return; }
       if (za.style === "zenith_basic" && f.atkId === "l5" && !f.zenithSpearOut) {
         this.zenithPhantomFang(f, za); return;
@@ -1968,8 +2005,8 @@ export class Game implements MobHost {
         else this.fireProjectiles(f, a);
         break;
       case "strike": if (f.kit === "kicks" && a.style === "cyclone_kick_v2") this.cycloneKick(f, a, f.atkPower); else if (f.kit === "greatsword" && a.style === "iron_tempest") this.ironTempest(f, a, f.atkPower); else this.runStrike(f, a, f.atkPower); break;
-      case "buff": if (a.mode === "zenith_charge") this.zenithCharge(f, a);
-        else if (a.mode === "zenith_magnet") this.zenithDominion(f,a); else this.applyBuff(f,a); break;
+      case "buff": if (a.mode === "zenith_magnet") this.zenithDominion(f,a);
+        else this.applyBuff(f,a); break;
 
       case "blink": this.blink(f, a); break;
       case "phantom": this.phantom(f, a); break;
@@ -3109,14 +3146,7 @@ export class Game implements MobHost {
     this.fxp("ring",p.pos.clone(),"#b1cae6",0.34,0.12,0.36);
     this.snd("sci_fi_gear_turn", 0.55);
   }
-  // ZENITH_PHANTOM_FANG_MAGNETIC_CHARGE_V9_20261108
-  private zenithCharge(f: Fighter, a: Attack) {
-    if (f.isDown() || f.look.element !== "metal") return;
-    f.zenithMagneticChargeT = 20.0; // real-time buff; never affects skills or heavy attacks
-    this.fxp("ring", f.chest(), "#9ddada", 0.76, 0.18, 0.55);
-    this.fxp("motes", f.chest(), "#bdece7", 8);
-    this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.84, 0)), "MAGNETIC CHARGE 20s", "#a8e5d6", 0.84);
-  }
+  // Zenith's old Magnetic Charge cast was replaced with Spearstep (C).
 
   // Five individually blockable/parryable thrust checks, totaling the ORIGINAL
   // fifth-hit damage and guard pressure, not five times its original value.
@@ -3206,8 +3236,9 @@ export class Game implements MobHost {
   private zenithBarrage(f: Fighter,a:Attack) {
     this.snd("metal_hit_woosh", 0.44);
     const round=this.round;
+    const tempo=f.zenithAttackSpeed();
     // Five standard, blockable/parryable melee checks in a short tempo.
-    for(let i=0;i<5;i++) this.later(0.10*i,()=>{
+    for(let i=0;i<5;i++) this.laterCombo(f,0.10*i/tempo,()=>{
       if(this.round!==round || f.isDown())return;
       this.melee(f,{...a,id:`zx${i}`,style:f.zenithSpearOut?"zenith_twin":"zenith_barrage",
         dmg:f.zenithSpearOut?20:25,reach:f.zenithSpearOut?1.65:a.reach,
@@ -3216,7 +3247,7 @@ export class Game implements MobHost {
       this.fxp("sparks",f.model.bladeTip.getWorldPosition(new THREE.Vector3()),"#a6c8de",4,2.0);
     });
     // Independent extra thrusts: their projectile objects keep flying if she dodges.
-    for(let i=0;i<3;i++) this.later(0.68+i*0.17,()=>{
+    for(let i=0;i<3;i++) this.laterCombo(f,(0.68+i*0.17)/tempo,()=>{
       if(this.round!==round || f.isDown()) return;
       const origin=f.chest().add(new THREE.Vector3((i-1)*0.3,0.25,0));
       const target=f.opponent && !f.opponent.isDown()? f.opponent:this.enemiesOf(f)[0]??null;
@@ -3275,6 +3306,7 @@ export class Game implements MobHost {
   private zenithArsenal(f:Fighter,a:Attack) {
     this.snd("sci_fi_gear_turn", 0.56);
     const round=this.round;
+    const tempo=f.zenithAttackSpeed();
     const target=f.opponent&&!f.opponent.isDown()?f.opponent:this.enemiesOf(f)[0]??null;
     if(!target) return;
     const point=target.root.position.clone();
@@ -3285,7 +3317,7 @@ export class Game implements MobHost {
     // 12 smaller strikes and two rail finishers. Identical total base health
     // damage budget: 12*18+2*48 = 6*36+96 = 312 (not 624).
     // Twin slender rail telegraphs show the direction BEFORE the finishers.
-    for (let j = 0; j < 2; j++) this.later(0.30 + (12 + j) * 0.11 - 0.17, () => {
+    for (let j = 0; j < 2; j++) this.later((0.30 + (12 + j) * 0.11 - 0.17) / tempo, () => {
       if (round !== this.round || f.isDown() || target.isDown()) return;
       const right = new THREE.Vector3(Math.cos(f.root.rotation.y), 0,
         -Math.sin(f.root.rotation.y));
@@ -3293,7 +3325,7 @@ export class Game implements MobHost {
         .add(new THREE.Vector3(0, 0.18, 0));
       this.fxp("zenithRailGuide", from, target.chest(), 0.26);
     });
-    for(let i=0;i<14;i++) this.later(0.30+i*0.11,()=>{
+    for(let i=0;i<14;i++) this.later((0.30+i*0.11)/tempo,()=>{
       if(this.round!==round||f.isDown())return;
       const finisher = i >= 12;
       const bloomLayer = i < 6 ? 0 : 1;
@@ -4207,23 +4239,46 @@ export class Game implements MobHost {
       a.dmg > 0 && a.style !== "gravity_well" && a.style !== "gravity_requiem";
     const sentenceMult = heavySentence ? 1 + marks * 0.08 : 1;
     const result = d.receiveHit(attacker, zenithAttack, (riposte ? power * 1.15 : power) * sentenceMult);
-    // Each real Moonfloat hit earns ONE mark; miss, block, parry, clash do not.
-    if (gravityOwner && ["hit", "crit"].includes(result) && a.dmg > 0) {
-      if (heavySentence) {
+    // ZENITH_TEMPO_01X_5S_V7: +0.01x speed and one BLEED stack per
+    // successful physical/projectile contact. Guard, parry, clash and DOT ticks
+    // never grant stacks. Bleed caps at x5 and refreshes for 5s on reapplication.
+    if (attacker instanceof Fighter && attacker.kit === "glaive" &&
+        attacker.look.element === "metal" && a.dmg > 0 &&
+        (result === "hit" || result === "crit" || result === "ko")) {
+      attacker.zenithTempoStacks = Math.min(14, attacker.zenithTempoStacks + 1);
+      attacker.zenithMagneticChargeT = 5;
+      if (result !== "ko" && (d instanceof Fighter || d instanceof Mob)) {
+        const n = d.status.applyStackingBleed(5, 5, attacker);
+        if (d instanceof Fighter) d.bleedDisplayStacks = n;
+        this.fxp("num", d.chest().add(new THREE.Vector3(0, 0.9, 0)),
+          `BLEED ×${n}/5`, "#ff566a", 0.55);
+        if (n === 5) this.fxp("motes", d.chest(), "#ff647a", 10);
+      }
+    }
+    // NYTHERA_ELEGANT_REAPER_V4: 25 seconds. Guarded scythe contact counts,
+    // but a successful parry is a clean denial. No combo beat depends on a hit.
+    const gravityDamage = result === "hit" || result === "crit" || result === "ko";
+    const gravityContact = gravityDamage || result === "blocked";
+    if (gravityOwner && gravityContact && a.dmg > 0) {
+      if (heavySentence && gravityDamage) {
         this.gravityMarks.delete(markKey);
+        if (d instanceof Fighter) { d.orbitDisplayStacks = 0; d.orbitDisplayT = 0; }
         if (marks > 0) {
           this.fxp("ring", d.chest(), "#8250d9", 0.72 + marks * 0.24, 0.25, 0.76);
           this.fxp("num", d.chest().add(new THREE.Vector3(0,0.73,0)),
             `ORBIT BURST ×${marks}`, "#ddb5ff", 0.70);
+          this.fxp("sparks", d.chest(), "#c899ff", 10 + marks*8, 5);
         }
-      } else if (gravityOwner.gravityMode === "light" && a.style !== "gravity_requiem") {
+      } else if (gravityOwner.gravityMode === "light" && !heavySentence) {
         const n = Math.min(3, marks + 1);
-        this.gravityMarks.set(markKey, { stacks:n, expires:this.time + 4 });
+        this.gravityMarks.set(markKey, { stacks:n, expires:this.time + 25 });
+        if (d instanceof Fighter) { d.orbitDisplayStacks = n; d.orbitDisplayT = 25; }
         this.fxp("ring", d.chest(), "#b68ef7", 0.41 + n*0.14, 0.18, 0.58);
-        if (n === 3) this.fxp("num", d.chest().add(new THREE.Vector3(0,0.69,0)),
-          "ORBIT x3", "#d9c0ff", 0.66);
+        this.fxp("num", d.chest().add(new THREE.Vector3(0,0.72,0)),
+          `◈ ORBIT ${n}/3`, "#ddc0ff", 0.59);
+        this.fxp("motes", d.chest(), "#dbb7ff", 7 + n*3);
       }
-      if (d instanceof Fighter && !d.stage && !d.isDown()) {
+      if (gravityDamage && d instanceof Fighter && !d.stage && !d.isDown()) {
         if (a.style === "gravity_ascend" ||
             (a.style === "gravity_snare" && marks >= 2)) {
           d.onGround = false;
@@ -5125,7 +5180,13 @@ export class Game implements MobHost {
         if (f.frostShieldT > 0 && f.frostShieldCharges > 0)
           passives.push({ label: "AEGIS", value: `${f.frostShieldCharges}/4` });
       }
-      if (f.kit === "scythe") passives.push({ label: "GRAVITY", value: f.gravityMode === "light" ? "MOONFLOAT" : "DREADFALL" });
+      if (f.kit === "glaive" && f.look.element === "metal")
+        passives.push({ label: "BLADE TEMPO", value: `${f.zenithAttackSpeed().toFixed(1)}× / ${f.zenithSpearOut ? "3.4" : "2.4"}× · ${f.zenithMagneticChargeT.toFixed(0)}s` });
+      if (f.kit === "scythe") {
+        passives.push({ label: "GRAVITY", value: f.gravityMode === "light" ? "MOONFLOAT" : "DREADFALL" });
+        passives.push({ label: "ORBIT ON FOE", value: rival && rival.orbitDisplayT > 0
+          ? `${rival.orbitDisplayStacks}/3 · ${rival.orbitDisplayT.toFixed(1)}s` : "0/3" });
+      }
       if (f.kit === "hammer") passives.push({ label: "HEARTS", value: `${f.nesaCCharges}/3` });
       if (f.kit === "bomb") passives.push({ label: "MINES", value: `${f.bobMineCharges}/4` });
       if (f.look.name === "Aster" && rival && rival.status.stacks("weaken") > 0)
@@ -5142,7 +5203,12 @@ export class Game implements MobHost {
     };
     const info = (f: Fighter) => ({ id: CHARACTERS[f.charIndex].id, name: f.look.name + (isCpu(f.owner) && f.owner !== "cpu" ? " (CPU)" : ""), hp: f.hp, maxHp: f.maxHp, guard: f.guard, maxGuard: f.maxGuard, down: f.isDown(), glow: f.look.glow,
       pct: f.pct, stocks: f.stocks, out: f.out, team: f.team, status: f.status.kinds(), bloodlust: f.bloodlust, bloodFrenzyT: f.bloodFrenzyT, bloodFestivalT: f.bloodFestivalT, clashMomentum: f.clashMomentum, chainBindT: f.chainBindT,
-      chainBindKind: f.chainBindKind, gravityMode: f.gravityMode, gravitySwitchCd: f.gravitySwitchCd, frostShardStacks: f.frostShardStacks, frostShieldCharges: f.frostShieldCharges, frostShieldT: f.frostShieldT }); // ROXY V5 HUD
+      chainBindKind: f.chainBindKind, gravityMode: f.gravityMode, gravitySwitchCd: f.gravitySwitchCd,
+      orbitDisplayStacks: f.orbitDisplayStacks, orbitDisplayT: f.orbitDisplayT,
+      zenithTempoStacks: f.zenithTempoStacks, zenithTempoT: f.zenithMagneticChargeT,
+      zenithTwinBlades: f.zenithSpearOut,
+      bleedStacks: f.status.has("bleed") ? Math.max(f.status.stacks("bleed"), f.bleedDisplayStacks) : 0,
+      frostShardStacks: f.frostShardStacks, frostShieldCharges: f.frostShieldCharges, frostShieldT: f.frostShieldT }); // ROXY V5 HUD
     return {
       mode: this.cfg.mode,
       plat: this.plat,

@@ -63,6 +63,53 @@ function RoxyFrostbiteMeter({ stacks, shards, shieldT, right = false }: {
   );
 }
 
+// ZENITH_VISIBLE_TEMPO_V8: real, opponent-visible stacks and remaining 5s timeout.
+function ZenithTempoMeter({ stacks, seconds, blades, right = false }: {
+  stacks: number; seconds: number; blades: boolean; right?: boolean;
+}) {
+  const count = seconds > 0 ? Math.max(0, Math.min(14, Math.floor(stacks))) : 0;
+  const speed = Math.min(blades ? 3.4 : 2.4, (blades ? 2 : 1) + count * 0.01);
+  const left = Math.max(0, Math.min(5, seconds));
+  return <div title="Zenith Tempo: each damaging hit gives +0.01x speed, up to 14 stacks; resets 5 seconds after the last successful hit. Blocks, parries and clashes deny stacks."
+    aria-label={`Zenith Tempo: ${count} of 14 stacks, ${speed.toFixed(2)}x attack speed, ${left.toFixed(1)} seconds remaining`}
+    style={{ marginTop: 5, padding: "5px 8px", borderRadius: 8, minWidth: 164,
+      border: "1px solid rgba(132, 230, 246, .48)", background: "rgba(12, 28, 48, .84)",
+      color: "#c7f4ff", fontWeight: 800, fontSize: 11, textAlign: right ? "right" : "left" }}>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: right ? "flex-end" : "flex-start", gap: 7 }}>
+      <span style={{ color: "#8cdaff", letterSpacing: ".04em" }}>⚔ TEMPO</span>
+      <strong>{speed.toFixed(2)}×</strong>
+      <span style={{ opacity: .9 }}>{count}/14</span>
+      <span style={{ color: "#cde8f0", fontVariantNumeric: "tabular-nums" }}>{left.toFixed(1)}s</span>
+    </div>
+    <div style={{ display: "flex", gap: 1, marginTop: 3, justifyContent: right ? "flex-end" : "flex-start" }}>
+      {Array.from({ length: 14 }, (_, i) => <span key={i} style={{
+        color: i < count ? "#9beaff" : "#435569", fontSize: 10,
+        textShadow: i < count ? "0 0 6px #57d3ff" : "none"
+      }}>◆</span>)}
+    </div>
+    <div style={{ background: "#293e52", borderRadius: 4, height: 3, marginTop: 3, overflow: "hidden" }}>
+      <div style={{ width: `${left / 5 * 100}%`, height: "100%", background: "#70d9f3" }} />
+    </div>
+  </div>;
+}
+
+function OrbitMeter({ stacks, seconds, right = false }: { stacks: number; seconds: number; right?: boolean }) {
+  const n = seconds > 0 ? Math.max(0, Math.min(3, Math.floor(stacks))) : 0;
+  return <div aria-label={`Orbit Marks ${n} of 3; ${seconds.toFixed(1)} seconds remaining`}
+    title="Nythera Orbit Marks: 25s on contact, consumed by Dreadfall's successful scythe strikes"
+    style={{ marginTop: 5, display: "flex", alignItems: "center",
+      justifyContent: right ? "flex-end" : "flex-start", gap: 5,
+      color: "#e1baff", textShadow: "0 1px 4px #3f1768", fontSize: 11, fontWeight: 800 }}>
+    <span>ORBIT</span>
+    {Array.from({ length: 3 }, (_, i) => <span key={i} style={{ fontSize: 17,
+      color: i < n ? "#e1aeff" : "#59466e", opacity: i < n ? 1 : 0.48,
+      textShadow: i < n ? "0 0 7px #ad70f6" : "none" }}>◈</span>)}
+    <span style={{ fontVariantNumeric: "tabular-nums", minWidth: 32 }}>
+      {n > 0 ? `${seconds.toFixed(1)}s` : "0/3"}
+    </span>
+  </div>;
+}
+
 function Bar({ v, color, right }: { v: number; color: string; right?: boolean }) {
   return (
     <div className="bar">
@@ -235,6 +282,10 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
               <Bar v={me.hp / me.maxHp} color="#7fd65b" />
               <div className="guard"><Bar v={me.guard / me.maxGuard} color={me.guard / me.maxGuard > 0.25 ? "#f2c94c" : "#ff7043"} /></div>
               {me.id === "roxy" && <RoxyFrostbiteMeter stacks={me.frostShardStacks} shards={me.frostShieldCharges} shieldT={me.frostShieldT} />}
+              {me.id === "zenith" && <ZenithTempoMeter stacks={me.zenithTempoStacks} seconds={me.zenithTempoT} blades={me.zenithTwinBlades} />}
+              {me.bleedStacks > 0 && <div style={{ color: "#ff7988", fontSize: 11, fontWeight: 800 }}>🩸 BLEED ×{me.bleedStacks}/5</div>}
+              {(me.id === "nythera" || me.orbitDisplayT > 0) &&
+                <OrbitMeter stacks={me.orbitDisplayStacks} seconds={me.orbitDisplayT} />}
               {/* ZAREK_WHITE_COUNTER_V1 */}
               {me.id === "zarek" && (
                 <div style={{ display: "flex", alignItems: "center", gap: 7,
@@ -276,6 +327,10 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
               <Bar v={other.hp / other.maxHp} color="#e8534a" right />
               <div className="guard"><Bar v={other.guard / other.maxGuard} color="#f2c94c" right /></div>
               {other.id === "roxy" && <RoxyFrostbiteMeter stacks={other.frostShardStacks} shards={other.frostShieldCharges} shieldT={other.frostShieldT} right />}
+              {other.id === "zenith" && <ZenithTempoMeter stacks={other.zenithTempoStacks} seconds={other.zenithTempoT} blades={other.zenithTwinBlades} right />}
+              {other.bleedStacks > 0 && <div style={{ color: "#ff7988", fontSize: 11, fontWeight: 800, textAlign: "right" }}>🩸 BLEED ×{other.bleedStacks}/5</div>}
+              {(other.id === "nythera" || other.orbitDisplayT > 0) &&
+                <OrbitMeter stacks={other.orbitDisplayStacks} seconds={other.orbitDisplayT} right />}
               <StatusChips list={other.status} right />
             </div>
           )}

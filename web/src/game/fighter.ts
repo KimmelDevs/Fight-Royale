@@ -175,6 +175,9 @@ export class Fighter implements Entity {
   gravityMode: "light" | "heavy" = "light";
   gravitySwitchCd = 0;
   gravityFloatT = 0; // short real aerial hangtime; opponent can still act / air-recover.
+  // NYTHERA_ELEGANT_REAPER_V4: passive readout on both clients, tied to the afflicted fighter.
+  orbitDisplayStacks = 0;
+  orbitDisplayT = 0;
   onGravityShift: (f: Fighter) => void = () => {};
   onSwing: (f: Fighter) => void = () => {};
   // ZENITH_IRON_SOVEREIGN_V1_20261108 — pure game-side spear state.
@@ -184,8 +187,14 @@ export class Fighter implements Entity {
   zenithCatchRecoilT = 0;
   zenithSpearAnchor = new THREE.Vector3();
   zenithMagnetCharges = 0;
-  /** Zenith V9: 20 real seconds of Magnetic Charge; independent of spear throw state. */
+  /** Countdown since last true damaging contact. Zero clears all hit-earned speed. */
   zenithMagneticChargeT = 0;
+  zenithTempoStacks = 0; // ZENITH_TEMPO_01X_5S_V7: +0.01x each, up to 14 stacks; 5s timeout
+  bleedDisplayStacks = 0; // replicated from victims' status for both HUDs
+  zenithAttackSpeed() {
+    const bonus = Math.min(14, this.zenithTempoStacks) * 0.01;
+    return this.zenithSpearOut ? Math.min(3.4, 2 + bonus) : Math.min(2.4, 1 + bonus);
+  }
   zenithDominionRepel = false;
   onZenithRecall: (f: Fighter) => void = () => {};
   catchZenithSpear() {
@@ -745,6 +754,8 @@ export class Fighter implements Entity {
     for (const k in this.cooldowns) this.cooldowns[k] = Math.max(this.cooldowns[k] - dt, 0);
     this.gravitySwitchCd = Math.max(0, this.gravitySwitchCd - dt);
     this.gravityFloatT = Math.max(0, this.gravityFloatT - dt);
+    this.orbitDisplayT = Math.max(0, this.orbitDisplayT - dt);
+    if (this.orbitDisplayT <= 0) this.orbitDisplayStacks = 0;
     this.model.gravityHeavy = this.kit === "scythe" && this.gravityMode === "heavy";
     if (this.kit === "hammer") {
       // NESA_HEART_SMASH_V4: one charge returns every 7.5 seconds, max three.
@@ -783,8 +794,10 @@ export class Fighter implements Entity {
       this.garrickFollowTarget = null;
       this.garrickFollowT = 0;
     }
-    if (this.look.element === "metal")
+    if (this.look.element === "metal") {
       this.zenithMagneticChargeT = Math.max(0, this.zenithMagneticChargeT - dt);
+      if (this.zenithMagneticChargeT <= 0) this.zenithTempoStacks = 0;
+    }
     this.zenithCatchShieldT = Math.max(0, this.zenithCatchShieldT - dt);
     this.zenithCatchRecoilT = Math.max(0, this.zenithCatchRecoilT - dt);
     if (this.look.element === "metal") {
@@ -1441,7 +1454,7 @@ export class Fighter implements Entity {
     } else this.cooldowns[k] = this.attacks[k].type === "barrel" ? 0.6 :
       bobMine ? (this.bobMineCharges > 0 ? 0 : this.bobMineRechargeT) : this.attacks[k].cd * this.cdMult;
     // Cast in the air, a skill with an air version uses it instead.
-    if (this.look.element === "metal" && k === "c") this.zenithDominionRepel = false; // V9 C is a timed self-buff
+    if (this.look.element === "metal" && k === "c") this.zenithDominionRepel = false; // C is Spearstep, a real clashable dash
     this.startAttack(!this.onGround && this.attacks[k + "_air"] ? k + "_air" : k);
   }
 
@@ -1567,13 +1580,13 @@ export class Fighter implements Entity {
         this.atk.wind = 0.33; this.atk.knock = 6.0;
       }
       if (id === "z" && heavyGravity) {
-        this.atk = { ...this.atk, name: "Crescent Sentence", dmg: 138, guard: 54,
-          wind: 0.33, recover: 0.47, knock: 4.3, heavy: true,
+        this.atk = { ...this.atk, name: "Crescent Sentence", dmg: 55, guard: 20,
+          wind: 0.22, active: 0.46, recover: 0.30, knock: 2.1, heavy: true,
           pose_w: "grh_w", pose_s: "grz_s", style: "gravity_sentence" };
       }
       if (id === "x" && heavyGravity) {
-        this.atk = { ...this.atk, name: "Mass Cleaver", dmg: 160, guard: 53,
-          wind: 0.31, recover: 0.53, knock: 4.9, heavy: true,
+        this.atk = { ...this.atk, name: "Mass Cleaver", dmg: 63, guard: 19,
+          wind: 0.24, active: 0.54, recover: 0.34, knock: 2.3, heavy: true,
           pose_w: "grh_w", pose_s: "grh_s", style: "gravity_crush" };
       }
       if (id === "x_air" && !heavyGravity) {
@@ -1609,18 +1622,17 @@ export class Fighter implements Entity {
       this.atk = { ...this.atk, wind: this.atk.wind / speed,
         active: this.atk.active / speed, recover: this.atk.recover / speed };
     }
-    // V12 attack speed: twin blades 2x normally / 2.4x with Magnetic Charge;
-    // spear basics 1x normally / 2.4x with Magnetic Charge.
-    // No animation-only speed fakery; wind, active, and recover ALL scale.
-    if (this.kit === "glaive" && this.look.element === "metal" && /^l[1-5]$/.test(id)) {
-      const charged = this.zenithMagneticChargeT > 0;
-      // ZENITH_MAGNETIC_CHARGE_24X_V12_20261108 — effective multiplier vs original speed.
-      const speed = this.zenithSpearOut ? (charged ? 2.4 : 2) : (charged ? 2.4 : 1);
+    // ZENITH_TEMPO_01X_5S_V7: real hit +0.01x up to 14 stacks, resetting after 5s.
+    // Actual current ceiling: 1.14x spear / 2.14x twin blades (14-stack cap).
+    // Reduce REAL wind-up, active, recovery, not just pose blending.
+    if (this.kit === "glaive" && this.look.element === "metal") {
+      const speed = this.zenithAttackSpeed();
       this.atk = { ...this.atk,
         wind: this.atk.wind / speed,
         active: this.atk.active / speed,
         recover: this.atk.recover / speed,
-        guard: this.atk.guard * (charged ? 0.8 : 1),
+        // Keep dash distance when the thrust animation accelerates.
+        lunge: this.atk.style === "zenith_dash" ? this.atk.lunge * speed : this.atk.lunge,
       };
     }
     if (this.kit === "sickle" && this.bloodFrenzyT > 0 && id.startsWith("l"))
@@ -2244,6 +2256,7 @@ export class Fighter implements Entity {
     if (this.look.element === "metal") {
       this.zenithSpearOut = false;
       this.zenithMagneticChargeT = 0;
+      this.zenithTempoStacks = 0;
       this.zenithCatchShieldT = 0;
       this.zenithCatchRecoilT = 0;
       this.model.zenithCatchShieldT = 0;
@@ -2704,7 +2717,9 @@ export class Fighter implements Entity {
       +this.parryCounterSpin.toFixed(3), this.atkId === "pc" ? 1 : 0,
       +this.kaizenSpinSpeed.toFixed(2), this.kaizenSpinDirection, this.garrickResolve, +this.cooldowns.v.toFixed(2), this.frostShardStacks, this.frostShieldCharges, +this.frostShieldT.toFixed(2),
       this.zenithSpearOut ? 1 : 0, +this.zenithCatchShieldT.toFixed(2), +this.zenithCatchRecoilT.toFixed(2),
-      +this.zenithMagneticChargeT.toFixed(2), this.gravityMode === "heavy" ? 1 : 0, +this.gravitySwitchCd.toFixed(2), +this.gravityFloatT.toFixed(2)];
+      +this.zenithMagneticChargeT.toFixed(2), this.gravityMode === "heavy" ? 1 : 0, +this.gravitySwitchCd.toFixed(2), +this.gravityFloatT.toFixed(2),
+      this.orbitDisplayStacks, +this.orbitDisplayT.toFixed(2),
+      this.zenithTempoStacks, this.bleedDisplayStacks];
   }
 
   applySnapshot(s: any[]) {
@@ -2734,6 +2749,10 @@ export class Fighter implements Entity {
     this.gravityMode = s.length > 60 && s[60] === 1 ? "heavy" : "light";
     this.gravitySwitchCd = s.length > 61 ? s[61] : 0;
     this.gravityFloatT = s.length > 62 ? s[62] : 0;
+    this.orbitDisplayStacks = s.length > 63 ? s[63] : 0;
+    this.orbitDisplayT = s.length > 64 ? s[64] : 0;
+    this.zenithTempoStacks = s.length > 65 ? s[65] : 0;
+    this.bleedDisplayStacks = s.length > 66 ? s[66] : 0;
     this.model.gravityHeavy = this.kit === "scythe" && this.gravityMode === "heavy";
     if (this.look.element === "metal" && s.length > 58) {
       const isOut = s[56] === 1;
