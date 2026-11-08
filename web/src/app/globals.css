@@ -410,3 +410,58 @@ input:focus { border-color: #e6c26e; }
  .fr-passive-content strong,.fr-passive-content b { font-size: 9px; }
 }
 
+
+/* FR_HUD_FOCUS_V1 — small default combat HUD; no overlay along arena sides. */
+.fr-hud-mode-toggle {
+  position: absolute; right: 12px; bottom: 10px; z-index: 20;
+  border: 1px solid rgba(231,236,248,.34); border-radius: 6px;
+  padding: 4px 9px; background: rgba(7,16,32,.67);
+  color: #e9effd; font-family: inherit; font-size: 10px; font-weight: 700; line-height: 1.2;
+  cursor: pointer; pointer-events: auto; opacity: .83;
+}
+.fr-hud-mode-toggle:hover,.fr-hud-mode-toggle:focus-visible { opacity: 1; background: rgba(27,43,75,.92); }
+.cpu-spectator-column.compact {
+  top: 105px; width: auto; min-width: 0; max-width: min(200px,38vw);
+  padding: 5px 7px; border-radius: 8px;
+  background: rgba(8,18,39,.55); backdrop-filter: none;
+}
+.cpu-spectator-column.compact.left { left: 24px; }
+.cpu-spectator-column.compact.right { right: 24px; }
+.cpu-compact-slots { display: flex; align-items: center; gap: 3px; }
+.cpu-compact-skill { position: relative; width: 30px; height: 30px; flex: 0 0 30px;
+  display: grid; place-items: center; border: 1px solid #6d85a5; border-radius: 5px;
+  background: rgba(5,13,27,.65); overflow: hidden; }
+.cpu-compact-skill span { position: absolute; bottom: 0; left: 1px;
+  font-size: 8px; line-height: 10px; font-weight: 800; text-shadow: 0 1px 2px #000; }
+.cpu-compact-skill b { position: absolute; top: 0; right: 1px;
+  font-size: 9px; line-height: 10px; font-weight: 900; text-shadow: 0 1px 2px #000; }
+.cpu-compact-skill .ready { color: #a0f1b0; }
+.cpu-compact-skill .waiting { color: #ffe08f; }
+.cpu-compact-passives { display: flex; gap: 6px; align-items: center;
+  max-width: 175px; overflow: hidden; white-space: nowrap;
+  margin-top: 3px; font-size: 9px; line-height: 11px; color: #cadcf8; }
+.cpu-compact-passives span { overflow: hidden; text-overflow: ellipsis; }
+.cpu-compact-passives b { color: #f5e6a7; }
+.fr-passive-more { font-size: 9px; line-height: 11px; padding: 1px 4px;
+  border-radius: 4px; color: #bfcbe5; background: rgba(8,18,39,.55); }
+.hud .hp .fr-passive-readouts { max-height: 90px; overflow-y: hidden; }
+.hud .hp .fr-passive-readouts.expanded { max-height: min(38vh, 250px); overflow-y: auto; }
+.hud .hp .fr-passive-row { padding: 2px 5px; gap: 5px; font-size: 9px; }
+.hud .hp .fr-passive-content strong,.hud .hp .fr-passive-content b { font-size: 9px; }
+.hud .hp { width: min(360px, 36vw); }
+.hud .hp .nm { font-size: 16px; }
+.hud .hp .bar { height: 12px; }
+.hud .hp .guard .bar { height: 6px; }
+@media (max-width: 650px) {
+  .hud .hp { width: 38vw; }
+  .hud .hp.left { left: 7px; }
+  .hud .hp.right { right: 7px; }
+  .hud .hp .nm { font-size: 12px; }
+  .hud .hp .bar { height: 9px; }
+  .cpu-spectator-column.compact { top: 95px; max-width: 145px; padding: 4px; }
+  .cpu-spectator-column.compact.left { left: 7px; }
+  .cpu-spectator-column.compact.right { right: 7px; }
+  .cpu-compact-skill { width: 26px; height: 26px; flex-basis: 26px; }
+  .cpu-compact-passives { max-width: 125px; }
+  .fr-hud-mode-toggle { right: 5px; bottom: 4px; font-size: 9px; padding: 3px 6px; }
+}

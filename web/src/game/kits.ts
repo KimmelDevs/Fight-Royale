@@ -1,3 +1,4 @@
+// RAIGO_V6_AXE_GRIP_PARRY_WARD_FIX_20261109
 // ROXY_V7_5PCT_LIGHT_CHARGED_BIRD_NO_WIND_20261108: Roxy-only 5% light/charged/bird buff.
 // AI_ROOK_NESA_KIRA_MERGED_V1_20261108
 // BALANCE_KIRA_KAEDE_PATTERN_AI_AIR_ICON_20261107_V1
@@ -82,7 +83,7 @@ export const STATS: Record<string, { hp: number; guard: number; move: number; wa
   bomb: { hp: 2100, guard: 70, move: 3.5, walk: 2.8, parry: 0.16, jump: 7.0 },
   chainblade: { hp: 2450, guard: 100, move: 3.55, walk: 2.75, parry: 0.16, jump: 7.0 },
   // RAIGO_IRON_BASTION_V1: mid-range powerhouse, punishable up close.
-  axeflail: { hp: 2375, guard: 90, move: 3.35, walk: 2.60, parry: 0.18, jump: 6.8 },
+  axeflail: { hp: 2565, guard: 97, move: 3.75, walk: 2.91, parry: 0.18, jump: 6.8 },
   hammer: { hp: 2650, guard: 110, move: 3.05, walk: 2.45, parry: 0.15, jump: 7.0 },
   // NYTHERA_GRAVITY_REAPER_INSTALL_V1
   scythe: { hp: 2200, guard: 84, move: 3.72, walk: 3.02, parry: 0.19, jump: 8.0 },
@@ -167,7 +168,7 @@ function parryCounterAttack(kit: string, element: string, base: Record<string, A
       element === "water" ? "Tidal Pirouette" : "Witch's Spiral") :
       kit === "knight" && element !== "light" ? "Crimson Waltz" :
       (names[kit] ?? "Parry Counter"),
-    desc: "A fast one-hit riposte unlocked briefly after a successful parry.",
+    desc: "A fast one-hit riposte after a parry. Blockable and dodgeable, but cannot be parried again.",
     wind: 0.40, active: 0.08, recover: 0.38,
     dmg: Math.round((light.dmg * 0.85 + heavy.dmg * 0.55) * 1.24),
     guard: Math.round(Math.max(light.guard, heavy.guard) * 1.12),
@@ -180,7 +181,7 @@ function parryCounterAttack(kit: string, element: string, base: Record<string, A
     pose_s: pose[1],
     style: "parry_counter",
     next: "",
-    no_parry: false,
+    no_parry: true,
     parry_stun: 0,
   });
 }
@@ -415,7 +416,7 @@ function bonusSkill(kit: string, element: string): Attack {
       return a({ name: "Venom Fan", desc: "A wide spray of five poisoned blades.", cd: 7, type: "projectile", wind: 0.12, recover: 0.3, dmg: 42, guard: 12, knock: 1.2, stun: 0.3, speed: 24, count: 5, spread: 0.5, style: "shuriken", pose_w: "as1_w", pose_s: "as1_s" });
     case "axeflail":
       return a({ name: "Twin Judgment", desc: "Swing the axe and launch the chained ball along opposite paths, then draw them together in five independently defendable impacts. The final convergence consumes full Chain Momentum for bonus power.",
-        cd: 43, wind: 0.48, active: 1.58, recover: 0.82, dmg: 51, guard: 19, reach: 3.55,
+        cd: 38.7, wind: 0.48, active: 1.58, recover: 0.82, dmg: 59, guard: 22, reach: 3.83,
         knock: 0.9, stun: 0.16, style: "raigo_twinned", pose_w: "rgv_w", pose_s: "rgv_s" });
     case "chainblade":
       return a({ name: "Serpent Bind", desc: "Bind an opponent with your chain for up to 4 seconds. Press Z to reel them in, lift them, and smash them side to side; X lifts and swings them over Kaizen before a heavy behind-the-back slam. Both stay locked until the finisher ends.", cd: 13,
@@ -535,7 +536,7 @@ function mage(element: string): Record<string, Attack> {
     t.c = a({ name: "Thunderstorm", desc: "Three lightning strikes hunt the enemy.", cd: 12, type: "strike", wind: 0.3, recover: 0.6, dmg: 110, guard: 35, knock: 3, stun: 0.6, heavy: true, delay: 0.45, radius: 1.25, repeat: 3, interval: 0.35, style: "lightning", pose_w: "mh_w", pose_s: "mh_s" });
   } else {
     t.heavy = a({ type: "projectile", wind: 0.15, active: 0.05, recover: 0.55, dmg: 190, guard: 60, knock: 7, stun: 0.7, heavy: true, speed: 9, size: 2.4, pierce: true, pose_w: "mh_w", pose_s: "mh_s" });
-    t.z = a({ name: "Bubble Ward", desc: "A protective water bubble lasting 8 seconds in all modes.", cd: 13, type: "buff", mode: "ward", duration: 8, wind: 0.1, recover: 0.25, pose_w: "mh_w", pose_s: "m3_s" });
+    t.z = a({ name: "Bubble Ward", desc: "A 5-second water bubble reducing incoming HP damage by 50%. Damage can still defeat Marina.", cd: 17, type: "buff", mode: "ward", duration: 5, wind: 0.1, recover: 0.25, pose_w: "mh_w", pose_s: "m3_s" });
     t.x = a({ name: "Tidal Ring", desc: "A ring of geysers bursts up around you.", cd: 7, type: "strike", at: "self", wind: 0.14, recover: 0.45, dmg: 105, guard: 35, knock: 7, stun: 0.5, delay: 0.1, radius: 2.7, style: "tide", pose_w: "mh_w", pose_s: "m3_s" });
     t.c = a({ name: "Ocean Requiem", desc: "Slam a colossal sphere of water onto the enemy.", cd: 12, type: "strike", wind: 0.35, recover: 0.6, dmg: 270, guard: 80, knock: 8, stun: 0.9, heavy: true, delay: 0.8, radius: 2.4, style: "requiem", pose_w: "mh_w", pose_s: "mh_s" });
   }
@@ -694,25 +695,26 @@ function dragonStaff(): Record<string, Attack> {
 /** RAIGO_IRON_BASTION_V1: axe works inside, ball outside; proper per-hit defense checks. */
 function axeFlail(): Record<string, Attack> {
   return {
-    l1: a({ name:"Iron Entry", wind:.18, active:.09, recover:.24, dmg:57, guard:18,
+    // RAIGO_V6: fast but committed midrange chain-weapon specialist.
+    l1: a({ name:"Iron Entry", wind:.153, active:.09, recover:.204, dmg:66, guard:21,
       reach:2.22, lunge:1.2, knock:.8, stun:.18, style:"raigo_axe", pose_w:"rg1_w", pose_s:"rg1_s", next:"l2" }),
-    l2: a({ name:"Outer Orbit", wind:.27, active:.12, recover:.34, dmg:65, guard:21,
-      reach:3.05, lunge:.35, knock:1.8, stun:.25, style:"raigo_ball", pose_w:"rg2_w", pose_s:"rg2_s", next:"l3" }),
-    l3: a({ name:"Axe Return", wind:.19, active:.11, recover:.29, dmg:69, guard:22,
+    l2: a({ name:"Outer Orbit", wind:.230, active:.12, recover:.289, dmg:75, guard:24,
+      reach:3.29, lunge:.35, knock:1.8, stun:.25, style:"raigo_ball", pose_w:"rg2_w", pose_s:"rg2_s", next:"l3" }),
+    l3: a({ name:"Axe Return", wind:.162, active:.11, recover:.247, dmg:79, guard:25,
       reach:2.40, lunge:1.0, knock:1.2, stun:.23, style:"raigo_axe", pose_w:"rg3_w", pose_s:"rg3_s", next:"l4" }),
-    l4: a({ name:"Iron Cross", wind:.28, active:.15, recover:.47, dmg:106, guard:35,
-      reach:3.15, lunge:.45, knock:4, stun:.41, style:"raigo_ball", pose_w:"rg4_w", pose_s:"rg4_s" }),
-    heavy: a({ name:"Crushing Verdict", wind:.39, active:.15, recover:.66, dmg:180, guard:63,
+    l4: a({ name:"Iron Cross", wind:.238, active:.15, recover:.400, dmg:122, guard:40,
+      reach:3.40, lunge:.45, knock:4, stun:.41, style:"raigo_ball", pose_w:"rg4_w", pose_s:"rg4_s" }),
+    heavy: a({ name:"Crushing Verdict", wind:.351, active:.15, recover:.594, dmg:207, guard:72,
       reach:3.20, lunge:.40, knock:6.8, stun:.60, heavy:true, style:"raigo_execute", pose_w:"rgh_w", pose_s:"rgh_s" }),
-    z: a({ name:"Iron Comet", desc:"A spinning chained-ball release followed by a chain-assisted return. Three separate blockable/parryable impacts; the last clean hit reels the enemy in.",
-      cd:10, wind:.36, active:1.05, recover:.53, dmg:55, guard:20, reach:3.45, lunge:.2,
+    z: a({ name:"Iron Comet", desc:"Spinning chain release and return; three separately defended flail hits, the last reels in a clean target.",
+      cd:9, wind:.324, active:1.05, recover:.477, dmg:63, guard:23, reach:3.72, lunge:.2,
       knock:.9, stun:.18, style:"raigo_comet", pose_w:"rgz_w", pose_s:"rgz_s" }),
-    x: a({ name:"Chain Reversal", desc:"Brace both weapons in a 0.36s counter stance. Successfully catching an attack redirects the flail into a counterattack; missing the read leaves recovery.",
-      cd:11, type:"buff", mode:"counter", duration:.36, wind:.04, active:.04, recover:.60,
+    x: a({ name:"Chain Reversal", desc:"A brief two-hand chain catch. On a successful counter, the chain wraps the attacker, briefly staggers them, and returns with a crushing strike.",
+      cd:9.9, type:"buff", mode:"counter", duration:.36, wind:.036, active:.04, recover:.54,
       style:"raigo_counter", pose_w:"rgx_w", pose_s:"rgx_s" }),
-    c: a({ name:"Iron Tempest", desc:"Alternate axe and spiked-ball attacks across five timed angles. Each contact can be blocked, parried, clashed, or dodged.",
-      cd:17, wind:.32, active:1.42, recover:.60, dmg:49, guard:17,
-      reach:3.2, lunge:.2, knock:.8, stun:.14, style:"raigo_tempest", pose_w:"rgc_w", pose_s:"rgc_s" }),
+    c: a({ name:"Iron Tempest", desc:"Five committed axe-and-ball strikes; individual hits can be blocked, parried, clashed, or dodged.",
+      cd:15.3, wind:.288, active:1.42, recover:.54, dmg:56, guard:20,
+      reach:3.46, lunge:.2, knock:.8, stun:.14, style:"raigo_tempest", pose_w:"rgc_w", pose_s:"rgc_s" }),
   };
 }
 

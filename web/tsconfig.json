@@ -17,5 +17,5 @@
     "paths": { "@/*": ["./src/*"] }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules", "supabase", "backup_*", "**/backup_*", "backup-*", "**/backup-*", "*_backups", "**/*_backups", ".*_backups", "**/.*_backups"]
+  "exclude": ["node_modules", "supabase", "backup_*", "**/backup_*", "backup-*", "**/backup-*", "*_backups", "**/*_backups", ".*_backups", "**/.*_backups", "scripts/backups"]
 }

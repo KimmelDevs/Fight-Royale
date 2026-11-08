@@ -1,3 +1,5 @@
+// RAIGO_V6_AXE_GRIP_PARRY_WARD_FIX_20261109
+// RAIGO_IRON_BASTION_V6 — one chain/two inertial ends; Zephyr visible staff +15%; chain links 25% thinner.
 // RAIGO_IRON_BASTION_V31 — synchronized multi-hit flail, stable Momentum, close-mid AI.
 // RAIGO_IRON_BASTION_V3 — hit-aligned swings, world lag, stable idle, impact poses.
 // RAIGO_IRON_BASTION_V2 — articulated chained flail, constrained motion and progress-driven attacks.
@@ -78,6 +80,9 @@ const ZEPHYR_TRISTAFF_SIZE_V24 = {
 } as const;
 
 
+// RAIGO_V6: actual end-to-end tether length. CHAIN LINK MESHES may be resized
+// freely without changing this value or any hit reach.
+const RAIGO_V6_CHAIN_LENGTH = 3.05;
 const CAP_C = new THREE.Vector3(0, 0.035, -0.035);
 const JOINTS = ["torso", "head", "arm_r", "hand_r", "arm_l", "hand_l", "leg_l", "leg_r"] as const;
 
@@ -396,6 +401,21 @@ export class FighterModel extends THREE.Group {
   private raigoAxe: THREE.Group | null = null;
   private raigoBallRoot: THREE.Group | null = null;
   raigoFlailTip: THREE.Object3D | null = null;
+  raigoAxeTip: THREE.Object3D | null = null;
+  // RAIGO_V6: two independent ends, one continuous constraint chain.
+  private raigoAxeAttach: THREE.Object3D | null = null;
+  // RAIGO_AXE_GRIP_FIX: real grip point on the short forged axe handle.
+  private raigoAxeGrip: THREE.Object3D | null = null;
+  private raigoBallAttach: THREE.Object3D | null = null;
+  private raigoAxeWorld = new THREE.Vector3();
+  private raigoAxeWorldPrev = new THREE.Vector3();
+  private raigoAxeReady = false;
+  private raigoAxeDesired = new THREE.Vector3();
+  private raigoGripR = new THREE.Vector3();
+  private raigoGripL = new THREE.Vector3();
+  private raigoChainStart = new THREE.Vector3();
+  private raigoChainEnd = new THREE.Vector3();
+  private raigoGripMode = 0;
   private raigoChainFrom: THREE.Object3D | null = null;
   private raigoLinks: THREE.Group[] = [];
   private raigoAngle = 0;
@@ -1212,7 +1232,7 @@ export class FighterModel extends THREE.Group {
     const root = pivot(this); // ZEPHYR_DRAGON_MODE_V18 independent from hand bones
     root.name = "zephyrMiddleGrip";
     // V24: the previous 0.79 adjusted only hand pivots, NOT this detached mesh.
-    root.scale.setScalar(ZEPHYR_TRISTAFF_SIZE_V24.globalScale);
+    root.scale.setScalar(ZEPHYR_TRISTAFF_SIZE_V24.globalScale * 1.15); // RAIGO_V6: Zephyr VISUAL mesh +15%, hand scales unchanged
     this.dragonRoot = root;
     if (ZEPHYR_GRIP_DEBUG && !this.dragonWasAudited) { auditZephyrGrips(); this.dragonWasAudited=true; }
     const lacquer = this.tn("#251b20");
@@ -1643,48 +1663,60 @@ export class FighterModel extends THREE.Group {
   /** RAIGO_IRON_BASTION_V2: The axe belongs to the right hand. The LEFT hand grips
    * a real visible chain handle, with the ball freely animated in fighter-local space.
    * Chain rings are distinct links. No vertex buffers or meshes are created per frame. */
+  /** RAIGO_IRON_BASTION_V6 — ONE CONTINUOUS CHAIN, axe and iron ball are both free ends.
+   * No solid axe haft; the chain runs from the short axe socket, through actual fist grips,
+   * to the spiked ball. All physics/links are visuals and never create extra hitboxes.
+   */
   private buildRaigoAxeFlail() {
-    const steel=this.tn("#b8c0c7"), edge=this.tn("#f0e8d9"), iron=this.tn("#30383e"),
+    const steel=this.tn("#cbd3dc"), iron=this.tn("#30383e"),
       bronze=this.tn("#c09a61"), dark=this.tn("#454c51");
-    const axe=pivot(this.hand_r,[0,0,0],[PI/2,0,0]);
+    const axe=pivot(this);
     this.raigoAxe=axe;
-    mesh(axe,cyl(.043,.046,1.36,10),dark,[0,.36,0]);
-    mesh(axe,cyl(.058,.050,.37,10),iron,[0,.15,0]);
-    for(const y of [-.18,.15,.50,.89]) mesh(axe,torus(.04,.055),bronze,[0,y,0],[PI/2,0,0]);
-    const head=pivot(axe,[0,.93,0]);
-    mesh(head,box(.24,.26,.13),iron,[.025,0,0]);
+    const head=pivot(axe);
+    head.scale.setScalar(.75); // 25% smaller axe HEAD than the original. No long haft.
+    mesh(head,box(.27,.24,.15),iron,[-.025,0,0]);
+    // RAIGO_AXE_GRIP_FIX: a SHORT functional one-hand axe handle.
+    // Handle is part of the .75-scaled head; NO second disconnected weapon.
+    // Local Y is the grip axis; the chain starts at the lower butt ring.
+    mesh(head,cyl(.058,.065,.15,12),bronze,[-.015,-.15,0]);
+    mesh(head,cyl(.045,.052,.62,12),dark,[-.015,-.47,0]);
+    mesh(head,cyl(.054,.054,.14,12),iron,[-.015,-.45,0]); // wrapped hand grip
+    mesh(head,torus(.053,.069),bronze,[-.015,-.73,0],[PI/2,0,0]);
     const outline=new THREE.Shape();
-    outline.moveTo(.03,.20);outline.lineTo(.19,.36);
-    outline.bezierCurveTo(.46,.30,.61,.15,.67,.06);
-    outline.bezierCurveTo(.50,-.04,.48,-.19,.50,-.34);
-    outline.lineTo(.20,-.22);outline.lineTo(.03,-.17);outline.closePath();
-    const blade=new THREE.ExtrudeGeometry(outline,{depth:.055,bevelEnabled:true,bevelSize:.019,
-      bevelThickness:.015,bevelSegments:1,steps:1});
-    mesh(head,blade,steel,[0,0,-.027]);
-    for(let j=0;j<4;j++) mesh(head,box(.09,.018,.015),edge,[.39+j*.053,.255-j*.115,.05],
-      [0,0,-.25-j*.20]);
-    mesh(head,cyl(.13,.13,.10,8),bronze,[.04,0,0],[PI/2,0,0]);
-    this.bladeBase=pivot(axe,[0,.75,0]);
-    this.bladeTip=pivot(head,[.54,.04,0]);
-    mesh(axe,sphere(.058,12),bronze,[0,-.29,0]);
-    // Left fist physically closes around this compact handle. The chain starts HERE.
-    const handle=pivot(this.hand_l,[0,-.05,0],[PI/2,0,0]);
-    mesh(handle,cyl(.041,.044,.28,12),dark,[0,.025,0]);
-    for(const y of [-.08,.08]) mesh(handle,torus(.045,.058),bronze,[0,y,0],[PI/2,0,0]);
-    this.raigoChainFrom=pivot(handle,[0,.178,0]);
-    mesh(handle,sphere(.054,12),bronze,[0,.172,0]);
-    // The ball is NOT a child of either hand and cannot bend or stretch the character arm.
-    const ball=pivot(this,[0,1.15,0]);
+    outline.moveTo(.03,.18);outline.lineTo(.10,.36);
+    outline.bezierCurveTo(.38,.40,.66,.28,.78,.04);
+    outline.bezierCurveTo(.58,.02,.52,-.14,.58,-.38);
+    outline.bezierCurveTo(.36,-.34,.16,-.24,.03,-.16);
+    outline.closePath();
+    const blade=new THREE.ExtrudeGeometry(outline,{depth:.05,bevelEnabled:false,curveSegments:24});
+    const pos=blade.attributes.position;
+    for(let i=0;i<pos.count;i++) {
+      const k=THREE.MathUtils.clamp(1-(pos.getX(i)-.12)/.62,.05,1);
+      pos.setZ(i,(pos.getZ(i)-.025)*k);
+    }
+    pos.needsUpdate=true;
+    blade.computeVertexNormals();
+    mesh(head,blade,steel);
+    head.add(new THREE.LineSegments(new THREE.EdgesGeometry(blade,35),
+      new THREE.LineBasicMaterial({color:0xffffff})));
+    mesh(head,cyl(.11,.11,.09,10),bronze,[.015,0,0],[PI/2,0,0]);
+    // 0.75 head scaling makes grip offset -0.375 in axe-root coordinates.
+    // The axe root follows the right hand so the grip, NOT the head, is held.
+    this.raigoAxeGrip=pivot(axe,[-.01125,-.375,0]);
+    this.raigoAxeAttach=pivot(head,[-.015,-.79,0]); // chain connected to handle BUTT
+    this.bladeBase=pivot(head,[.08,.02,0]);
+    this.bladeTip=pivot(head,[.76,.04,0]);
+    this.raigoAxeTip=this.bladeTip; // true cutting edge, including the .75 head scale
+
+    const ball=pivot(this);
     this.raigoBallRoot=ball;
     this.raigoFlailTip=ball;
     mesh(ball,sphere(.205,22),iron);
-    // Visible plated facets outside the iron (rather than an invisible buried sphere).
-    for (let n=0;n<6;n++) {
+    for(let n=0;n<6;n++) {
       const theta=n*TAU/6;
       mesh(ball,box(.055,.18,.023),steel,[.188*Math.cos(theta),.04,.188*Math.sin(theta)],
         [0,-theta,0]);
     }
-    // Fibonacci distribution covers both poles and avoids the old equatorial band.
     for(let n=0;n<22;n++) {
       const y=1-2*(n+.5)/22;
       const r=Math.sqrt(Math.max(0,1-y*y)),az=n*2.3999632297;
@@ -1694,135 +1726,215 @@ export class FighterModel extends THREE.Group {
       spike.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),axis);
     }
     mesh(ball,sphere(.064,12),bronze,[0,.212,0]);
-    // Alternating interlocked rings, not a skinny stretched cylinder.
-    for(let i=0;i<32;i++) {
+    this.raigoBallAttach=pivot(ball,[0,.235,0]);
+
+    // V6: another 25% thinner links, AFTER the previous 25% reduction:
+    // .030 -> .016875 and .055 -> .0309375 (56.25% of original visual size).
+    // More rings compensate for the smaller model so the FULL chain stays connected.
+    const linkCount=72;
+    for(let i=0;i<linkCount;i++) {
       const link=pivot(this);
-      mesh(link,torus(.030,.055),i%2?steel:iron,[0,0,0],[0,i%2?PI/2:0,0]);
+      mesh(link,torus(.016875,.0309375),i%2?steel:iron,[0,0,0],
+        [0,i%2?PI/2:0,0]);
       this.raigoLinks.push(link);
     }
     this.castPoint=ball;
     this.shieldNode=axe;
   }
 
-  /** Verlet-like inertial endpoint driven by timed attack arcs with a hard chain-length
-   * constraint; produces real continuous orbits instead of oscillating Euler angles.
-   * Deliberately cinematic, not a full rigid-body simulator: gameplay hit tests stay
-   * in game.ts and pass through the native block/parry/clash rules. */
+  /** Calculate chain curve at parameter t without creating objects or arrays.
+   * Each grip lies ON the one continuous chain. Modes: 0 both / 1 right at middle /
+   * 2 right near axe / 3 left near ball. Non-gripping hand is genuinely released.
+   */
+  private raigoChainSample(t:number,out:THREE.Vector3) {
+    const a=this.raigoChainStart,b=this.raigoChainEnd,r=this.raigoGripR,l=this.raigoGripL;
+    if(this.raigoGripMode===0) {
+      // Right hand holds the short AXE HAFT. Only LEFT hand guides the chain.
+      // Never route the chain through the right fist holding the handle.
+      if(t<.58) out.copy(a).lerp(l,t/.58);
+      else out.copy(l).lerp(b,(t-.58)/.42);
+    } else if(this.raigoGripMode===2) {
+      // Right hand holds axe; ball is released to whip from the handle butt.
+      out.copy(a).lerp(b,t);
+    } else {
+      // Free axe end: hold chain midpoint or near the iron ball.
+      const g=this.raigoGripMode===3?l:r;
+      const at=this.raigoGripMode===3?.83:.50;
+      if(t<at) out.copy(a).lerp(g,t/at);
+      else out.copy(g).lerp(b,(t-at)/(1-at));
+    }
+    // Small, dynamic slack; tension increases during finishers and blocks.
+    const slack=this.raigoGripMode===0?.10:.14;
+    out.y-=Math.sin(t*Math.PI)*slack;
+    return out;
+  }
+
+  /** Inertial endpoint in WORLD coordinates, reprojected to the moving model each frame.
+   * Position Verlet + a length constraint to the actual held portion of chain.
+   * Receives only reused vectors; no new THREE objects are allocated per update.
+   */
+  private raigoIntegrateEnd(node:THREE.Group,desired:THREE.Vector3,
+      grip:THREE.Vector3,limit:number,world:THREE.Vector3,previous:THREE.Vector3,
+      ready:boolean,step:number,striking:boolean):boolean {
+    if(!ready) {
+      node.position.copy(desired);
+      node.updateWorldMatrix(true,false);
+      node.getWorldPosition(world);
+      previous.copy(world);
+      return true;
+    }
+    this.raigoPathP.copy(world);
+    this.worldToLocal(this.raigoPathP);
+    this.raigoPathQ.copy(previous);
+    this.worldToLocal(this.raigoPathQ);
+    this.raigoDelta.subVectors(this.raigoPathP,this.raigoPathQ)
+      .multiplyScalar(Math.pow(striking?.35:.65,step*60));
+    node.position.copy(this.raigoPathP).add(this.raigoDelta);
+    node.position.lerp(desired,1-Math.exp(-(striking?88:20)*step));
+    this.raigoDelta.subVectors(node.position,grip);
+    const distance=this.raigoDelta.length();
+    if(distance>limit) node.position.copy(grip).addScaledVector(this.raigoDelta,limit/distance);
+    previous.copy(world);
+    node.updateWorldMatrix(true,false);
+    node.getWorldPosition(world);
+    return true;
+  }
+
   private updateRaigoWeapon(dt:number) {
-    const axe=this.raigoAxe,ball=this.raigoBallRoot,grip=this.raigoChainFrom;
-    if(!axe || !ball || !grip) return;
+    const axe=this.raigoAxe,ball=this.raigoBallRoot;
+    if(!axe||!ball||!this.raigoAxeAttach||!this.raigoBallAttach||!this.raigoAxeGrip) return;
     const step=Math.min(Math.max(dt,0),.045),pose=this.raigoPose;
     const show=pose==="raigo_show";
     const phase=((this.presentationT%9.6)+9.6)%9.6;
     if(pose!==this.raigoLastPose){this.raigoLastPose=pose;this.raigoSwingT=0;}
     else this.raigoSwingT+=step;
-    // Updating only the grip's ancestor matrices avoids updating the whole model twice.
-    grip.updateWorldMatrix(true,false);
-    this.raigoAnchor.copy(grip.getWorldPosition(this.raigoAnchor));
-    this.worldToLocal(this.raigoAnchor);
+    // Actual hand world positions after the humanoid rig update; both are on the chain.
+    this.hand_r.updateWorldMatrix(true,false);
+    this.hand_l.updateWorldMatrix(true,false);
+    this.hand_r.getWorldPosition(this.raigoGripR);
+    this.worldToLocal(this.raigoGripR);
+    this.hand_l.getWorldPosition(this.raigoGripL);
+    this.worldToLocal(this.raigoGripL);
     this.getWorldPosition(this.raigoRootWorld);
-    if (this.raigoRootReady && this.raigoRootWorld.distanceToSquared(this.raigoRootPrev)>9)
+    if(this.raigoRootReady&&this.raigoRootWorld.distanceToSquared(this.raigoRootPrev)>9) {
+      this.raigoAxeReady=false;
       this.raigoBallInitialized=false;
+    }
     this.raigoRootPrev.copy(this.raigoRootWorld);
     this.raigoRootReady=true;
-    const attacking=show||pose.endsWith("_s")||pose.startsWith("rgz_s")||pose.startsWith("rgc_s")||pose.startsWith("rgv_s");
+
+    const striking=show||pose.endsWith("_s");
     const p=THREE.MathUtils.clamp(this.raigoProgress,0,1);
     const pulseCount=show?1:Math.max(1,this.raigoPulses);
-    // The model stays in sync even while the fighter changes between axe and
-    // ball hit poses during one multi-hit skill.
-    const beatP=pulseCount>1 ? Math.min(.999,(p*pulseCount)%1) : p;
-    const wave=show?1:Math.sin(Math.PI*(.18+.76*beatP));
-    let extension=attacking ? 1.55+1.17*Math.max(.2,wave) : pose.endsWith("_w")||pose==="charge"?1.25:.78;
-    if(show) extension=phase<1.0?.75:phase<4.9?2.25:phase<7.2?2.92:1.03;
-    if(pose==="rgh_s") extension+=.15*Math.sin(Math.min(1,this.raigoSwingT/.20)*Math.PI);
-    // Phase continues across attacks; opposite rotation direction for the final reverse catch.
-    const spinSpeed=show?(phase<5?10.2:phase<7.2?13.7:7.3):attacking?11.6:pose==="idle"?.12:1.1;
-    this.raigoAngle+=step*spinSpeed*(show&&phase>7.2?-1:1);
-    const angle=this.raigoAngle + ((pose==="rgc_s"||pose==="rgv_s"||pose==="rgz_s")?this.raigoBeat*.17:0);
-    const sideSwing=pose==="rg2_s"||pose==="rg4_s"||pose==="rgc_s";
-    const overhead=pose==="rgz_s"||pose==="rgv_s"||pose==="rgz_w"||show;
-    const rise=overhead?.56:sideSwing?.05:-.32;
-    // Each impact sweeps the ball toward the front instead of leaving a hitbox
-    // disconnected from an arbitrary continuously rotating idle orbit.
-    const strikePose=pose.endsWith("_s") || pose==="rgh_s";
-    const impulse=strikePose && !show?Math.pow(Math.sin(Math.PI*beatP),2)*.92:0;
-    if(pose==="idle" || pose==="block") {
-      this.raigoDesired.copy(this.raigoAnchor).add(this.raigoDelta.set(
-        .13+Math.sin(this.t*1.3)*.035,-.66+Math.sin(this.t*1.7)*.024,
-        .19+Math.cos(this.t*1.3)*.032));
+    const beatP=pulseCount>1?Math.min(.9999,(p*pulseCount)%1):p;
+    const forward=Math.pow(Math.sin(Math.PI*beatP),2);
+    const angle=this.raigoAngle;
+    const speed=show?phase<6.8?12:8:striking?12:pose.endsWith("_w")?3.5:.28;
+    this.raigoAngle+=step*speed;
+    const sx=Math.sin(angle),cz=Math.cos(angle);
+    // Grip choices are driven ONLY by the already-synced pose, beat, and progress.
+    // Continuous rotations let each free end follow momentum through hand passes.
+    if(show) this.raigoGripMode=phase<1.1?0:phase<3.3?1:phase<4.9?2:phase<6.9?3:0;
+    else if(pose==="block"||pose==="idle"||pose==="charge"||pose==="rgx_w"||pose==="rgx_s"||pose==="rgv_final_s")
+      this.raigoGripMode=0;
+    else if(pose==="rg3_s"||pose==="rg3_w"||pose==="rgc_s"&&this.raigoBeat===2||pose==="rgv_s"&&this.raigoBeat===3)
+      this.raigoGripMode=3;
+    else if(pose==="rg1_s"||pose==="rg1_w"||pose==="rgz_s"||pose==="rgz_w"||pose==="rg2_s"||pose==="rg4_s"||pose==="rgc_s")
+      this.raigoGripMode=2;
+    else this.raigoGripMode=1;
+
+    if(this.raigoGripMode===0) {
+      this.raigoAxeDesired.copy(this.raigoGripR).add(this.raigoDelta.set(
+        -.15+(striking?.35*sx:0),striking?.12:-.67,striking?.48:.08));
+      this.raigoDesired.copy(this.raigoGripL).add(this.raigoDelta.set(
+        .13+(striking?.35*cz:0),striking?.10:-.71,striking?.55:.08));
+    } else if(this.raigoGripMode===1) {
+      this.raigoAxeDesired.copy(this.raigoGripR).add(this.raigoDelta.set(
+        -1.03*sx,.20*Math.cos(angle*1.3),1.18*cz));
+      this.raigoDesired.copy(this.raigoGripR).add(this.raigoDelta.set(
+        1.00*sx,.20*Math.sin(angle),-1.23*cz));
+    } else if(this.raigoGripMode===2) {
+      this.raigoAxeDesired.copy(this.raigoGripR).add(this.raigoDelta.set(
+        -.13,-.15,show?.55:.28));
+      const ext=show?2.72:striking?2.52:pose.endsWith("_w")?1.36:1.02;
+      this.raigoDesired.copy(this.raigoGripR).add(this.raigoDelta.set(
+        sx*ext*(1-forward*.82),show?.64:pose==="rgz_s"?.52:-.12,
+        ext*(cz*(1-forward)+forward)));
     } else {
-      this.raigoDesired.copy(this.raigoAnchor).add(this.raigoDelta.set(
-        Math.sin(angle)*extension*(1-impulse),
-        rise+(overhead?.22:.38)*Math.cos(angle*1.03),
-        extension*(Math.cos(angle)*(1-impulse)+impulse)));
+      this.raigoDesired.copy(this.raigoGripL).add(this.raigoDelta.set(.08,-.14,.27));
+      const ext=show?2.70:striking?2.26:pose.endsWith("_w")?1.32:.95;
+      this.raigoAxeDesired.copy(this.raigoGripL).add(this.raigoDelta.set(
+        sx*ext*(1-forward*.82),show?.56:.10,
+        ext*(cz*(1-forward)+forward)));
     }
-    if(!this.raigoBallInitialized) {
-      ball.position.copy(this.raigoDesired);
-      this.raigoBallPrev.copy(ball.position);
+    const axeGrip=this.raigoGripMode===3?this.raigoGripL:this.raigoGripR;
+    const ballGrip=this.raigoGripMode===0||this.raigoGripMode===3?this.raigoGripL:this.raigoGripR;
+    const axeLimit=this.raigoGripMode===3?RAIGO_V6_CHAIN_LENGTH*.86:
+      this.raigoGripMode===1?RAIGO_V6_CHAIN_LENGTH*.49:
+      this.raigoGripMode===0?RAIGO_V6_CHAIN_LENGTH*.30:RAIGO_V6_CHAIN_LENGTH*.19;
+    const ballLimit=this.raigoGripMode===2?RAIGO_V6_CHAIN_LENGTH*.87:
+      this.raigoGripMode===1?RAIGO_V6_CHAIN_LENGTH*.49:
+      this.raigoGripMode===0?RAIGO_V6_CHAIN_LENGTH*.30:RAIGO_V6_CHAIN_LENGTH*.19;
+    // RAIGO_AXE_GRIP_FIX: right hand grips the axe's short shaft in idle,
+    // block, charge, and axe-led strikes. It is FREE on released-chain beats.
+    const holdingAxe=this.raigoGripMode===0||this.raigoGripMode===2;
+    const spin=striking?Math.sin(beatP*Math.PI)*1.05:.10*Math.sin(this.t*.8);
+    const aX=holdingAxe ?
+      (pose==="idle"?.045:pose==="block"?.14:pose==="charge"?-.17:.12+spin*.48) :
+      1.3+spin;
+    this.raigoQuat.setFromEuler(this.raigoEuler.set(aX,
+      holdingAxe?.08+sx*(striking?.19:.04):.2+sx*.32,
+      holdingAxe?cz*(striking?.16:.025):cz*.26,"YXZ"));
+    axe.quaternion.slerp(this.raigoQuat,1-Math.exp(-(holdingAxe?32:11)*step));
+    if(holdingAxe) {
+      // Reused vector and exact grip alignment: local grip transformed by the
+      // axe quaternion is offset from the RIGHT VRM hand. Axe head stands UP.
+      this.raigoDelta.copy(this.raigoAxeGrip.position).applyQuaternion(axe.quaternion);
+      axe.position.copy(this.raigoGripR).sub(this.raigoDelta);
+      axe.updateWorldMatrix(true,false);
+      axe.getWorldPosition(this.raigoAxeWorld);
+      this.raigoAxeWorldPrev.copy(this.raigoAxeWorld);
+      this.raigoAxeReady=true; // smooth hand-release into free axe physics
+    } else {
+      this.raigoAxeReady=this.raigoIntegrateEnd(axe,this.raigoAxeDesired,axeGrip,
+        axeLimit,this.raigoAxeWorld,this.raigoAxeWorldPrev,this.raigoAxeReady,step,striking);
+    }
+    this.raigoBallInitialized=this.raigoIntegrateEnd(ball,this.raigoDesired,ballGrip,
+      ballLimit,this.raigoWorldTip,this.raigoWorldPrevTip,this.raigoBallInitialized,step,striking);
+    // Enforce tether length using TRUE chain endpoints (handle butt -> ball lug),
+    // not the visual centres of the axe and spiked ball.
+    this.raigoAxeAttach.getWorldPosition(this.raigoPathP);
+    this.worldToLocal(this.raigoPathP);
+    this.raigoBallAttach.getWorldPosition(this.raigoPathQ);
+    this.worldToLocal(this.raigoPathQ);
+    this.raigoDelta.subVectors(this.raigoPathQ,this.raigoPathP);
+    const apart=this.raigoDelta.length();
+    if(apart>RAIGO_V6_CHAIN_LENGTH) {
+      ball.position.addScaledVector(this.raigoDelta,-(apart-RAIGO_V6_CHAIN_LENGTH)/apart);
       ball.updateWorldMatrix(true,false);
       ball.getWorldPosition(this.raigoWorldTip);
-      this.raigoWorldPrevTip.copy(this.raigoWorldTip);
-      this.raigoBallInitialized=true;
-    } else {
-      // Reproject previous world positions under the CURRENT root transform.
-      // Dashes, knockback and root yaw now cause natural weapon lag.
-      // worldToLocal mutates its argument: use scratch vectors so stored world history
-      // stays world-space across the next frame as well.
-      ball.position.copy(this.worldToLocal(this.raigoPathP.copy(this.raigoWorldTip)));
-      this.raigoBallPrev.copy(this.worldToLocal(this.raigoPathQ.copy(this.raigoWorldPrevTip)));
     }
-    // Inertial follow-through: previous position carries momentum between combo strikes.
-    this.raigoOld.copy(ball.position);
-    this.raigoDelta.subVectors(ball.position,this.raigoBallPrev).multiplyScalar(Math.pow(strikePose && attacking ? .38 : .68,step*60));
-    ball.position.add(this.raigoDelta);
-    const stiffness=attacking && strikePose ? 78 : attacking ? 36 : 11;
-    const alpha=1-Math.exp(-stiffness*step);
-    ball.position.lerp(this.raigoDesired,alpha);
-    // No micro-gravity nudge: the idle hang is handled by the desired trajectory.
-    this.raigoBallPrev.copy(this.raigoOld);
-    // A controlled long chain: the ball never moves farther than its actual tether.
-    this.raigoDelta.subVectors(ball.position,this.raigoAnchor);
-    const length=this.raigoDelta.length();
-    if(length>3.05) ball.position.copy(this.raigoAnchor).addScaledVector(this.raigoDelta,3.05/length);
-    this.raigoWorldPrevTip.copy(this.raigoWorldTip);
-    ball.updateWorldMatrix(true,false);
-    ball.getWorldPosition(this.raigoWorldTip);
-    ball.rotation.x+=step*(attacking?8:pose==="idle"?.08:1.2);
-    ball.rotation.z+=step*(attacking?11:pose==="idle"?.07:1.3);
-    const axeAngles: Record<string,[number,number,number]>={
-      idle:[PI/2,.10,-.15],block:[1.24,.35,.28],charge:[2.55,-.47,-.22],
-      rg1_w:[2.10,-.50,-.26],rg1_s:[.65,.55,.29],
-      rg2_w:[1.45,.22,-.20],rg2_s:[1.24,-.36,.26],
-      rg3_w:[2.26,.48,-.18],rg3_s:[.67,-.58,.33],
-      rg4_w:[2.40,-.27,-.24],rg4_s:[.65,.51,.31],
-      rgh_w:[2.64,-.27,-.10],rgh_s:[.48,.29,.20],
-      rgz_w:[1.80,-.33,-.14],rgz_s:[1.19,.28,.14],
-      rgx_w:[1.34,-.22,-.10],rgx_s:[.91,.22,.23],
-      rgc_w:[2.15,-.36,-.17],rgc_s:[.85,.42,.28],
-      rgv_w:[2.57,-.35,-.13],rgv_s:[.70,.51,.29],rgv_final_s:[.55,.24,.26]};
-    const a=axeAngles[pose]??axeAngles.idle;
-    const target=this.raigoQuat.setFromEuler(this.raigoEuler.set(a[0],a[1],a[2],"YXZ"));
-    if(show) target.multiply(this.raigoSpinQuat.setFromAxisAngle(this.raigoUp,
-      phase<6.8?Math.sin(phase*7.5)*.68:0));
-    axe.quaternion.slerp(target,1-Math.exp(-(attacking?20:11)*step));
-    // A shallow catenary with real link nodes follows the exact grip and ball endpoints.
-    this.raigoMid.copy(this.raigoAnchor).lerp(ball.position,.5);
-    this.raigoMid.y-=attacking?.10:.32;
+    ball.rotation.x+=step*(striking?8:.35);
+    ball.rotation.z+=step*(striking?10:.28);
+
+    // Full-length chain links are connected continuously: AXE -> fist(s) -> BALL.
+    // No separate independent chain rooted at either wrist.
+    this.raigoAxeAttach.getWorldPosition(this.raigoPathP);
+    this.raigoChainStart.copy(this.worldToLocal(this.raigoPathP));
+    this.raigoBallAttach.getWorldPosition(this.raigoPathP);
+    this.raigoChainEnd.copy(this.worldToLocal(this.raigoPathP));
     const n=this.raigoLinks.length;
-    for(let i=0;i<n;i++){
-      const t=i/n, u=Math.min(1,t+1/n);
-      this.raigoPathP.copy(this.raigoAnchor).multiplyScalar((1-t)*(1-t))
-        .addScaledVector(this.raigoMid,2*t*(1-t)).addScaledVector(ball.position,t*t);
-      this.raigoPathQ.copy(this.raigoAnchor).multiplyScalar((1-u)*(1-u))
-        .addScaledVector(this.raigoMid,2*u*(1-u)).addScaledVector(ball.position,u*u);
-      const node=this.raigoLinks[i];
-      node.position.copy(this.raigoPathP).lerp(this.raigoPathQ,.5);
+    for(let i=0;i<n;i++) {
+      const t=(i+.25)/n,u=(i+.75)/n;
+      this.raigoChainSample(t,this.raigoPathP);
+      this.raigoChainSample(u,this.raigoPathQ);
+      const link=this.raigoLinks[i];
+      link.position.copy(this.raigoPathP).lerp(this.raigoPathQ,.5);
       this.raigoDelta.subVectors(this.raigoPathQ,this.raigoPathP);
-      // Rings alternate their facing plane, while retaining a constant link thickness.
-      node.quaternion.setFromUnitVectors(this.raigoUp,this.raigoDelta.normalize());
+      if(this.raigoDelta.lengthSq()>.000001)
+        link.quaternion.setFromUnitVectors(this.raigoUp,this.raigoDelta.normalize());
     }
   }
-
   private buildGlaive() {
     if (this.look.element === "metal") { this.buildZenithSpear(); return; }
     // Zarek's glaive remains unchanged.

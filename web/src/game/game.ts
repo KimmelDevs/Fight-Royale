@@ -1,3 +1,4 @@
+// RAIGO_V6_AXE_GRIP_PARRY_WARD_FIX_20261109
 // ZEPHYR_V23_ICONS_FX_REPAIR
 // PASSIVE_ROSTER_V10 — roster-wide passives, readable HUD and CPU visibility.
 // ROXY_V7_5PCT_LIGHT_CHARGED_BIRD_NO_WIND_20261108: remove unavailable Frostwing wind sound.
@@ -1959,7 +1960,8 @@ export class Game implements MobHost {
     this.swingSound(f, a);
     // RAIGO_IRON_BASTION_V1 — true melee collisions on each individual weapon pass.
     if (f.kit === "axeflail") {
-      const tip=f.model.raigoFlailTip?.getWorldPosition(new THREE.Vector3()) ?? f.chest();
+      const tip=(a.style==="raigo_axe"||a.style==="raigo_execute" ? f.model.raigoAxeTip : f.model.raigoFlailTip)
+        ?.getWorldPosition(new THREE.Vector3()) ?? f.chest();
       this.fxp("sparks",tip,"#e5b46d",a.style==="raigo_execute"?21:10,4.5);
       if (["raigo_comet","raigo_tempest","raigo_twinned"].includes(a.style)) {
         this.raigoSequenceSwing(f,a); return;
@@ -2537,7 +2539,8 @@ export class Game implements MobHost {
         reach:isAxe ? 2.45 : a.reach, heavy:false,
       };
       f.model.raigoBeat=i;
-      const tip=f.model.raigoFlailTip?.getWorldPosition(new THREE.Vector3()) ?? f.chest();
+      const tip=(isAxe?f.model.raigoAxeTip:f.model.raigoFlailTip)
+        ?.getWorldPosition(new THREE.Vector3()) ?? f.chest();
       this.fxp("slashes",tip,"#e3bb86");
       this.fxp("sparks",tip,last?"#fff0ca":"#b7a27d",last?25:12,last?6:3);
       if(last) this.fxp("ring",f.chest(),"#e0a85c",1.1,.18,.65);
@@ -2600,6 +2603,19 @@ export class Game implements MobHost {
           dy > (aerialPredatorHook ? 3.15 : antiAir ? 3.25 : airCombo ? 1.8 : 1.3) ||
           (aerialPredatorHook && Math.hypot(Math.max(0, dist - d.radius * 0.4), dy * 0.72) > a.reach + 0.2) ||
           (dist > 0.6 && dir.dot(fwd) < (a.dragonBehind ? -1 : (a.dragonArcCos ?? (antiAir ? -0.08 : 0.15))))) continue;
+      // RAIGO_V6: the axe is now a free end: validate its real swung position too.
+      if(f.kit==="axeflail" && (a.style==="raigo_axe"||a.style==="raigo_execute")) {
+        const tip=f.model.raigoAxeTip;
+        if(tip) {
+          tip.updateWorldMatrix(true,false);
+          const p=tip.getWorldPosition(new THREE.Vector3());
+          const ax=p.x-f.root.position.x,az=p.z-f.root.position.z;
+          const visual=Math.hypot(ax,az);
+          const allowed=Math.min(a.reach,Math.max(visual+.55,a.reach*.82));
+          if(dist-d.radius+.25>allowed) continue;
+          if(visual>.4&&dist>1.7&&(ax*dir.x+az*dir.z)/visual<-.25) continue;
+        }
+      }
       // RAIGO_IRON_BASTION_V1: a swinging flail has an actual blind spot near the body.
       if (f.kit === "axeflail" && (a.style==="raigo_ball" || a.style==="raigo_comet_pull" || a.style==="raigo_ball_execute") && dist<1.20) continue;
       if (f.kit === "axeflail" && (a.style==="raigo_ball" || a.style==="raigo_comet_pull" || a.style==="raigo_ball_execute")) {
@@ -4213,7 +4229,7 @@ export class Game implements MobHost {
     } else if (a.mode === "healing_water" || a.mode === "static_field") {
       this.spawnMagicPool(f, a);
     } else if (a.mode === "ward") {
-      // Marina Z is intentionally the full eight-second ward, even in PvP.
+      // Marina Z now uses the shorter 5-second ward in every mode; other wards unchanged.
       const dur = f.kit === "mage" && f.look.element === "water" ? a.duration
         : (pvp ? Math.min(a.duration, 2) : a.duration);
       const wardDur = f.look.name === "Marina" ? dur * (1 + f.passiveWaterHealer * 0.02) : dur;
@@ -4555,8 +4571,8 @@ export class Game implements MobHost {
     // RAIGO_IRON_BASTION_V1: empower only confirmed heavy hits, don't consume on whiff.
     const raigoEmpowered=attacker instanceof Fighter && attacker.kit === "axeflail" &&
       attacker.raigoMomentum===3 && (a.style==="raigo_execute" || a.style==="raigo_ball_execute" || a.id==="heavy");
-    const raigoAttack=raigoEmpowered ? {...balancedAttack,dmg:balancedAttack.dmg*1.28,
-      guard:balancedAttack.guard*1.25,knock:balancedAttack.knock*1.15} : balancedAttack;
+    const raigoAttack=raigoEmpowered ? {...balancedAttack,dmg:balancedAttack.dmg*1.40,
+      guard:balancedAttack.guard*1.35,knock:balancedAttack.knock*1.15} : balancedAttack;
     const result = d.receiveHit(attacker, raigoAttack, (riposte ? power * 1.15 : power) * sentenceMult);
     if (attacker instanceof Fighter && attacker.kit === "axeflail" &&
         (result === "hit" || result === "crit" || result === "ko")) {
@@ -4883,6 +4899,12 @@ export class Game implements MobHost {
         if (df.kit === "axeflail") {
           df.earnRaigoMomentum(`counter:${this.time.toFixed(3)}`);
           this.fxp("ring",df.chest(),"#f3c47e",1.1,.22,.72);
+          // RAIGO_V6: chain-catch occurs only after a REAL successful counter.
+          if(attacker instanceof Fighter && !attacker.isDown()) {
+            attacker.stagger(.24);
+            this.fxp("ring",attacker.chest(),"#d6ab73",.80,.22,.82);
+            this.fxp("sparks",attacker.chest(),"#d6ab73",12,3.5);
+          }
         }
         if (df.kit === "tristaff") {
           df.earnDragonRhythm();

@@ -156,8 +156,8 @@ const FIGHT_STYLES: Readonly<Record<string, FightStyle>> = {
   raven: { range: 5.75, heavy: 0.40, combo: 0.47, bait: 0.20, pressure: 0.30, skillBias: [1.4, 1.25, 1.35] },
   ash: { range: 6.20, heavy: 0.50, combo: 0.40, bait: 0.44, pressure: 0.19, skillBias: [1.5, 1.0, 1.4] },
   veyr: { range: 1.59, heavy: 0.15, combo: 0.98, bait: 0.68, pressure: 0.94, skillBias: [1.0, 1.35, 1.5] },
-  // RAIGO_IRON_BASTION_V1: hold midrange, guard against rushdown, punish approach.
-  raigo: { range: 2.90, heavy: 0.30, combo: 0.73, bait: 0.69, pressure: 0.55, skillBias: [1.35, 1.60, 1.22] },
+  // RAIGO_SHARP_AXE_MIDRANGE_AI_V1: outer-range flail controller, close axe punishment and measured counters.
+  raigo: { range: 2.82, heavy: 0.36, combo: 0.75, bait: 0.78, pressure: 0.54, skillBias: [1.55, 1.90, 1.45] },
   zarek: { range: 2.10, heavy: 0.30, combo: 0.91, bait: 0.35, pressure: 0.86, skillBias: [1.3, 1.2, 1.45] },
   // ZEPHYR_DRAGON_DANCER_V1: aggressive counter-based three-section staff duelist.
   zephyr: { range: 2.15, heavy: 0.20, combo: 0.96, bait: 0.58, pressure: 0.78, skillBias: [1.35, 1.75, 1.1] },
@@ -177,7 +177,7 @@ type PersonalityRole =
   "counter" | "duelist" | "juggernaut" | "riposte" | "artillery" |
   "support" | "ambush" | "rush" | "skirmish" | "trapper" |
   "kickboxer" | "controller" | "sniper" | "executioner" |
-  "glaive" | "grappler" | "bruiser";
+  "glaive" | "grappler" | "bruiser" | "chainwarden";
 type PersonalityPlan = "none" | "pressure" | "probe" | "reset";
 type PersonalityProfile = {
   role: PersonalityRole;
@@ -200,6 +200,7 @@ const CHARACTER_PERSONALITY: Readonly<Record<string, PersonalityProfile>> = {
   raven:   { role: "controller",  pressure: 0.46, probe: 1.30, reset: 1.04, vReserve: 0.61, spacing:  0.35 },
   ash:     { role: "sniper",      pressure: 0.35, probe: 1.02, reset: 1.42, vReserve: 0.80, spacing:  0.43 },
   veyr:    { role: "executioner", pressure: 1.53, probe: 0.67, reset: 0.29, vReserve: 0.75, spacing: -0.24 },
+  raigo: { role: "chainwarden", pressure: 0.88, probe: 1.48, reset: 0.58, vReserve: 1.10, spacing: 0.16 },
   zarek:   { role: "glaive",      pressure: 1.34, probe: 0.79, reset: 0.34, vReserve: 0.64, spacing: -0.08 },
   kaizen:  { role: "grappler",    pressure: 0.97, probe: 1.22, reset: 0.39, vReserve: 0.78, spacing:  0.10 },
   nesa:    { role: "bruiser",     pressure: 1.03, probe: 1.04, reset: 0.45, vReserve: 0.85, spacing:  0.19 },
@@ -821,6 +822,17 @@ export class AiBrain implements Brain {
     }
     if (f.kit === "glaive" && f.look.element === "metal")
       ideal = f.zenithSpearOut ? 1.54 : 2.05;
+    if (f.kit === "axeflail") {
+      // Inner axe range only when the long flail skills are cooling down.
+      // Existing melee attack reach is still authoritative; this changes navigation only.
+      const flailReady = ["z", "c", "v"].some(key => {
+        const a = f.attacks[key];
+        return a && (f.cooldowns[key] ?? 1) <= 0 &&
+          ["Iron Comet", "Iron Tempest", "Twin Judgment"].includes(a.name);
+      });
+      ideal = flailReady ? 2.65 : 1.92;
+      if (f.raigoMomentum === 3 && this.hasPunishWindow(o)) ideal = 1.95;
+    }
     // Keep a comfortable band, rather than alternating forward/back each frame.
     ideal = THREE.MathUtils.clamp(ideal, 1.05, ranged ? 6.35 : 5.0);
     const margin = ranged ? 0.7 : Math.max(0.28, Math.min(0.48, ideal * 0.13));
@@ -1073,6 +1085,15 @@ export class AiBrain implements Brain {
       case "zarek":
         if (punish && gap < 4.0) this.theaterPlan("chase", 0.27, "Phantom Spiral", false, gap > 2.9);
         else if (o.state === S.BLOCK && gap < 3.2) this.theaterPlan("circle", 0.31, "Serpent Wheel");
+        break;
+      case "raigo":
+        // Step out of sword range, let the ball travel, then enter with the axe.
+        if (hostileSwing && gap < 2.8 && this.theaterKey(f, "Chain Reversal") && intent(0.72))
+          this.theaterPlan("circle", 0.17, "Chain Reversal");
+        else if (gap < 2.10 && chased && this.theaterKey(f, "Iron Comet") && intent(0.76))
+          this.theaterPlan("back", 0.24, "Iron Comet");
+        else if (punish && gap < 3.10 && this.theaterKey(f, "Iron Tempest") && intent(0.80))
+          this.theaterPlan("circle", 0.18, "Iron Tempest");
         break;
       case "kaizen":
         // Remain at chain range: retreat from fists, then hook escaping prey.
@@ -4365,6 +4386,11 @@ export class AiBrain implements Brain {
       case "glaive":     if (f.clashMomentum >= 2) pressure += 0.95; break;
       case "grappler":   if (gap > 1.8 && gap < 4.7 &&
           (f.cooldowns.x ?? 1) <= 0) probe += 1.1; break;
+      case "chainwarden":
+        if (gap < 2.0 && !opening) reset += 0.95;
+        if (gap > 2.35 && gap < 3.3) probe += 0.92;
+        if (f.raigoMomentum === 3 && opening) pressure += 1.15;
+        break;
       case "bruiser":    if (f.nesaCCharges > 0 && opening) pressure += 1.0; break;
     }
     const roll = Math.random() * (pressure + probe + reset);
@@ -4415,6 +4441,12 @@ export class AiBrain implements Brain {
       case "glaive":      if (f.clashMomentum >= 2 && opening) value += 0.60; break;
       case "grappler":    if (a.style === "chain_predator_hook" && distance > 2.0 &&
           distance < 4.4 && !blocking) value += 1.15; break;
+      case "chainwarden":
+        if (a.mode === "counter" && incoming && distance < 2.8) value += 1.1;
+        if (a.style === "raigo_comet" && distance > 2.15 && distance < 3.3) value += 0.65;
+        if (a.style === "raigo_tempest" && opening && distance < 3.0) value += 0.75;
+        if (a.style === "raigo_twinned" && f.raigoMomentum === 3 && opening) value += 1.1;
+        break;
       case "bruiser":     if (f.nesaCCharges > 0 && opening && close &&
           a.style === "nesa_heart_slam") value += 0.78; break;
     }
@@ -4652,6 +4684,28 @@ private personalizedSkill(f: Fighter, o: Fighter, distance: number): string | nu
         if (name === "Phantom Spiral") points += punish ? 2.5 : 0.5;
         if (name === "Infinite Crescent") points += punish || f.clashMomentum >= 3 ? 2.6 : 0.25;
         break;
+      case "raigo":
+        // Use real cooldowns and opponent tells. No AI-only attacks or invisible range.
+        if (name === "Chain Reversal") {
+          if (!attackComing || distance > 2.65) viable = false;
+          points += attackComing && distance < 2.6 ? 3.45 : -1.0;
+        }
+        if (name === "Iron Comet") {
+          if (distance < 1.4 || distance > 3.48) viable = false;
+          points += distance > 2.25 && distance < 3.25 && !blocking ? 2.15 :
+            punish ? 1.5 : 0.1;
+        }
+        if (name === "Iron Tempest") {
+          if (distance > 3.10) viable = false;
+          points += punish ? 2.50 : blocking && o.guard < o.maxGuard * .52 ? 1.55 : 0.15;
+        }
+        if (name === "Twin Judgment") {
+          if (distance < 1.35 || distance > 3.25 ||
+              !(punish || o.state === S.STAGGER || o.state === S.HITSTUN ||
+                (blocking && o.guard < o.maxGuard * .22))) viable = false;
+          points += f.raigoMomentum === 3 ? 3.2 : punish ? 1.0 : -0.5;
+        }
+        break;
       case "kaizen":
         // Hook catches exposed opponents just outside the five-hit sword string.
         if (name === "Predator's Hook") {
@@ -4747,6 +4801,9 @@ private offense(f: Fighter, o: Fighter, dt: number) {
     if (id !== "zenith" && id !== "nythera" && skill &&
         (punish || Math.random() < 0.80) && this.trySkill(f, skill, true)) return;
   }
+  // A 3-meter ball reach must never trick the CPU into opening with a 2.22-meter axe.
+  // It can still cast an actual ranged flail skill above; ordinary lights need honest range.
+  if (id === "raigo" && distance > (f.attacks.l1?.reach ?? 2.22) + 0.06) return;
   if (distance > reach) return;
   if (danger && !punish && id !== "zarek" && id !== "aster" && Math.random() < 0.80) return;
   // Do not donate free parries: Zenith flanks a full guard rather than
@@ -4801,6 +4858,11 @@ private offense(f: Fighter, o: Fighter, dt: number) {
   if (id === "zenith") heavyChance = o.state === S.BLOCK &&
     o.guard < o.maxGuard * 0.28 ? Math.min(0.26, heavyChance) :
     Math.min(f.zenithTempoStacks > 0 ? 0.075 : 0.12, heavyChance * 0.25);
+  // Raigo only gambles on a long heavy when he has an actual punish opening.
+  // Three real Momentum stacks make an axe verdict worth saving for contact.
+  if (id === "raigo") heavyChance = f.raigoMomentum === 3
+    ? (punish && distance < 2.16 ? 0.83 : 0.10)
+    : blocked && o.guard < o.maxGuard * 0.40 ? 0.39 : 0.18;
   // Veyr's festival specifically favors sustained lights and real guard pressure.
   const festival = id === "veyr" && f.bloodFestivalT > 0;
   if (!festival && Math.random() < heavyChance) {

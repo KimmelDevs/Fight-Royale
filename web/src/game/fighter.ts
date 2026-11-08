@@ -1,3 +1,4 @@
+// RAIGO_V6_AXE_GRIP_PARRY_WARD_FIX_20261109
 // ZEPHYR_DRAGON_SWITCH_SPLIT_V20
 // PASSIVE_ROSTER_V10 — roster-wide passives, readable HUD and CPU visibility.
 // AI_ROOK_NESA_KIRA_MERGED_V1_20261108
@@ -317,6 +318,108 @@ export class Fighter implements Entity {
   model: FighterModel;
   trail: Trail;
   brain: Brain | null = null;
+  // AI_DEADLOCK_WATCHDOG_V1 — only local CPU-vs-CPU neutral inactivity.
+  private aiStallFoe: Fighter | null = null;
+  private aiStallOwnPos = new THREE.Vector3();
+  private aiStallFoePos = new THREE.Vector3();
+  private aiStallDir = new THREE.Vector3();
+  private aiStallWindow = 0;
+  private aiStallQuiet = 0;
+  private aiStallNudge = 0;
+  private aiStallOwnSerial = -1;
+  private aiStallFoeSerial = -1;
+  private aiStallTapDone = false;
+  private aiStallSide = 1;
+
+  private recoverCpuStalemate(dt: number) {
+    const foe = this.opponent instanceof Fighter ? this.opponent : null;
+    if (!this.brain || !foe?.brain || this.stage || this.isDown() || foe.isDown() ||
+        !this.onGround || !foe.onGround) {
+      this.aiStallFoe = null;
+      this.aiStallQuiet = 0;
+      this.aiStallNudge = 0;
+      return;
+    }
+    if (this.aiStallFoe !== foe) {
+      this.aiStallFoe = foe;
+      this.aiStallOwnPos.copy(this.root.position);
+      this.aiStallFoePos.copy(foe.root.position);
+      this.aiStallOwnSerial = this.swingSerial;
+      this.aiStallFoeSerial = foe.swingSerial;
+      this.aiStallWindow = 0;
+      this.aiStallQuiet = 0;
+      this.aiStallNudge = 0;
+      return;
+    }
+    const neutral = (this.state === S.IDLE || this.state === S.BLOCK) &&
+      (foe.state === S.IDLE || foe.state === S.BLOCK);
+    if (!neutral) {
+      this.aiStallQuiet = 0;
+      this.aiStallNudge = 0;
+      this.aiStallWindow = 0;
+      this.aiStallOwnPos.copy(this.root.position);
+      this.aiStallFoePos.copy(foe.root.position);
+      this.aiStallOwnSerial = this.swingSerial;
+      this.aiStallFoeSerial = foe.swingSerial;
+      return;
+    }
+    this.aiStallWindow += Math.min(Math.max(dt, 0), .1);
+    if (this.aiStallWindow >= .45) {
+      const ax = this.root.position.x - this.aiStallOwnPos.x;
+      const az = this.root.position.z - this.aiStallOwnPos.z;
+      const bx = foe.root.position.x - this.aiStallFoePos.x;
+      const bz = foe.root.position.z - this.aiStallFoePos.z;
+      const actuallyMoved = ax*ax+az*az > .0121 || bx*bx+bz*bz > .0121;
+      // Count real attacks, not repeated AI intentions that cannot execute.
+      const actuallyActed = this.swingSerial !== this.aiStallOwnSerial ||
+        foe.swingSerial !== this.aiStallFoeSerial;
+      this.aiStallQuiet = actuallyMoved || actuallyActed ? 0 :
+        Math.min(5, this.aiStallQuiet + this.aiStallWindow);
+      this.aiStallWindow = 0;
+      this.aiStallOwnPos.copy(this.root.position);
+      this.aiStallFoePos.copy(foe.root.position);
+      this.aiStallOwnSerial = this.swingSerial;
+      this.aiStallFoeSerial = foe.swingSerial;
+    }
+    if (this.aiStallQuiet >= 1.8 && this.aiStallNudge <= 0) {
+      this.aiStallQuiet = 0;
+      this.aiStallNudge = .85;
+      this.aiStallTapDone = false;
+      this.aiStallSide = -this.aiStallSide;
+    }
+    if (this.aiStallNudge <= 0) return;
+    this.aiStallNudge = Math.max(0, this.aiStallNudge - dt);
+    // Do not override an actual threat response or ongoing cast.
+    if (this.intent.skill || this.intent.dash.lengthSq() > .01) return;
+    const toward = this.aiStallDir.set(
+      foe.root.position.x - this.root.position.x, 0,
+      foe.root.position.z - this.root.position.z);
+    const gap = toward.length();
+    if (gap < .01) toward.set(this.aiStallSide, 0, 0);
+    else toward.divideScalar(gap);
+    const basic = this.attacks.l1;
+    const allowed = (this.kit === 'mage' || this.kit === 'bow' || this.kit === 'bomb')
+      ? 6.2 : Math.max(1.1, (basic?.reach ?? 1.7) * .87);
+    this.intent.block = false;
+    if (gap <= allowed && this.atkLock <= 0 && this.state === S.IDLE) {
+      // A single real click, not permanent attack/charge or a forced hit.
+      this.intent.move.copy(toward).multiplyScalar(.12);
+      if (!this.aiStallTapDone) {
+        this.intent.attack = true;
+        this.aiStallTapDone = true;
+      }
+    } else {
+      // Pursue the actual opponent, steering inward if pinned at an arena edge.
+      const edge = Math.hypot(this.root.position.x, this.root.position.z);
+      if (edge > this.arenaRadius - .8 &&
+          toward.x*this.root.position.x + toward.z*this.root.position.z > 0) {
+        toward.set(-this.root.position.x, 0, -this.root.position.z).normalize();
+      }
+      this.intent.move.copy(toward);
+      this.intent.sprint = gap > 4;
+    }
+  }
+
   opponent: Entity | null = null;
   autoApproach = false;
   viewBias = 0;
@@ -505,6 +608,9 @@ export class Fighter implements Entity {
   raigoMomentumT = 0;
   private raigoLastAward = "";
   private raigoLastOffenseSerial = -1;
+  private raigoMoveFactor() {
+    return this.kit === "axeflail" ? 1 + .04*Math.min(3,this.raigoMomentum) : 1;
+  }
   earnRaigoMomentum(token: string) {
     if (this.kit !== "axeflail" || this.isDown()) return;
     if (token.startsWith("swing:")) {
@@ -514,7 +620,7 @@ export class Fighter implements Entity {
     } else if (token === this.raigoLastAward) return;
     this.raigoLastAward = token;
     this.raigoMomentum = Math.min(3, this.raigoMomentum + 1);
-    this.raigoMomentumT = 5.0;
+    this.raigoMomentumT = 7.0;
   }
   consumeRaigoMomentum() {
     if (this.raigoMomentum !== 3) return false;
@@ -1149,6 +1255,7 @@ export class Fighter implements Entity {
     it.skillMove?.set(0, 0, 0); it.move.set(0, 0, 0); it.dash.set(0, 0, 0);
     if (this.out) { this.waitRespawn(dt); return; }
     if (this.brain && this.state !== S.KO && this.state !== S.WIN) this.brain.think(this, dt);
+    if (this.brain) this.recoverCpuStalemate(dt);
     if (this.kit==="tristaff" && this.dragonMode===1) {
       it.block=false; // hard guard/parry disable, including AI and remote input.
       if(this.state===S.BLOCK) this.setState(S.IDLE);
@@ -2534,7 +2641,7 @@ export class Fighter implements Entity {
       this.state === S.CHARGE ? 0.4 : kiraAirSteer ? 0.92 : nyxAirSteer ? 0.63 :
       this.kaizenCanWalkWhileSpinning() ? 0.72 : 0;
     if (steer > 0 && this.intent.move.lengthSq() > 0.0001) {
-      const step = this.intent.move.clone().normalize().multiplyScalar(this.moveSpeed * this.gravityMoveFactor() * (this.bloodFrenzyT > 0 ? 1.15 : 1) * (this.meteorFistArmor ? 1 : this.status.speedMult()) * (this.intent.sprint && this.state === S.IDLE && this.onGround ? 1.42 : 1) * this.garrickAdvanceFactor() * steer * dt);
+      const step = this.intent.move.clone().normalize().multiplyScalar(this.moveSpeed * this.gravityMoveFactor() * this.raigoMoveFactor() * (this.bloodFrenzyT > 0 ? 1.15 : 1) * (this.meteorFistArmor ? 1 : this.status.speedMult()) * (this.intent.sprint && this.state === S.IDLE && this.onGround ? 1.42 : 1) * this.garrickAdvanceFactor() * steer * dt);
       if (dist < MIN_DIST && step.dot(dir) > 0) step.addScaledVector(dir, -step.dot(dir));
       pos.add(step);
       walking = this.onGround;
@@ -2638,8 +2745,8 @@ export class Fighter implements Entity {
       this.model.recoil = 0.4;
       return "warded"; // zero HP AND guard damage, exactly one crystal spent per hit
     }
-    // V28: Marina's eight-second Water Ward absorbs 80% rather than all
-    // incoming HP damage. Other wards retain their previous full protection.
+    // PARRY_RIPOSTE_MARINA_WARD_FIX: Marina's shorter Water Ward absorbs 50%
+    // of incoming HP damage; other wards retain their original behavior.
     const marinaPartialWard = this.wardT > 0 && this.look.name === "Marina";
     if (this.wardT > 0 && !marinaPartialWard) { this.model.recoil = 0.4; return "warded"; }
     if (this.counterT > 0 && !a.no_parry) {
@@ -2673,7 +2780,7 @@ export class Fighter implements Entity {
       dmg /= 1 + this.passiveGuard * 0.5 * 0.025; // V28: Aster 2.5% defense per stack
     }
     if (marinaPartialWard) {
-      this.lastDamage = Math.max(0, dmg * 0.20);
+      this.lastDamage = Math.max(0, dmg * 0.50);
       this.lastCrit = false;
       this.hp = Math.max(0, this.hp - this.lastDamage);
       this.model.recoil = 0.32;
@@ -2690,7 +2797,7 @@ export class Fighter implements Entity {
     // if the move was once flagged no_parry. Blood Festival's dedicated immunity
     // remains intact; unrelated single-hit no_parry moves stay unparryable.
     const parryableContinuous = attacker instanceof Fighter && attacker.isContinuousComboActive() &&
-      a.style !== "nesa_heart_slam";
+      a.style !== "nesa_heart_slam" && a.style !== "parry_counter";
     // NESA_FORWARD_HEART_PARRY_V_20261108: actual incoming contact during her vertical V.
     // The first 0.78s is the only parry opportunity; unparryable attacks remain dangerous.
     if (this.kit === "hammer" && this.state === S.ATTACK && this.atk?.style === "nesa_high_striker" &&
@@ -3022,7 +3129,7 @@ export class Fighter implements Entity {
     let walking = false;
     if (this.onGround) {
       let target = 0;
-      if (free) { target = mx * this.moveSpeed * this.gravityMoveFactor() * (this.state === S.CHARGE ? 0.3 : 1.55) * (this.state === S.IDLE && this.onGround && this.intent.sprint ? 1.42 : 1) * this.garrickAdvanceFactor(); walking = mx !== 0; }
+      if (free) { target = mx * this.moveSpeed * this.gravityMoveFactor() * this.raigoMoveFactor() * (this.state === S.CHARGE ? 0.3 : 1.55) * (this.state === S.IDLE && this.onGround && this.intent.sprint ? 1.42 : 1) * this.garrickAdvanceFactor(); walking = mx !== 0; }
       if (this.state === S.ATTACK && this.atk && this.atkPhase <= 1) {
         const o = this.opponent;
         const near = o && !o.isDown() && Math.abs(o.root.position.x - pos.x) < MIN_DIST && Math.abs(o.root.position.y - pos.y) < 1;

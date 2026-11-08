@@ -148,45 +148,63 @@ function compactPassiveCount(label: string, value: string): string {
   const first = value.match(/^\s*[×+]?\d+(?:\.\d+)?(?:\s*\/\s*\d+)?/);
   return first ? first[0].trim() : value.split(" · ")[0];
 }
-function PassiveHUD({ list, right = false }: { list?: PassiveReadout[]; right?: boolean }) {
+function PassiveHUD({ list, right = false, expanded = false }: { list?: PassiveReadout[]; right?: boolean; expanded?: boolean }) {
   if (!list?.length) return null;
-  return <div className="fr-passive-readouts" style={{ textAlign: right ? "right" : "left" }}
+  const visible = expanded ? list : list.slice(0, 2);
+  return <div className={"fr-passive-readouts" + (expanded ? " expanded" : "")} style={{ textAlign: right ? "right" : "left" }}
     aria-label="Live passive stacks and effects">
-    {list.map((p, idx) => <div key={`${p.label}-${idx}`} className="fr-passive-row" title={p.desc || p.label}>
-      {p.icon && <Icon src={p.icon} alt={`${p.label} passive`} size={27} fallback={p.label === "GUARD FATIGUE" ? <span role="img" aria-label="Shield fatigue">🛡️</span> : undefined} />}
+    {visible.map((p, idx) => <div key={`${p.label}-${idx}`} className="fr-passive-row" title={p.desc || p.label}>
+      {p.icon && <Icon src={p.icon} alt={`${p.label} passive`} size={expanded ? 27 : 18} fallback={p.label === "GUARD FATIGUE" ? <span role="img" aria-label="Shield fatigue">🛡️</span> : undefined} />}
       <div className="fr-passive-content">
         <strong>{p.label}</strong><b>{compactPassiveCount(p.label, p.value)}</b>
       </div>
     </div>)}
+    {!expanded && list.length > visible.length && <div className="fr-passive-more" title="Choose Show Details to see the remaining passive values">+{list.length-visible.length} more passive effects</div>}
   </div>;
 }
 
 // NYTHERA_BALANCE_CPU_COMPACT_V12 -- restored pre-V10 compact CPU spectator HUD.
 // Keep real live skill timers and passive counters, without descriptions.
-function CpuSpectatorSkills({ data, side }: {
+function CpuSpectatorSkills({ data, side, expanded }: {
   data: NonNullable<NonNullable<Hud["spectatorSkills"]>["left"]>;
   side: "left" | "right";
+  expanded: boolean;
 }) {
   return (
-    <section className={`cpu-spectator-column ${side}`} aria-label={`${side === "left" ? "CPU 1" : "CPU 2"} cooldowns and passives`}>
-      <div className="cpu-spectator-heading">SKILL COOLDOWNS</div>
-      <div className="cpu-spectator-slots">
-        {data.slots.map((slot) => (
-          <div className="cpu-spectator-skill" key={slot.key} title={slot.name}>
-            <Icon src={skillIcon(data.kit, data.element, slot.icon)} alt={`${slot.key.toUpperCase()} icon`} size={25} />
-            <b>{slot.key.toUpperCase()}</b>
-            <strong className={slot.cd <= 0.05 ? "ready" : "waiting"}>
-              {slot.cd <= 0.05 ? "0.0s" : `${slot.cd.toFixed(1)}s`}
-            </strong>
-          </div>
-        ))}
-      </div>
-      <div className="cpu-spectator-heading passive">PASSIVE</div>
-      {data.passives.length ? data.passives.map((p, idx) => (
-        <div className="cpu-spectator-passive" key={`${p.label}-${idx}`} title={p.desc || p.label}>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>{p.icon && <Icon src={p.icon} alt="Passive icon" size={18} fallback={<span>🛡️</span>} />}{p.label}</span><b>{compactPassiveCount(p.label, p.value)}</b>
+    <section className={`cpu-spectator-column ${side}${expanded ? " expanded" : " compact"}`}
+      aria-label={`${side === "left" ? "CPU 1" : "CPU 2"} skill cooldowns and passives`}>
+      {!expanded ? <>
+        <div className="cpu-compact-slots">
+          {data.slots.map(slot => <div className="cpu-compact-skill" key={slot.key}
+            title={`${slot.name}: ${slot.cd <= .05 ? "Ready" : `${slot.cd.toFixed(1)} seconds`}`}>
+            <Icon src={skillIcon(data.kit,data.element,slot.icon)} alt={slot.name} size={28} />
+            <span>{slot.key.toUpperCase()}</span>
+            <b className={slot.cd <= .05 ? "ready" : "waiting"}>{slot.cd <= .05 ? "✓" : slot.cd.toFixed(0)}</b>
+          </div>)}
         </div>
-      )) : <div className="cpu-spectator-empty">No active stacks</div>}
+        {data.passives.length > 0 && <div className="cpu-compact-passives" title="Select Show Details for all passive stats">
+          {data.passives.slice(0,2).map((p,i) => <span key={i} title={`${p.label}: ${p.value}`}>
+            {p.label.length > 9 ? `${p.label.slice(0,7)}…` : p.label} <b>{compactPassiveCount(p.label,p.value)}</b>
+          </span>)}
+          {data.passives.length > 2 && <span>+{data.passives.length-2}</span>}
+        </div>}
+      </> : <>
+        <div className="cpu-spectator-heading">SKILL COOLDOWNS</div>
+        <div className="cpu-spectator-slots">
+          {data.slots.map(slot => <div className="cpu-spectator-skill" key={slot.key} title={slot.name}>
+            <Icon src={skillIcon(data.kit,data.element,slot.icon)} alt={`${slot.key.toUpperCase()} icon`} size={25} />
+            <b>{slot.key.toUpperCase()}</b>
+            <strong className={slot.cd <= .05 ? "ready" : "waiting"}>
+              {slot.cd <= .05 ? "0.0s" : `${slot.cd.toFixed(1)}s`}
+            </strong>
+          </div>)}
+        </div>
+        <div className="cpu-spectator-heading passive">PASSIVE</div>
+        {data.passives.length ? data.passives.map((p,idx) => <div className="cpu-spectator-passive" key={`${p.label}-${idx}`} title={p.desc || p.label}>
+          <span style={{display:"inline-flex",alignItems:"center",gap:5}}>{p.icon && <Icon src={p.icon} alt="Passive icon" size={18} fallback={<span>🛡️</span>} />}{p.label}</span>
+          <b>{compactPassiveCount(p.label,p.value)}</b>
+        </div>) : <div className="cpu-spectator-empty">No active stacks</div>}
+      </>}
     </section>
   );
 }
@@ -199,6 +217,8 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
   const overlay = useRef<HTMLDivElement>(null);
   const game = useRef<Game | null>(null);
   const [hud, setHud] = useState<Hud | null>(null);
+  // FR_HUD_FOCUS_V1: default small HUD, expand details only on request.
+  const [hudExpanded, setHudExpanded] = useState(false);
   const [banner, setBanner] = useState<{ text: string; color: string; sub?: string; key: number } | null>(null);
   const [perks, setPerks] = useState<Perk[] | null>(null);
   const [over, setOver] = useState<{ text: string; sub: string; color: string } | null>(null);
@@ -307,6 +327,12 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
               </div>
             </div>
           )}
+          {!hud.plat && <button type="button" className="fr-hud-mode-toggle"
+            onClick={() => setHudExpanded(v => !v)}
+            aria-label={hudExpanded ? "Hide extra combat HUD information" : "Show detailed combat HUD"}
+            aria-pressed={hudExpanded}>
+            {hudExpanded ? "Less HUD" : "Show Details"}
+          </button>}
           {hud.plat && (
             <div className="brawl-hud">
               {hud.all.map((f, i) => (
@@ -356,7 +382,7 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
                   </div>
                 </div>
               )}
-              {!cfg.spectator && <PassiveHUD list={me.passives} />}
+              {!cfg.spectator && <PassiveHUD list={me.passives} expanded={hudExpanded} />}
               <div className="num">{Math.ceil(me.hp)} / {Math.round(me.maxHp)}</div>
               <StatusChips list={me.status} />
               {false && me.id === "veyr" && (
@@ -387,15 +413,15 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
               {false && (other.id === "nythera" || other.orbitDisplayT > 0) &&
                 <OrbitMeter stacks={other.orbitDisplayStacks} seconds={other.orbitDisplayT} right />}
               {false && other.id === "nythera" && <DreadfallTempoMeter hits={other.nytheraDreadfallHits} right />}
-              {!cfg.spectator && <PassiveHUD list={other.passives} right />}
+              {!cfg.spectator && <PassiveHUD list={other.passives} right expanded={hudExpanded} />}
               <StatusChips list={other.status} right />
             </div>
           )}
           {cfg.spectator && !hud.plat && hud.spectatorSkills?.left && (
-            <CpuSpectatorSkills data={hud.spectatorSkills.left} side="left" />
+            <CpuSpectatorSkills data={hud.spectatorSkills.left} side="left" expanded={hudExpanded} />
           )}
           {cfg.spectator && !hud.plat && hud.spectatorSkills?.right && (
-            <CpuSpectatorSkills data={hud.spectatorSkills.right} side="right" />
+            <CpuSpectatorSkills data={hud.spectatorSkills.right} side="right" expanded={hudExpanded} />
           )}
           {hud.mode === "team" && (
             <div className="team foes">
@@ -484,7 +510,7 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
             ))}
           </div>}
           {/* AIR_COMBAT_V1: show both keyboard chords without changing keybindings. */}
-          {!cfg.spectator && <div className="hint">{hud?.plat
+          {!cfg.spectator && hudExpanded && <div className="hint">{hud?.plat
             ? `${label("left")}/${label("right")} move - ${label("up")} or ${label("jump")} jump (twice to double jump) - ${label("down")} drop / fast fall - ${label("attack")} attack (hold = charged) - ${label("block")} shield - ${label("skill1")} ${label("skill2")} ${label("skill3")} skills${hud.skills.some(s => s.key === "v") ? ` - ${label("skill4")} bonus V` : ""} - Space+${label("attack")} anti-air / air combo - tap ${label("jump")} after launcher to chase - hold air attack for heavy - air ${label("block")} block/recover - Esc pause`
             : `${label("up")}${label("left")}${label("down")}${label("right")} move - ${label("jump")} jump - ${label("attack")} attack (hold = charged) - ${label("block")} block - ${label("skill1")} ${label("skill2")} ${label("skill3")} skills${hud.skills.some(s => s.key === "v") ? ` - ${label("skill4")} bonus V` : ""} - Space+${label("attack")} anti-air / air combo - tap ${label("jump")} after launcher to chase - hold air attack for heavy - air ${label("block")} block/recover - Esc pause`}</div>}
         </div>
