@@ -14,7 +14,7 @@ export type StatusKind = "burn" | "poison" | "bleed" | "paralyze" | "slow" | "we
 export const STATUS: Record<StatusKind, { label: string; color: string; bit: number; text: (t: number, p: number) => string }> = {
   burn: { label: "BURN", color: "#ff7a2e", bit: 1, text: (t, p) => `Burn: ${p} dmg/s for ${t}s` },
   poison: { label: "POISON", color: "#8ee05a", bit: 2, text: (t, p) => `Poison: ${p} dmg/s for ${t}s, stacks x3` },
-  bleed: { label: "BLEED", color: "#e0303e", bit: 4, text: (t, p) => `Bleed: ${p} dmg/s per stack for ${t}s (Zenith: up to x5; x1.5 while moving)` },
+  bleed: { label: "BLEED", color: "#e0303e", bit: 4, text: (t, p) => `Bleed: ${p} dmg/s per stack for ${t}s (Zenith skills only: up to x2; x1.5 while moving)` },
   paralyze: { label: "PARALYZED", color: "#ffe066", bit: 8, text: (t) => `Paralyze: ${t}s (22% slowed, jolted every 1.6s; 4s immunity after recovery)` },
   slow: { label: "SLOWED", color: "#7fc8ff", bit: 16, text: (t, p) => `Slow: -${Math.round((1 - p) * 100)}% movement, attack and cast speed for ${t}s` },
   freeze: { label: "FROZEN", color: "#c5f7ff", bit: 64, text: (t) => `Freeze: immobilized and unable to attack for ${t}s` },
@@ -23,6 +23,7 @@ export const STATUS: Record<StatusKind, { label: string; color: string; bit: num
 
 const DOT_TICK = 0.5;
 const POISON_STACKS = 3;
+const ZENITH_BLEED_MAX_STACKS = 2; // ZENITH_BLEED_SKILL_ONLY_AI_V15
 const WEAKEN_STACKS = 5;
 const JOLT_EVERY = 1.6; // V10: softened jolt frequency
 const PARALYZE_SPEED = 0.78; // V10: 22% slow instead of 40%
@@ -72,7 +73,7 @@ export class StatusSet {
     if (src) this.src = src;
     const cur = this.m.get("bleed");
     if (cur) {
-      cur.stacks = Math.min(5, cur.stacks + 1);
+      cur.stacks = Math.min(ZENITH_BLEED_MAX_STACKS, cur.stacks + 1);
       cur.t = Math.max(cur.t, t);
       cur.p = Math.max(cur.p, p);
     } else {

@@ -1359,11 +1359,11 @@ export class AiBrain implements Brain {
     if (f.zenithSpearOut) {
       const sinceThrow = now - (this.zenithSpearObservedAt >= 0 ? this.zenithSpearObservedAt : now);
       // Twin blades already have a 2.0x base. Keep them out long enough to land
-      // a legitimate combo, earn 5 Bleed stacks, then refresh the 5s tempo.
+      // a legitimate combo, earn Tempo with basics and up to 2 Bleed stacks from skills.
       // Do NOT cast a spear dash while the spear is visibly flying elsewhere.
       if (!windupThreat && ready("x") && !guarding &&
           gap >= 0.6 && gap < t.xRange &&
-          (recovery || (activeTempo && bleed < 5 && this.zenithTwinSwings >= 1))) {
+          (recovery || (activeTempo && bleed < 2 && this.zenithTwinSwings >= 1))) {
         key = "x";
       } else if (sinceThrow > t.twinMinTime &&
           ((gap > 4.7 && sinceThrow > 1.8) ||
@@ -1384,7 +1384,7 @@ export class AiBrain implements Brain {
       } else if (!windupThreat && ready("x") &&
           gap > 0.67 && gap < t.xRange &&
           (recovery || (guardWeak && guarding) ||
-           (activeTempo && !guarding && bleed < 5))) {
+           (activeTempo && !guarding && bleed < 2))) {
         key = "x";
       } else if (!windupThreat && ready("v") && this.iqLevel >= 1 &&
           gap >= t.vMin && gap <= t.vMax &&
@@ -1440,7 +1440,7 @@ export class AiBrain implements Brain {
     if (o.state === S.BLOCK && !urgent && gap <= ideal + 0.7 && !f.zenithSpearOut)
       dir.copy(side).addScaledVector(toward, -0.02); // don't dash straight into block
     else if (gap > ideal + (urgent ? 0.16 : 0.35))
-      dir.copy(toward).addScaledVector(side, urgent || bleeding < 5 ? 0.16 : 0.26);
+      dir.copy(toward).addScaledVector(side, urgent || bleeding < 2 ? 0.16 : 0.26);
     else if (gap < 0.95 && !f.zenithSpearOut)
       dir.copy(side).addScaledVector(toward, -0.28);
     else dir.copy(side).addScaledVector(toward, gap > ideal ? 0.32 : -0.09);
@@ -1945,30 +1945,15 @@ export class AiBrain implements Brain {
       const towardCenter = f.root.position.clone().setY(0).negate().normalize();
       return side.clone().addScaledVector(towardCenter, 1.5).normalize();
     };
-    // ZENITH_TEMPO_GUARD_STALL_V8: the public Tempo bar makes this a visible,
-    // counterable strategy. Keep an ordinary guard up to deny successful hits
-    // until the real 5s timer expires. Never grant invulnerability/extra guard.
-    // At low guard, disengage using actual movement/dash rules to avoid a break.
+    // ZENITH_BLEED_SKILL_ONLY_AI_V15: Tempo is NOT an incoming attack.
+    // Previous code forced continuous guarding until Tempo expired, which
+    // prevented CPU opponents from swinging or casting any offensive skill.
+    // Now guard/parry/dash only for OBSERVED spear swings below, then punish
+    // real recovery or run the normal AI offense even while Tempo is active.
+    // No extra reaction speed, free parries, damage or cooldown advantage.
     const visibleTempo = o.zenithTempoStacks > 0 && o.zenithMagneticChargeT > 0;
-    if (visibleTempo && f.kit !== "scythe" && canInput && !f.dashing() && gap < 3.85) {
-      const guardLow = f.guard < f.maxGuard * (charged ? 0.47 : 0.39);
-      this.queue = []; this.hold = 0;
-      this.blockWait = -1; this.blockHold = 0;
-      f.intent.attack = false;
-      f.intent.skill = "";
-      if (guardLow) {
-        const escape = safeDirection(relative.clone().addScaledVector(side, 0.43).normalize());
-        f.intent.block = false;
-        f.intent.move.copy(escape);
-        if (f.dashCd <= 0) f.intent.dash.copy(escape);
-      } else {
-        f.intent.block = true;
-        const kite = safeDirection(relative.clone().multiplyScalar(0.70)
-          .addScaledVector(side, 0.38).normalize());
-        f.intent.move.copy(kite).multiplyScalar(0.54);
-      }
-      return true;
-    }
+    // Tempo tightens actual swing defense but never vetoes counterattacking.
+    // Keeping it in the condition means no fake knowledge of future inputs.
     // A real cast animation begins. Higher levels notice the faster follow-ups;
     // Easy still frequently misses the opportunity.
     if (o.state === S.ATTACK && a?.type === "melee" && close) {
@@ -1984,7 +1969,7 @@ export class AiBrain implements Brain {
               ? "clash" : "guard";
         this.antiZenithReactAt = now + rand(this.p.react[0], this.p.react[1]) *
           (charged ? 0.62 : 0.87);
-        this.antiZenithGuardUntil = now + (charged ? 0.37 : 0.30);
+        this.antiZenithGuardUntil = now + (charged || visibleTempo ? 0.34 : 0.30);
       }
       if (!canInput || now < this.antiZenithReactAt || this.antiZenithChoice === "none")
         return false;
@@ -4568,7 +4553,7 @@ private offense(f: Fighter, o: Fighter, dt: number) {
     (this.personaMode === "pressure" ? 0.09 :
       this.personaMode === "probe" ? -0.06 :
       this.personaMode === "reset" ? -0.13 : 0), 0.06, 0.80);
-  // Zenith: landed light hits build 0.01x tempo (5s) and x5 Bleed; prefer them to
+  // Zenith: landed basics build +0.01x Tempo (5s); ONLY skills inflict x2 Bleed; prefer basics to
   // slow charging while preserving occasional guard-break attempts.
   if (id === "zenith") heavyChance = o.state === S.BLOCK &&
     o.guard < o.maxGuard * 0.28 ? Math.min(0.26, heavyChance) :

@@ -321,7 +321,7 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
               <div className="guard"><Bar v={me.guard / me.maxGuard} color={me.guard / me.maxGuard > 0.25 ? "#f2c94c" : "#ff7043"} /></div>
               {false && me.id === "roxy" && <RoxyFrostbiteMeter stacks={me.frostShardStacks} shards={me.frostShieldCharges} shieldT={me.frostShieldT} />}
               {false && me.id === "zenith" && <ZenithTempoMeter stacks={me.zenithTempoStacks} seconds={me.zenithTempoT} blades={me.zenithTwinBlades} />}
-              {me.bleedStacks > 0 && <div style={{ color: "#ff7988", fontSize: 11, fontWeight: 800 }}>🩸 BLEED ×{me.bleedStacks}/5</div>}
+              {me.bleedStacks > 0 && <div style={{ color: "#ff7988", fontSize: 11, fontWeight: 800 }}>🩸 BLEED ×{me.bleedStacks}/2</div>}
               {false && (me.id === "nythera" || me.orbitDisplayT > 0) &&
                 <OrbitMeter stacks={me.orbitDisplayStacks} seconds={me.orbitDisplayT} />}
               {false && me.id === "nythera" && <DreadfallTempoMeter hits={me.nytheraDreadfallHits} />}
@@ -368,7 +368,7 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
               <div className="guard"><Bar v={other.guard / other.maxGuard} color="#f2c94c" right /></div>
               {false && other.id === "roxy" && <RoxyFrostbiteMeter stacks={other.frostShardStacks} shards={other.frostShieldCharges} shieldT={other.frostShieldT} right />}
               {false && other.id === "zenith" && <ZenithTempoMeter stacks={other.zenithTempoStacks} seconds={other.zenithTempoT} blades={other.zenithTwinBlades} right />}
-              {other.bleedStacks > 0 && <div style={{ color: "#ff7988", fontSize: 11, fontWeight: 800, textAlign: "right" }}>🩸 BLEED ×{other.bleedStacks}/5</div>}
+              {other.bleedStacks > 0 && <div style={{ color: "#ff7988", fontSize: 11, fontWeight: 800, textAlign: "right" }}>🩸 BLEED ×{other.bleedStacks}/2</div>}
               {false && (other.id === "nythera" || other.orbitDisplayT > 0) &&
                 <OrbitMeter stacks={other.orbitDisplayStacks} seconds={other.orbitDisplayT} right />}
               {false && other.id === "nythera" && <DreadfallTempoMeter hits={other.nytheraDreadfallHits} right />}
@@ -559,3 +559,5 @@ function pctColor(p: number) {
   const r = 255, g = Math.round(255 - 200 * t), b = Math.round(255 - 235 * Math.min(t * 1.6, 1));
   return `rgb(${r},${g},${b})`;
 }
+
+// ZENITH_BLEED_SKILL_ONLY_AI_V15: player and enemy Bleed counters show max 2.

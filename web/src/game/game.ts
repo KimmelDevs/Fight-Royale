@@ -1913,7 +1913,13 @@ export class Game implements MobHost {
         this.snd("metal_hit_woosh", 0.7);
         this.melee(f, za); return;
       }
-      if (za.style === "zenith_arsenal") { this.zenithArsenal(f, za); return; }
+      // ZENITH_COMMITTED_SPEAR_VOLLEY_V16: the first physical bloom spear
+      // commits V. Timed follow-ups survive hit-stun or knockback.
+      if (za.style === "zenith_arsenal") {
+        if (this.zenithV16Committed.get(f) !== f.swingSerial)
+          this.zenithArsenal(f, za);
+        return;
+      }
       if (za.style === "zenith_basic" && f.atkId === "l5" && !f.zenithSpearOut) {
         this.zenithPhantomFang(f, za); return;
       }
@@ -3284,6 +3290,7 @@ export class Game implements MobHost {
   // Nine inner and eight staggered outer petals; each is an ordinary blockable,
   // dodgeable short-lived projectile, not damage or CC invulnerability.
   private zenithV12Seen = new WeakMap<Fighter, number>();
+  private zenithV16Committed = new WeakMap<Fighter, number>(); // ZENITH_COMMITTED_SPEAR_VOLLEY_V16
   private zenithV12BloomDuringWindup() {
     for (const f of this.fighters) {
       if (f.kit !== "glaive" || f.look.element !== "metal" || f.isDown() ||
@@ -3294,6 +3301,12 @@ export class Game implements MobHost {
       this.zenithV12Seen.set(f, serial);
       const round = this.round;
       const pivot = f.chest();
+      // Snapshot the launching weapon, timing, and anchor. Getting hit will
+      // not move the origin or delete spears that already began firing.
+      const castAtk: Attack = { ...f.atk! };
+      const castYaw = f.root.rotation.y;
+      const castPower = f.atkPower;
+      const windupLeft = Math.max(0, castAtk.wind - f.stateT);
       // One restrained magnetic halo instead of an opaque blast of particles.
       this.fxp("ring", pivot.clone(), "#a6cadb", 0.92, 0.24, 0.40);
       this.fxp("motes", pivot.clone(), "#d1e5ed", 4);
@@ -3305,11 +3318,23 @@ export class Game implements MobHost {
         const angle = f.root.rotation.y + n * Math.PI * 2 / count + (outer ? Math.PI / 8 : 0);
         const delay = 0.016 + (outer ? 0.105 : 0) + n * 0.007;
         this.later(delay, () => {
-          if (round !== this.round || f.isDown() || f.swingSerial !== serial ||
-              f.state !== S.ATTACK || f.atk?.style !== "zenith_arsenal") return;
-          const original = f.atk;
+          // Before the FIRST bloom spear, interruption cancels V.
+          // Once a real spear launches, the rest are independent of Zenith.
+          if (round !== this.round) return;
+          if (this.zenithV16Committed.get(f) !== serial &&
+              (f.isDown() || f.swingSerial !== serial ||
+               f.state !== S.ATTACK || f.atk?.style !== "zenith_arsenal")) return;
+          if (this.zenithV16Committed.get(f) !== serial) {
+            this.zenithV16Committed.set(f, serial);
+            // Preserve original cast timing and launch even after stagger.
+            this.later(Math.max(0, windupLeft - delay), () => {
+              if (round !== this.round) return;
+              this.zenithArsenal(f, castAtk, pivot.clone(), castYaw, castPower);
+            });
+          }
+          const original = castAtk;
           const radius = outer ? 1.02 : 0.70;
-          const origin = f.chest().add(new THREE.Vector3(
+          const origin = pivot.clone().add(new THREE.Vector3(
             Math.sin(angle) * radius, outer ? 0.10 : -0.10, Math.cos(angle) * radius));
           const direction = new THREE.Vector3(Math.sin(angle), outer ? 0.09 : 0.04,
             Math.cos(angle)).normalize();
@@ -3327,12 +3352,16 @@ export class Game implements MobHost {
     }
   }
 
-  private zenithArsenal(f:Fighter,a:Attack) {
+  private zenithArsenal(f:Fighter,a:Attack,
+    originAtCast?: THREE.Vector3, yawAtCast?: number, powerAtCast?: number) {
     this.snd("sci_fi_gear_turn", 0.56);
     const round=this.round;
     const tempo=f.zenithAttackSpeed();
     const target=f.opponent&&!f.opponent.isDown()?f.opponent:this.enemiesOf(f)[0]??null;
     if(!target) return;
+    const fixedOrigin = originAtCast?.clone() ?? f.chest();
+    const fixedYaw = yawAtCast ?? f.root.rotation.y;
+    const fixedPower = powerAtCast ?? f.atkPower;
     const point=target.root.position.clone();
     // Visible, dodgeable open: attack directions are committed before each shot.
     this.fxp("ring",point.clone(),"#b7d1df",1.20,0.34,0.28);
@@ -3342,23 +3371,23 @@ export class Game implements MobHost {
     // damage budget: 12*18+2*48 = 6*36+96 = 312 (not 624).
     // Twin slender rail telegraphs show the direction BEFORE the finishers.
     for (let j = 0; j < 2; j++) this.later((0.30 + (12 + j) * 0.11 - 0.17) / tempo, () => {
-      if (round !== this.round || f.isDown() || target.isDown()) return;
-      const right = new THREE.Vector3(Math.cos(f.root.rotation.y), 0,
-        -Math.sin(f.root.rotation.y));
-      const from = f.chest().addScaledVector(right, j === 0 ? -0.36 : 0.36)
+      if (round !== this.round || target.isDown()) return;
+      const right = new THREE.Vector3(Math.cos(fixedYaw), 0,
+        -Math.sin(fixedYaw));
+      const from = fixedOrigin.clone().addScaledVector(right, j === 0 ? -0.36 : 0.36)
         .add(new THREE.Vector3(0, 0.18, 0));
       this.fxp("zenithRailGuide", from, target.chest(), 0.26);
     });
     for(let i=0;i<14;i++) this.later((0.30+i*0.11)/tempo,()=>{
-      if(this.round!==round||f.isDown())return;
+      if(this.round!==round)return; // committed volleys survive hit-stun, even if owner KO'd
       const finisher = i >= 12;
       const bloomLayer = i < 6 ? 0 : 1;
       const angle=(i%6)*Math.PI/3 + (bloomLayer ? Math.PI/6 : 0) + 0.18;
       const radius=bloomLayer ? 4.10 : 3.50;
       const center=target.root.position.clone();
-      const finisherRight = new THREE.Vector3(Math.cos(f.root.rotation.y), 0,
-        -Math.sin(f.root.rotation.y));
-      const origin = finisher ? f.chest().addScaledVector(finisherRight,
+      const finisherRight = new THREE.Vector3(Math.cos(fixedYaw), 0,
+        -Math.sin(fixedYaw));
+      const origin = finisher ? fixedOrigin.clone().addScaledVector(finisherRight,
         i===12 ? -0.36 : 0.36).add(new THREE.Vector3(0,0.18,0))
         : center.clone().add(new THREE.Vector3(Math.sin(angle)*radius,
             1.06 + bloomLayer*0.25,Math.cos(angle)*radius));
@@ -3368,7 +3397,7 @@ export class Game implements MobHost {
         guard:a.guard*0.5,knock:finisher?2.65:0.45,
         stun:finisher?0.225:0.075,heavy:i===13,pierce:false,
         size:finisher?1.05:0.64};
-      const p=this.spawnProjectile(f,f.team,part,f.atkPower*power,origin,toward.normalize().multiplyScalar(finisher?26:17),
+      const p=this.spawnProjectile(f,f.team,part,fixedPower*power,origin,toward.normalize().multiplyScalar(finisher?26:17),
         "zenith_construct","metal",part.size,"#b0c6dc",false,target);
       p.life=1.25;
       this.fxp("flash",origin,"#d0deef",0.045,0.065,0.32);
@@ -4288,20 +4317,28 @@ export class Game implements MobHost {
       if (attacker.kit === "hammer" && result === "clash" && /^l\d+$/.test(a.id))
         attacker.passiveNesaHits++; // genuine weapon clash; blocks/parries excluded
     }
-    // ZENITH_TEMPO_01X_5S_V7: +0.01x speed and one BLEED stack per
-    // successful physical/projectile contact. Guard, parry, clash and DOT ticks
-    // never grant stacks. Bleed caps at x5 and refreshes for 5s on reapplication.
+    // ZENITH_BLEED_SKILL_ONLY_AI_V15: ALL successful damaging contacts keep
+    // earning Tempo, but only her Z/X/C/V *skill* strikes apply Bleed (max 2).
+    // In particular: l1-l5, Phantom Fang, heavy, and parry counters do not bleed.
+    // Resolve outcomes first: blocked, parried and clashed strikes never count.
     if (attacker instanceof Fighter && attacker.kit === "glaive" &&
         attacker.look.element === "metal" && a.dmg > 0 &&
         (result === "hit" || result === "crit" || result === "ko")) {
       attacker.zenithTempoStacks = Math.min(14, attacker.zenithTempoStacks + 1);
       attacker.zenithMagneticChargeT = 5;
-      if (result !== "ko" && (d instanceof Fighter || d instanceof Mob)) {
+      // Generated X/V projectiles carry 'zenith_construct'; X melee beats
+      // carry 'zenith_barrage' or 'zenith_twin'. Z and C have dedicated styles.
+      const zenithSkillBleed = a.style === "zenith_rail" ||
+        a.style === "zenith_barrage" || a.style === "zenith_twin" ||
+        a.style === "zenith_dash" || a.style === "zenith_arsenal" ||
+        a.style === "zenith_construct";
+      if (zenithSkillBleed && result !== "ko" &&
+          (d instanceof Fighter || d instanceof Mob)) {
         const n = d.status.applyStackingBleed(5, 5, attacker);
         if (d instanceof Fighter) d.bleedDisplayStacks = n;
         this.fxp("num", d.chest().add(new THREE.Vector3(0, 0.9, 0)),
-          `BLEED ×${n}/5`, "#ff566a", 0.55);
-        if (n === 5) this.fxp("motes", d.chest(), "#ff647a", 10);
+          `BLEED ×${n}/2`, "#ff566a", 0.55);
+        if (n === 2) this.fxp("motes", d.chest(), "#ff647a", 10);
       }
     }
     // NYTHERA_ELEGANT_REAPER_V4: 25 seconds. Guarded scythe contact counts,
@@ -5319,7 +5356,7 @@ export class Game implements MobHost {
       passives: spectatorDetail(f, this.fighters.find(foe => foe !== f && foe.team !== f.team) ?? null)?.passives ?? [],
       zenithTempoStacks: f.zenithTempoStacks, zenithTempoT: f.zenithMagneticChargeT,
       zenithTwinBlades: f.zenithSpearOut,
-      bleedStacks: f.status.has("bleed") ? Math.max(f.status.stacks("bleed"), f.bleedDisplayStacks) : 0,
+      bleedStacks: f.status.has("bleed") ? Math.min(2, Math.max(f.status.stacks("bleed"), f.bleedDisplayStacks)) : 0,
       frostShardStacks: f.frostShardStacks, frostShieldCharges: f.frostShieldCharges, frostShieldT: f.frostShieldT }); // ROXY V5 HUD
     return {
       mode: this.cfg.mode,
