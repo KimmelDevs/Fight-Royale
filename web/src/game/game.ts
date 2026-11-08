@@ -714,6 +714,9 @@ export class Game implements MobHost {
   private worker: Worker | null = null;
   private lastRaf = 0;
   private last = 0;
+  // NYTHERA_GRAVITY_REAPER_INSTALL_V1: separate marks for every caster and victim.
+  private gravityMarks = new Map<string, { stacks: number; expires: number }>();
+  private gravityWells: { owner: Fighter; center: THREE.Vector3; left: number; pulse: number }[] = [];
   private remoteBrains = new Map<string, RemoteBrain>();
   private strikeMarks: {
     target: any; land: number; id: number; center?: THREE.Vector3;
@@ -888,6 +891,8 @@ export class Game implements MobHost {
   }
 
   private clearAll() {
+    this.gravityMarks.clear();
+    this.gravityWells = [];
     for (const e of this.entities.values()) this.removeEntity(e, false);
     this.entities.clear();
     this.fighters = [];
@@ -1180,6 +1185,16 @@ export class Game implements MobHost {
     f.root.position.copy(pos);
     f.root.rotation.y = rotY;
     f.onSwing = (x) => this.onSwing(x);
+    f.onGravityShift = (x) => {
+      this.fxp("ring", x.root.position.clone().add(new THREE.Vector3(0, 0.22, 0)),
+        x.gravityMode === "heavy" ? "#62309c" : "#c9aaff", 1.65, 0.28, 0.92);
+      this.fxp("sparks", x.model.bladeTip.getWorldPosition(new THREE.Vector3()),
+        x.gravityMode === "heavy" ? "#ac69fa" : "#d8c1ff", 20, 4);
+      this.fxp("flash", x.chest(), "#b18af5", 0.34, 0.16, 0.65);
+      this.fxp("num", x.chest().add(new THREE.Vector3(0, 0.80, 0)),
+        x.gravityMode === "heavy" ? "DREADFALL" : "MOONFLOAT", "#dbbcff", 0.85);
+      this.snd(x.gravityMode === "heavy" ? "slam" : "teleport", 0.40);
+    };
     f.onZenithRecall = (x) => this.zenithRecall(x);
     f.onChainBindResolve = (x, dir, kind) => this.resolveChainBind(x, dir, kind);
     f.onKo = (x) => this.onFighterKo(x);
@@ -1281,6 +1296,7 @@ export class Game implements MobHost {
     for (const m of this.mobs) m.update(dt);
     this.statusFx(dt);
     this.updateRoxyFreezeVisuals(dt);
+    if (this.cfg.role !== "client") this.updateGravityWells(dt);
     this.garrickResolveFootsteps(dt);
     this.updateProjectiles(dt);
     this.updateTraps(dt);
@@ -1686,6 +1702,154 @@ export class Game implements MobHost {
     });
   }
 
+  /** NYTHERA_GRAVITY_REAPER_INSTALL_V1 — persistent escapeable well, 0 damage by itself. */
+  private updateGravityWells(dt: number) {
+    for (const w of this.gravityWells) {
+      w.left -= dt;
+      w.pulse -= dt;
+      if (w.left <= 0 || w.owner.isDown()) continue;
+      if (w.pulse <= 0) {
+        w.pulse = 0.40;
+        const pos = w.center.clone().add(new THREE.Vector3(0,0.10,0));
+        this.fxp("ring", pos, "#9963e6", 2.9, 0.45, 0.53);
+        this.fxp("motes", pos.clone().add(new THREE.Vector3(0,0.8,0)), "#bda0f5", 9);
+      }
+      for (const d of this.enemiesOf(w.owner)) {
+        if (d.isDown()) continue;
+        const towards = w.center.clone().sub(d.root.position).setY(0);
+        const dist = towards.length();
+        if (dist < 0.35 || dist > 3.0 || Math.abs(d.root.position.y - w.center.y) > 2.0) continue;
+        // Gradual position nudges remain escapable by sprint, dash and normal steering.
+        if (d instanceof Fighter && (d.dashing() || d.invulnT > 0 || d.knockedDown())) continue;
+        const pull = Math.min(0.65 * dt, Math.max(0, dist - 0.75));
+        if (pull > 0) d.root.position.addScaledVector(towards.normalize(), pull);
+      }
+    }
+    this.gravityWells = this.gravityWells.filter(w => w.left > 0 && !w.owner.isDown());
+  }
+
+  /** Switch-aware skill choreography. Damage always goes through normal hit resolution. */
+  private nytheraSwing(f: Fighter, a: Attack): boolean {
+    if (f.kit !== "scythe") return false;
+    const tip = f.model.bladeTip.getWorldPosition(new THREE.Vector3());
+    const light = f.gravityMode === "light";
+    const col = light ? "#be9dff" : "#8141c9";
+    if (a.style === "gravity_well") {
+      const toward = new THREE.Vector3(Math.sin(f.root.rotation.y),0,Math.cos(f.root.rotation.y));
+      const center = f.root.position.clone().addScaledVector(toward, 1.7);
+      center.y = f.root.position.y;
+      this.gravityWells = this.gravityWells.filter(w => w.owner !== f);
+      this.gravityWells.push({ owner:f, center, left:2.6, pulse:0 });
+      this.fxp("ring", center, "#d3b8ff", 3.1, 0.41, 0.82);
+      this.fxp("orb", center.clone().add(new THREE.Vector3(0, 0.8, 0)), 0.42);
+      this.snd("cast", 0.62);
+      return true;
+    }
+    if (a.style === "gravity_collapse") {
+      const well = this.gravityWells.find(w => w.owner === f && w.left > 0);
+      const center = well ? well.center.clone() : f.root.position.clone().addScaledVector(
+        new THREE.Vector3(Math.sin(f.root.rotation.y),0,Math.cos(f.root.rotation.y)), 1.35);
+      this.gravityWells = this.gravityWells.filter(w => w !== well);
+      const round = this.round, serial = f.swingSerial;
+      this.fxp("ring", center.clone().add(new THREE.Vector3(0,0.3,0)), "#46266f", 3.0, 0.26, 0.92);
+      this.snd("sci_fi_gear_turn", 0.65);
+      this.laterCombo(f, 0.20, () => {
+        if (round !== this.round || f.isDown() || f.swingSerial !== serial) return;
+        const radius = well ? 2.95 : 2.25;
+        this.fxp("ring", center, "#bc84ff", radius * 1.25, 0.28, 0.92);
+        this.fxp("rocks", center, 18, 0.9);
+        this.fxp("flash", center.clone().add(new THREE.Vector3(0, 0.65, 0)), "#e7d3ff", 0.8, 0.13, 0.82);
+        this.snd("slam", 0.78);
+        this.add_trauma(0.28);
+        const shock: Attack = { ...a, type:"strike", dmg:160, guard:54,
+          knock:5.2, stun:0.44, heavy:true, radius, style:"gravity_collapse" };
+        for (const d of this.enemiesOf(f)) {
+          const delta = d.root.position.clone().sub(center);
+          const dy = Math.abs(delta.y); delta.y = 0;
+          if (delta.length() > radius + d.radius * 0.4 || dy > 1.85) continue;
+          this.applyHit(f, d, shock, f.atkPower, d.chest(), delta.lengthSq() > 0.01
+            ? delta.normalize() : new THREE.Vector3(0,0,1), true);
+        }
+      });
+      return true;
+    }
+    if (a.style === "gravity_requiem") {
+      const round = this.round, serial = f.swingSerial;
+      const hitTargets: Entity[] = [];
+      const near = f.root.position.clone();
+      this.fxp("ring", near.clone().add(new THREE.Vector3(0, 1.4, 0)), "#aa78e2", 3.7, 0.40, 0.96);
+      this.fxp("orb", near.clone().add(new THREE.Vector3(0, 3.0, 0)), 0.48);
+      this.fxp("motes", near.clone().add(new THREE.Vector3(0, 1.5, 0)), "#b38bf8", 36);
+      this.snd("teleport", 0.73);
+      // The opening is blockable/parryable; a defended opponent is NEVER lifted.
+      for (const d of this.enemiesOf(f)) {
+        const to = d.root.position.clone().sub(f.root.position); const dy = Math.abs(to.y); to.y = 0;
+        if (to.length() > 2.8 + d.radius*0.5 || dy > 1.5) continue;
+        const dir = to.lengthSq() > 0.01 ? to.normalize() : new THREE.Vector3(0,0,1);
+        const result = this.applyHit(f, d, a, f.atkPower, d.chest(), dir, false);
+        if (["hit", "crit"].includes(result)) {
+          hitTargets.push(d);
+          if (d instanceof Fighter && !d.stage && !d.isDown()) {
+            d.onGround = false; d.velY = Math.max(d.velY, 6.2); d.gravityFloatT = 0.70;
+          }
+        }
+      }
+      if (hitTargets.length === 0) return true;
+      // Nythera takes the high line of the choreography. This is NOT a teleport or invuln.
+      if (!f.stage) { f.onGround = false; f.velY = Math.max(f.velY, 6.8); }
+      this.laterCombo(f, 0.37, () => {
+        if (round !== this.round || f.isDown() || f.swingSerial !== serial) return;
+        f.poseOverride = "grv_float";
+        this.fxp("ring", f.chest(), "#debdff", 2.4, 0.26, 0.86);
+        this.fxp("sparks", f.model.bladeTip.getWorldPosition(new THREE.Vector3()), "#dbc7ff", 25, 4);
+        for (const d of hitTargets) {
+          if (d.isDown() || d.root.position.distanceTo(f.root.position) > 5.0) continue;
+          const follow: Attack = {...a, dmg:55, guard:15, stun:0.13, knock:0.4};
+          const dir = d.root.position.clone().sub(f.root.position).setY(0).normalize();
+          this.applyHit(f, d, follow, f.atkPower, d.chest(), dir, false);
+        }
+      });
+      this.laterCombo(f, 0.84, () => {
+        if (round !== this.round || f.isDown() || f.swingSerial !== serial) return;
+        f.poseOverride = "grv_finish";
+        f.velY = -Math.max(13, Math.abs(f.velY));
+        const impact = f.root.position.clone().setY(this.plat ? f.root.position.y : 0);
+        this.fxp("ring", impact, "#6a2ba4", 4.1, 0.44, 0.98);
+        this.fxp("flash", impact.clone().add(new THREE.Vector3(0,0.7,0)), "#f1ddff", 1.4, 0.18, 0.9);
+        this.fxp("rocks", impact, 30, 1.4);
+        this.fxp("sparks", impact.clone().add(new THREE.Vector3(0,1,0)), "#b388ff", 45, 7);
+        this.snd("dramatic_metal_explosion_impact", 0.78);
+        this.add_trauma(0.55);
+        const final: Attack = {...a, dmg:200, guard:55, knock:8.2, stun:0.55, heavy:true};
+        for (const d of hitTargets) {
+          if (d.isDown()) continue;
+          const diff = d.root.position.clone().sub(impact);
+          const dy = Math.abs(diff.y); diff.y = 0;
+          if (diff.length() > 4.1 + d.radius*0.4 || dy > 4.4) continue;
+          this.applyHit(f, d, final, f.atkPower, d.chest(),
+            diff.lengthSq() > 0.01 ? diff.normalize() : new THREE.Vector3(0,0,1), false);
+        }
+      });
+      return true;
+    }
+    this.fxp("slashes", tip, col);
+    this.fxp("flash", tip, light ? "#dbc7ff" : "#9d5cea", light ? 0.22 : 0.36, 0.12, 0.72);
+    if (a.heavy || a.id === "l4" || a.id === "x")
+      this.fxp("ring", tip, col, light ? 0.78 : 1.13, 0.23, 0.75);
+    if (a.style === "gravity_meteor") {
+      const origin = f.root.position.clone().setY(this.plat ? f.root.position.y : 0);
+      this.fxp("ring", origin, "#7b3db9", 2.4, 0.28, 0.92);
+      this.fxp("rocks", origin, 17, 0.8); this.add_trauma(0.30);
+      this.snd("slam", 0.68);
+      // Dive has already landed via Fighter.attackStep; use the normal area hit routine.
+      this.runStrike(f, {...a, delay:0.02}, f.atkPower);
+      return true;
+    }
+    // Snap to the real impact point. Every cut is still parryable and clashable.
+    this.melee(f, a);
+    return true;
+  }
+
   private onSwing(f: Fighter) {
     if (f.look.element === "metal") {
       const za = f.atk!;
@@ -1699,6 +1863,7 @@ export class Game implements MobHost {
     }
     const a = f.atk!;
     this.swingSound(f, a);
+    if (this.nytheraSwing(f, a)) return;
     if (f.look.element === "metal" && a.id === "pc") {
       this.snd("metallic_impact_with_whip", 0.56);
     }
@@ -4025,7 +4190,50 @@ export class Game implements MobHost {
       attacker.zenithSpearOut && a.type === "melee" && /^l\d+$/.test(a.id)
       ? { ...weightedAttack, dmg: weightedAttack.dmg * 0.57, reach: weightedAttack.reach * 0.72 }
       : weightedAttack;
-    const result = d.receiveHit(attacker, zenithAttack, riposte ? power * 1.15 : power);
+    const gravityOwner = attacker instanceof Fighter && attacker.kit === "scythe" ? attacker : null;
+    const markKey = gravityOwner ? `${gravityOwner.id}:${d.id}` : "";
+    const mark = gravityOwner ? this.gravityMarks.get(markKey) : undefined;
+    const marks = mark && mark.expires > this.time ? mark.stacks : 0;
+    const heavySentence = !!gravityOwner && gravityOwner.gravityMode === "heavy" &&
+      a.dmg > 0 && a.style !== "gravity_well" && a.style !== "gravity_requiem";
+    const sentenceMult = heavySentence ? 1 + marks * 0.08 : 1;
+    const result = d.receiveHit(attacker, zenithAttack, (riposte ? power * 1.15 : power) * sentenceMult);
+    // Each real Moonfloat hit earns ONE mark; miss, block, parry, clash do not.
+    if (gravityOwner && ["hit", "crit"].includes(result) && a.dmg > 0) {
+      if (heavySentence) {
+        this.gravityMarks.delete(markKey);
+        if (marks > 0) {
+          this.fxp("ring", d.chest(), "#8250d9", 0.72 + marks * 0.24, 0.25, 0.76);
+          this.fxp("num", d.chest().add(new THREE.Vector3(0,0.73,0)),
+            `ORBIT BURST ×${marks}`, "#ddb5ff", 0.70);
+        }
+      } else if (gravityOwner.gravityMode === "light" && a.style !== "gravity_requiem") {
+        const n = Math.min(3, marks + 1);
+        this.gravityMarks.set(markKey, { stacks:n, expires:this.time + 4 });
+        this.fxp("ring", d.chest(), "#b68ef7", 0.41 + n*0.14, 0.18, 0.58);
+        if (n === 3) this.fxp("num", d.chest().add(new THREE.Vector3(0,0.69,0)),
+          "ORBIT x3", "#d9c0ff", 0.66);
+      }
+      if (d instanceof Fighter && !d.stage && !d.isDown()) {
+        if (a.style === "gravity_ascend" ||
+            (a.style === "gravity_snare" && marks >= 2)) {
+          d.onGround = false;
+          d.velY = Math.max(d.velY, a.style === "gravity_ascend" ? 6.5 : 4.6);
+          d.gravityFloatT = a.style === "gravity_ascend" ? 0.65 : 0.43;
+          if (a.style === "gravity_ascend") {
+            gravityOwner.onGround = false;
+            gravityOwner.velY = Math.max(gravityOwner.velY, 6.1);
+          }
+          this.fxp("ring", d.root.position.clone(), "#ceb2ff", 1.25, 0.23, 0.73);
+          this.fxp("sparks", d.chest(), "#d5baff", 20, 3.9, [0,1,0]);
+        } else if (a.style === "gravity_snare") {
+          // A short hook pull only on a confirmed hit; no guaranteed long stun.
+          const to = gravityOwner.root.position.clone().sub(d.root.position).setY(0);
+          const dist = to.length();
+          if (dist > 1.15) d.root.position.addScaledVector(to.normalize(), Math.min(0.78, dist - 1.15));
+        }
+      }
+    }
     if (d instanceof Fighter && d.look.element === "metal" && result === "parry" && a.type === "projectile") {
       d.zenithMagnetCharges = Math.min(3,d.zenithMagnetCharges+1);
       this.fxp("num",d.chest().add(new THREE.Vector3(0,0.8,0)),`MAGNETIC CHARGE ${d.zenithMagnetCharges}/3`,"#a0bbde",0.65);
@@ -4908,6 +5116,7 @@ export class Game implements MobHost {
         if (f.frostShieldT > 0 && f.frostShieldCharges > 0)
           passives.push({ label: "AEGIS", value: `${f.frostShieldCharges}/4` });
       }
+      if (f.kit === "scythe") passives.push({ label: "GRAVITY", value: f.gravityMode === "light" ? "MOONFLOAT" : "DREADFALL" });
       if (f.kit === "hammer") passives.push({ label: "HEARTS", value: `${f.nesaCCharges}/3` });
       if (f.kit === "bomb") passives.push({ label: "MINES", value: `${f.bobMineCharges}/4` });
       if (f.look.name === "Aster" && rival && rival.status.stacks("weaken") > 0)
@@ -4924,7 +5133,7 @@ export class Game implements MobHost {
     };
     const info = (f: Fighter) => ({ id: CHARACTERS[f.charIndex].id, name: f.look.name + (isCpu(f.owner) && f.owner !== "cpu" ? " (CPU)" : ""), hp: f.hp, maxHp: f.maxHp, guard: f.guard, maxGuard: f.maxGuard, down: f.isDown(), glow: f.look.glow,
       pct: f.pct, stocks: f.stocks, out: f.out, team: f.team, status: f.status.kinds(), bloodlust: f.bloodlust, bloodFrenzyT: f.bloodFrenzyT, bloodFestivalT: f.bloodFestivalT, clashMomentum: f.clashMomentum, chainBindT: f.chainBindT,
-      chainBindKind: f.chainBindKind, frostShardStacks: f.frostShardStacks, frostShieldCharges: f.frostShieldCharges, frostShieldT: f.frostShieldT }); // ROXY V5 HUD
+      chainBindKind: f.chainBindKind, gravityMode: f.gravityMode, gravitySwitchCd: f.gravitySwitchCd, frostShardStacks: f.frostShardStacks, frostShieldCharges: f.frostShieldCharges, frostShieldT: f.frostShieldT }); // ROXY V5 HUD
     return {
       mode: this.cfg.mode,
       plat: this.plat,

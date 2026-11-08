@@ -13,6 +13,7 @@ const CONTROLS: Record<string, string> = {
   knight: "Tap: 3-hit sword combo  -  Hold: charged slash  -  Block: shield",
   mage: "Tap: 3-cast spell combo  -  Hold: charged spell  -  Block: magic barrier",
   glaive: "Tap: Cyclone Fang 5-hit combo  -  Hold the 5th hit: extra spins  -  Z: Serpent Wheel (no parry, dash/launcher cancel)  -  X: Phantom Spiral dash  -  C: Infinite Crescent  -  Real clashes build Momentum",
+  scythe: "Tap: 4 sweeping scythe cuts - Hold: overhead cleave - F: Moonfloat / Dreadfall toggle - Z: Crescent Snare - X: Zero-G Ascension / Mass Cleaver - C: Event Horizon / Collapse - V: Black Star Requiem",
   sickle: "Tap: 4-hit dual-sickle combo  -  Hold: Crossbite heavy slash  -  Z: Predator Dash  -  X: Blood Vortex  -  C: Reaper's Frenzy",
   assassin: "Tap: 4-hit dagger flurry  -  Hold: dash strike  -  Block: dagger guard (wide parry)",
   chainblade: "Tap: 4 close sword cuts  -  Hold: Chainbreaker extended lash  -  Z: Chain Snare pull  -  X: Rending Orbit  -  C: Unbound Drive (5s)  -  V: Razor Recall",

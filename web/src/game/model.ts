@@ -123,6 +123,19 @@ export class FighterModel extends THREE.Group {
   private roxyFloatingBook: THREE.Group | null = null;
   private roxyOpenPalm = 0;
   private glaivePivot: THREE.Group | null = null;
+  // NYTHERA_GRAVITY_REAPER_INSTALL_V1 — purely visual, synced via Fighter.snapshot.
+  gravityHeavy = false;
+  private gravityHalo: THREE.Group | null = null;
+  private gravityScythe: THREE.Group | null = null;
+  // NYTHERA_SHOWCASE_SPIN_TOSS_V3 — cosmetic duplicate used only in character preview.
+  private gravityPreviewFlyer: THREE.Group | null = null;
+  private gravityShowFlying = false;
+  private gravityShowLaunchP = new THREE.Vector3();
+  private gravityShowLaunchQ = new THREE.Quaternion();
+  private gravityShowLaunchScale = new THREE.Vector3(1,1,1);
+  private gravityShowEclipse: THREE.Mesh | null = null;
+  private gravityShowTrails: THREE.Group | null = null;
+  scytheBeat = 0;
   // ZENITH_TWIN_BLADES_CATCH_CHOREO_V5_20261108: one-handed metal weapons only while spear is flying.
   // ZENITH_FORWARD_SPEAR_IK_V7_20261108 — root-mounted, target-directed spear.
   private zenithSpearGrip: THREE.Object3D | null = null;
@@ -244,6 +257,7 @@ export class FighterModel extends THREE.Group {
     switch (look.kit) {
       case "mage": this.look.element === "frost" ? this.buildRoxySpellbook() : this.buildStaff(); break;
       case "sickle": this.buildSickles(); break;
+      case "scythe": this.buildGravityScythe(); break;
       case "glaive": this.buildGlaive(); break;
       case "chainblade": this.buildChainblade(); break;
       case "assassin": this.buildDaggers(); break;
@@ -722,6 +736,69 @@ export class FighterModel extends THREE.Group {
 
   // --- weapons -----------------------------------------------------------------------
   private steel() { return M.toon("#eef3ff", { rim: 0.8, shade: METAL_SHADE }); }
+
+
+  /** NYTHERA_GRAVITY_REAPER_INSTALL_V1 — Eclipsed Mourning, not a reused sickle.
+   * The crescent is an extruded Bezier steel blade with a separate glowing cutting rim.
+   * Right hand holds shaft, left hand IK is anchored lower on the same grip. */
+  private buildGravityScythe() {
+    const scythe = pivot(this.hand_r, [0, 0, 0], [PI / 2, 0, 0]);
+    scythe.name = "Eclipsed Mourning — Nythera";
+    scythe.scale.setScalar(0.95);
+    this.gravityScythe = scythe;
+    const dark = this.tn("#181229"), steel = this.tn("#b79cdb");
+    const edgeSteel = this.tn("#c8ecff"), gold = this.tn("#d090d6");
+    mesh(scythe, cyl(0.019, 0.021, 1.87, 12), dark, [0,-0.04,0]);
+    mesh(scythe, cyl(0.025, 0.025, 0.59, 12), this.tn("#403653"), [0,-0.15,0]);
+    for (const y of [-0.40,-0.18,0.02,0.22,0.74]) {
+      mesh(scythe, torus(0.023,0.029), gold, [0,y,0], [PI/2,0,0]);
+    }
+    // A slim secondary ferrule keeps the hooked metal silhouette readable.
+    mesh(scythe, cyl(0.047, 0.029, 0.19, 12), steel, [0,0.76,0]);
+    const shape = new THREE.Shape();
+    // NYTHERA_REAPER_SCYTHE_HARVESTER_AI_V2_20261108
+    // Back of the blade climbs high, then sweeps outward to a needle-sharp
+    // hooked beak; concave lower edge is much thinner than Nythera V1.
+    // This is a single blade, never a double-sided polearm.
+    shape.moveTo(-0.024, 0.755);
+    shape.bezierCurveTo(-0.20, 1.045, -0.36, 1.48, -0.60, 1.615);
+    shape.bezierCurveTo(-0.88, 1.755, -1.17, 1.69, -1.365, 1.465);
+    shape.bezierCurveTo(-1.09, 1.575, -0.83, 1.585, -0.64, 1.465);
+    shape.bezierCurveTo(-0.39, 1.335, -0.24, 0.98, -0.024, 0.755);
+    shape.closePath();
+    const geo = new THREE.ExtrudeGeometry(shape, { depth:0.021, bevelEnabled:true,
+      bevelThickness:0.0045, bevelSize:0.003, bevelSegments:2, curveSegments:32 });
+    geo.translate(0,0,-0.0105);
+    mesh(scythe, geo, steel);
+    // Polished hooked cutting edge is visibly thinner than the whole blade.
+    const edgeCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(-0.06,0.83,0.015), new THREE.Vector3(-0.37,1.29,0.015),
+      new THREE.Vector3(-0.68,1.49,0.015), new THREE.Vector3(-1.02,1.55,0.015),
+      new THREE.Vector3(-1.365,1.465,0.015)]);
+    mesh(scythe, new THREE.TubeGeometry(edgeCurve, 34, 0.0058, 5, false), edgeSteel);
+    // Fine violet spine inlay, kept behind the silver cutting edge.
+    const spineCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(-0.13,0.91,0.014), new THREE.Vector3(-0.35,1.41,0.014),
+      new THREE.Vector3(-0.66,1.61,0.014), new THREE.Vector3(-1.02,1.60,0.014)]);
+    mesh(scythe, new THREE.TubeGeometry(spineCurve, 25, 0.004, 5, false), gold);
+    const rear = pivot(scythe,[0,-0.94,0]);
+    mesh(rear, sphere(0.068,16), gold, [0,0,0],[0,0,0],[1,1.2,0.62]);
+    mesh(rear, sphere(0.038,12), this.gem(), [0,-0.014,0]);
+    const collar = pivot(scythe,[0,0.82,0]);
+    mesh(collar,sphere(0.080,16),this.gem());
+    mesh(collar,sphere(0.034,12),this.glowMat,[0,0,0.06]);
+    this.gravityHalo = collar;
+    for (let i=0;i<2;i++) {
+      const ring = pivot(collar,[0,0,0], [i ? PI/2.8 : PI/10, 0, i ? 0.7 : 0.1]);
+      mesh(ring, new THREE.TorusGeometry(0.15+i*0.045, 0.007, 6, 48), this.glowMat);
+    }
+    this.gripL = pivot(scythe,[0,-0.29,0]);
+    // Use cutting-edge positions for native trails, melee contact and weapon clash.
+    this.bladeBase = pivot(scythe,[-0.26,1.10,0]);
+    this.bladeTip = pivot(scythe,[-1.36,1.465,0]);
+    this.castPoint = this.bladeTip;
+    this.shieldNode = scythe;
+  }
 
   /** ZAREK_STORM_V1: double-ended conductive glaive; meshes follow the VRM's hands. */
   private buildGlaive() {
@@ -2188,11 +2265,20 @@ export class FighterModel extends THREE.Group {
       const rate = this.glaivePose.endsWith("_s") ? 38 : 19;
       this.glaivePivot.quaternion.slerp(q, 1 - Math.exp(-rate * dt));
     }
+    // NYTHERA_SHOWCASE_SPIN_TOSS_V3 — offhand releases for presentation spins/toss only.
+    const tShow = this.presentationT;
+    const oneHandFlourish = (tShow >= 0.78 && tShow < 1.22) ||
+      (tShow >= 2.34 && tShow < 3.13) ||
+      (tShow >= 5.69 && tShow < 6.24);
+    const airborneWeapon = tShow >= 3.13 && tShow < 5.52;
+    const noScytheGrip = this.kit === "scythe" && this.glaivePose === "nythera_show" &&
+      this.presentationMode === "select" && (oneHandFlourish || airborneWeapon);
+    if (this.vrmRig && this.kit === "scythe") this.vrmRig.gripL = noScytheGrip ? null : this.gripL;
     if (this.look.element === "metal" && this.zenithSpearRightGrip &&
         this.zenithSpearInHand && this.glaivePivot?.visible) {
       this.reachZenithGrip("right", this.zenithSpearRightGrip);
       if (this.gripL) this.reachZenithGrip("left", this.gripL);
-    } else if (this.gripL) this.reachGrip();
+    } else if (this.gripL && !noScytheGrip) this.reachGrip();
     this.vrmRig?.update(dt, { t: this.t, walk: this.walk, phase: this.walkPhase, crouch: this.hipsY, combat: this.combat, hurt: this.hurt, draw: this.draw, knee: this.knee, pose: actionPose });
     // ROXY V6: correct both procedural and VRM grimoire placement, every frame.
     if (this.roxyFloatingBook) {
@@ -2221,6 +2307,72 @@ export class FighterModel extends THREE.Group {
         0.026 * Math.cos(phase * 0.72), 0.015 * Math.cos(phase)));
       d.node.scale.setScalar(0.65 + 0.35 * (1 + Math.sin(phase * 1.3)));
     }
+    if (this.gravityScythe) {
+      // NYTHERA_SHOWCASE_SPIN_TOSS_V3: actual scythe transforms now match body beats.
+      // Handheld rotations only: preview's thrown copy has no gameplay collider.
+      const scytheAngles: Record<string, [number,number,number]> = {
+        idle: [PI/2,-0.12,0.09], block: [1.83,-0.15,-0.16],
+        gr1_w: [1.88,-0.64,-0.28], gr1_s: [0.85,0.76,0.31],
+        gr2_w: [1.13,0.68,0.35], gr2_s: [2.13,-0.84,-0.29],
+        gr3_w: [2.13,-0.60,-0.43], gr3_s: [0.67,0.40,0.28],
+        gr4_w: [1.86,-0.74,0.30], gr4_s: [1.16,0.86,-0.35],
+        grh_w: [2.20,-0.32,0.20], grh_s: [0.74,0.53,-0.12],
+        grz_w: [1.93,-0.69,-0.25], grz_s: [0.91,0.84,0.30],
+        grx_w: [2.20,-0.63,-0.37], grx_s: [0.59,0.31,0.22],
+        grx_air_w: [2.23,0.08,-0.23], grx_air_s: [0.75,0.55,0.12],
+        grc_w: [1.88,-0.31,0.11], grc_s: [1.26,0.51,0.22],
+        grv_w: [2.31,0.13,0.09], grv_float: [1.89,0.24,-0.13],
+        grv_finish: [0.51,0.69,0.18],
+      };
+      const a = scytheAngles[this.glaivePose] ?? scytheAngles.idle;
+      const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(...a, "YXZ"));
+      if (this.glaivePose === "nythera_show") {
+        const t = this.presentationT;
+        // Four full figure-eight/overhead spins before the throw, three after catch.
+        // All segments end at whole revolutions so the weapon doesn't visually snap.
+        const ease = (x:number,lo:number,hi:number) => THREE.MathUtils.smoothstep(x,lo,hi);
+        const forwardSpin = 2*Math.PI*(
+          ease(t,0.65,1.20) + ease(t,1.23,1.66) +
+          ease(t,1.69,2.22) + ease(t,2.32,3.08));
+        const returnSpin = 2*Math.PI*(
+          ease(t,5.66,6.14) + ease(t,6.16,6.62) + ease(t,6.65,7.21));
+        const spin = forwardSpin + returnSpin;
+        q.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1),spin));
+        // Rolling the long shaft completes the wrist-led figure-eight silhouette.
+        const flourish = ((t>=0.65 && t<3.12) || (t>=5.65 && t<7.23)) ? 1 : 0;
+        // Crossing figure-eight planes, alternating front/back shaft planes, not
+        // just a flat propeller spin. The scythe remains visible edge-on in motion.
+        const plane = Math.sin(t * 7.7) * 0.46 * flourish;
+        const roll = Math.sin(t * 11.2) * 0.29 * flourish;
+        q.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0),plane));
+        q.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),roll));
+      } else {
+        // The weapon itself, not only the body, performs circular finishers.
+        // Each spin ends at a whole revolution so pose changes have no pop.
+        const combatTurns: Record<string,number> = {
+          gr4_s: 1, grz_s: 1, grc_s: 1,
+          grv_float: 2, grv_finish: 2,
+        };
+        const count = combatTurns[this.glaivePose] ?? 0;
+        if (count > 0) {
+          const w = this.scytheBeat * this.scytheBeat * (3-2*this.scytheBeat);
+          q.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1),
+            w * count * Math.PI * 2));
+          q.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),
+            Math.sin(w*Math.PI*2)*0.32));
+        }
+      }
+      this.gravityScythe.quaternion.slerp(q,1-Math.exp(-(this.glaivePose.endsWith("_s") ? 40 : 22)*dt));
+      if (this.gravityHalo) {
+        this.gravityHalo.rotation.y += dt * (this.gravityHeavy ? 0.52 : 1.9);
+        this.gravityHalo.scale.setScalar(this.gravityHeavy ? 0.82 : 1.12 + Math.sin(this.t*3.3)*0.055);
+      }
+      if (!this.combat && this.walk < 0.12) {
+        this.hips.position.y += this.gravityHeavy ? -0.022 : 0.020 + Math.sin(this.t*1.9)*0.009;
+        this.torso.rotation.y += Math.sin(this.t*1.35)*0.012;
+      }
+      if (this.gravityHeavy && this.walk > 0.05) this.hips.position.y -= 0.018;
+    }
     this.glowMat.color.copy(this.glowBase).lerp(new THREE.Color(1, 1, 1), this.charge * (0.5 + 0.3 * Math.sin(this.t * 30)));
     this.updateBlink(dt);
     this.updateFlash(dt);
@@ -2228,6 +2380,104 @@ export class FighterModel extends THREE.Group {
       this.falling = Math.max(this.falling - dt, 0);
       const f = 1 - this.falling / 0.6;
       this.rotation.x = -1.45 * Math.min(1, f * f * 1.2);
+    }
+  }
+
+
+  /** NYTHERA_SHOWCASE_SPIN_TOSS_V3 — pure character-select choreography.
+   * The held scythe stays on its original right-hand pivot / IK grip.  During the throw,
+   * an uncollidable duplicate performs multiple full 3D revolutions and then interpolates
+   * exactly into the current hand transform for a snap-free catch. */
+  animateNytheraShowcase(phase: number, dt: number) {
+    const held = this.gravityScythe;
+    if (!held || this.kit !== "scythe") return;
+    if (!this.gravityPreviewFlyer) {
+      const flyer = held.clone(true);
+      flyer.name = "Nythera selection-only flying scythe";
+      flyer.visible = false;
+      // Clone is visual only: no blade point, collision, hitbox or combat attachment.
+      this.add(flyer);
+      this.gravityPreviewFlyer = flyer;
+      const eclipse = new THREE.Mesh(new THREE.TorusGeometry(0.78,0.014,8,72),
+        new THREE.MeshBasicMaterial({color:"#bd83ff",transparent:true,opacity:0,depthWrite:false}));
+      eclipse.position.set(0,1.22,-0.28);
+      eclipse.rotation.x = 0.20;
+      eclipse.visible = true;
+      this.add(eclipse);
+      this.gravityShowEclipse = eclipse;
+      // Slim geometric crescents trail her spins, never opaque VFX smoke.
+      // Local to the selection model and never registered with combat FX.
+      const trails = new THREE.Group();
+      for (const [i,r] of [0.66,0.90,1.15].entries()) {
+        const mat = new THREE.MeshBasicMaterial({color:i===0?"#d4b5ff":"#8d62cf",
+          transparent:true,opacity:0,depthWrite:false,side:THREE.DoubleSide});
+        trails.add(new THREE.Mesh(new THREE.TorusGeometry(r,0.007,5,52,
+          Math.PI*(i===1?1.42:1.10)),mat));
+      }
+      this.add(trails);
+      this.gravityShowTrails = trails;
+    }
+    const flyer = this.gravityPreviewFlyer!;
+    const flyStart = 3.13, flyEnd = 5.52;
+    const flying = phase >= flyStart && phase < flyEnd;
+    this.updateMatrixWorld(true);
+    const rootWorld = this.getWorldQuaternion(new THREE.Quaternion());
+    const inRoot = (o: THREE.Object3D) => this.worldToLocal(o.getWorldPosition(new THREE.Vector3()));
+    const gripP = inRoot(held);
+    const gripQ = rootWorld.clone().invert().multiply(held.getWorldQuaternion(new THREE.Quaternion()));
+    const gripS = held.getWorldScale(new THREE.Vector3()).divide(this.getWorldScale(new THREE.Vector3()));
+    if (flying && !this.gravityShowFlying) {
+      this.gravityShowLaunchP.copy(gripP);
+      this.gravityShowLaunchQ.copy(gripQ);
+      this.gravityShowLaunchScale.copy(gripS);
+    }
+    this.gravityShowFlying = flying;
+    held.visible = !flying;
+    flyer.visible = flying;
+    if (flying) {
+      const u = THREE.MathUtils.clamp((phase-flyStart)/(flyEnd-flyStart),0,1);
+      const smooth = u*u*(3-2*u);
+      const lift = Math.sin(Math.PI*u);
+      // An airborne figure-eight, not a linear boomerang. Ends precisely at the hand.
+      flyer.position.copy(this.gravityShowLaunchP).lerp(gripP,smooth);
+      flyer.position.x -= Math.sin(u*Math.PI*2)*lift*0.66;
+      flyer.position.y += lift*0.44 + Math.sin(u*Math.PI*4)*lift*0.08;
+      flyer.position.z += lift*0.16;
+      flyer.quaternion.copy(this.gravityShowLaunchQ).slerp(gripQ,smooth);
+      flyer.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(0,0,1),u*Math.PI*8));  // 4 forward somersaults
+      flyer.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(0,1,0),u*Math.PI*4));  // 2 shaft rolls
+      flyer.scale.copy(this.gravityShowLaunchScale).lerp(gripS,smooth);
+    }
+    if (this.gravityShowEclipse) {
+      const ring = this.gravityShowEclipse;
+      const late = THREE.MathUtils.smoothstep(phase,6.90,7.32) *
+        (1-THREE.MathUtils.smoothstep(phase,8.18,9.07));
+      (ring.material as THREE.MeshBasicMaterial).opacity = 0.44*late + 0.10*(flying?1:0);
+      ring.scale.setScalar(0.76 + 0.38*late);
+      ring.rotation.z += dt*(flying ? 2.6 : 0.65);
+      // Subtle pulse at the exact catch: visibly sells the impact into her palm.
+      const catchPulse = Math.exp(-Math.pow((phase-5.58)/0.16,2));
+      (ring.material as THREE.MeshBasicMaterial).opacity = Math.min(0.82,
+        (ring.material as THREE.MeshBasicMaterial).opacity + 0.32*catchPulse);
+    }
+    if (this.gravityShowTrails) {
+      const trails = this.gravityShowTrails;
+      const spinWindow = (phase>=0.69 && phase<3.13) ||
+        (phase>=5.57 && phase<7.32);
+      trails.visible = spinWindow || flying;
+      const center = flying ? flyer.position : gripP;
+      trails.position.copy(center);
+      trails.position.y += flying ? 0.20 : 0.38;
+      trails.rotation.set(0.30 + Math.sin(phase*8)*0.17,
+        Math.sin(phase*4.4)*0.35, phase*3.8);
+      for (let i=0; i<trails.children.length; i++) {
+        const arc = trails.children[i] as THREE.Mesh;
+        (arc.material as THREE.MeshBasicMaterial).opacity =
+          trails.visible ? (0.17 - i*0.034) * (flying ? 0.75 : 1) : 0;
+        arc.rotation.z = i*1.77 + Math.sin(phase*6+i)*0.14;
+      }
     }
   }
 
@@ -2268,12 +2518,12 @@ export class FighterModel extends THREE.Group {
     this.vrmRig.grip = { left: !["mage", "kicks"].includes(this.kit),
       right: this.kit !== "kicks" && this.look.element !== "frost" };
     // Staffs and bows follow the arm a lot (natural tilt); blades less, to keep swing arcs.
-    this.vrmRig.followArm = this.kit === "chainblade" ? 0.14 : this.kit === "glaive" ? 0.24 : this.kit === "sickle" ? 0.18 : this.kit === "mage" ? 0.4 : this.kit === "bow" ? 0.5 : 0.3;
+    this.vrmRig.followArm = this.kit === "chainblade" ? 0.14 : this.kit === "glaive" ? 0.24 : this.kit === "scythe" ? 0.21 : this.kit === "sickle" ? 0.18 : this.kit === "mage" ? 0.4 : this.kit === "bow" ? 0.5 : 0.3;
     this.vrmRig.staff = this.kit === "mage" && this.look.element !== "frost";
-    this.vrmRig.glaive = this.kit === "glaive";
+    this.vrmRig.glaive = this.kit === "glaive" || this.kit === "scythe";
     this.vrmRig.style = this.kit === "glaive" && this.look.element === "metal" ? "magnetic" : this.kit === "knight" && this.look.element === "light" ? "aster" : this.kit === "chainblade" ? "chainblade" : this.kit === "glaive" ? "storm" : this.kit === "sickle" ? "feral" : this.kit === "hammer" ? "nesa" : this.kit === "greatsword" ? "greatsword" : this.look.body === "m" ? "heavy" : "light";
     if (this.kit === "knight") { this.buildHeaterShield(); this.vrmRig.shield = true; }
-    if (this.gripL) { this.vrmRig.gripL = this.gripL; this.vrmRig.bladed = this.kit === "chainblade" ? 0.58 : this.kit === "glaive" ? 0.4 : 1; }
+    if (this.gripL) { this.vrmRig.gripL = this.gripL; this.vrmRig.bladed = this.kit === "chainblade" ? 0.58 : this.kit === "glaive" ? 0.4 : this.kit === "scythe" ? 0.50 : 1; }
     if (this.look.element === "metal") {
       this.vrmRig.spearGripR = this.zenithSpearRightGrip;
     }
@@ -2289,7 +2539,7 @@ export class FighterModel extends THREE.Group {
     // A longbow is about 85-90% of body height.
     if (this.kit === "bow") { this.vrmRig.archer = true; this.vrmRig.followArm = 0; this.bowPivot?.scale.setScalar(1.45); }
     // ZAREK_WEAPON_RANGE_MATCH_V1_NOV06: keep Zarek's long double-ended blade visible on VRM bodies.
-    const weaponScale = this.kit === "glaive" && this.look.element === "metal" ? 0.93 : this.kit === "glaive" ? 0.87 : VRM_WEAPON_SCALE; // ZAREK_PROPORTIONATE_GLAIVE_V1: total VRoid weapon length about -29%
+    const weaponScale = this.kit === "glaive" && this.look.element === "metal" ? 0.93 : this.kit === "glaive" ? 0.87 : this.kit === "scythe" ? 0.82 : VRM_WEAPON_SCALE; // ZAREK_PROPORTIONATE_GLAIVE_V1: total VRoid weapon length about -29%
     for (const h of [this.hand_l, this.hand_r]) h.scale.multiplyScalar(weaponScale);
     JN.forEach((n, i) => this.joints[n].quaternion.copy(save[i]));
     this.hips.position.copy(hipsPos);

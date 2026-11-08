@@ -162,6 +162,15 @@ export const CHARACTERS: Character[] = [
       tunic: "#18243b", band: "#304b70", pants: "#151b2c", boots: "#16233a", metal: "#d3dde9", trim: "#7899ce",
       cape: "#202d48", cape_bottom: "#425a85", glow: "#8dbce3", shield: "#22364f", emblem: "#c5d8f1" } },
 
+  // NYTHERA_GRAVITY_REAPER_INSTALL_V1 — intentionally uses Aster VRM temporarily.
+  { id: "nythera", title: "Gravity Reaper", role: "Duelist - Eclipsed Mourning Scythe",
+    desc: "Moonfloat dances lift the enemy; Dreadfall crushes Orbit Marks. F switches gravity. Scythe executions reward confirmed aerial combos, not unavoidable grabs.",
+    stats: { power: 4, speed: 4, range: 4, defense: 2 },
+    look: { name: "Nythera", body: "f", vrm: "aster", kit: "scythe", element: "gravity", outfit: "assassin", style: "long", hat: "none",
+      hair: "#cbbce5", hair_shade: "#53466b", iris_top: "#763cd3", iris_bottom: "#d9bbff", eye_dark: "#1b1233",
+      tunic: "#21192e", band: "#5f3996", pants: "#171324", boots: "#191628", metal: "#c6c3da", trim: "#b899ed",
+      cape: "#2a2140", cape_bottom: "#7853a8", glow: "#a977f4", shield: "#242037", emblem: "#dac1ff" } },
+
 ];
 
 export function resolveEnemy(player: number, pick: number): number {

@@ -321,6 +321,18 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
               )}
             </>
           )}
+          {/* NYTHERA_GRAVITY_REAPER_INSTALL_V1 — readable mode, not a fifth purchased skill. */}
+          {me?.id === "nythera" && !cfg.spectator && <div style={{
+            position: "absolute", bottom: 142, left: "50%", transform: "translateX(-50%)",
+            border: "1px solid #a977f4", background: "rgba(16,9,29,.80)",
+            borderRadius: 18, padding: "6px 16px", color: "#e6d2ff",
+            fontWeight: 800, fontSize: 12, zIndex: 5, whiteSpace: "nowrap",
+          }}>
+            {me.gravityMode === "heavy" ? "◈ DREADFALL — HEAVY" : "◌ MOONFLOAT — LIGHT"}
+            <span style={{ opacity: .70, marginLeft: 12 }}>
+              {me.gravitySwitchCd > 0 ? `F ${me.gravitySwitchCd.toFixed(1)}s` : "F to switch"}
+            </span>
+          </div>}
           {!cfg.spectator && <div className="skills">
             {hud.dash && (
               <div className={"sk atk" + (hud.dash.t > 0.05 ? " locked" : "")}>

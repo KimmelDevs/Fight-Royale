@@ -171,6 +171,11 @@ export class Fighter implements Entity {
   poseName = "idle";
   poseSpeed = 14;
 
+  // NYTHERA_GRAVITY_REAPER_INSTALL_V1 — host-owned gravity state.
+  gravityMode: "light" | "heavy" = "light";
+  gravitySwitchCd = 0;
+  gravityFloatT = 0; // short real aerial hangtime; opponent can still act / air-recover.
+  onGravityShift: (f: Fighter) => void = () => {};
   onSwing: (f: Fighter) => void = () => {};
   // ZENITH_IRON_SOVEREIGN_V1_20261108 — pure game-side spear state.
   zenithSpearOut = false;
@@ -738,6 +743,9 @@ export class Fighter implements Entity {
       ? this.status.actionSpeedMult() : 1;
     this.stateT += advancing * (slowedKaizenSpin ? this.kaizenSpinSpeed : 1) * frostActionScale;
     for (const k in this.cooldowns) this.cooldowns[k] = Math.max(this.cooldowns[k] - dt, 0);
+    this.gravitySwitchCd = Math.max(0, this.gravitySwitchCd - dt);
+    this.gravityFloatT = Math.max(0, this.gravityFloatT - dt);
+    this.model.gravityHeavy = this.kit === "scythe" && this.gravityMode === "heavy";
     if (this.kit === "hammer") {
       // NESA_HEART_SMASH_V4: one charge returns every 7.5 seconds, max three.
       if (this.nesaCCharges < 3) {
@@ -1027,6 +1035,9 @@ export class Fighter implements Entity {
     } else { this.nesaSpinYaw = 0; this.model.nesaSpinHorizontal = 0; }
     this.model.rotation.y = this.viewBias + this.tempestSpin + this.cycloneSpin + this.bladeSwingYaw + this.nesaSpinYaw + this.parryCounterSpin;
     this.computePose();
+    this.model.scytheBeat = this.kit === "scythe" && this.state === S.ATTACK && this.atk
+      ? THREE.MathUtils.clamp((this.stateT-this.atk.wind) /
+          Math.max(0.01,this.atk.active + this.atk.recover*0.65),0,1) : 0;
     this.model.bloodFestivalT = this.kit === "sickle" ? this.bloodFestivalT : 0;
     this.model.chainFuryT = this.kit === "chainblade" ? this.chainFuryT : 0;
     this.model.kaizenSpinSpeed = this.kaizenSpinSpeed;
@@ -1040,7 +1051,7 @@ export class Fighter implements Entity {
       ["cbz_w", "cbz_s", "cbx_w", "cbx1_s", "cbx2_s", "cbx3_s", "cbh_w", "cbh_s", "cbv_w", "cbv_s"].includes(this.poseName));
     this.model.presentationT = this.stateT;
     this.model.presentationMode = "victory";
-    this.model.glaivePose = this.kit === "glaive" ? (this.state === S.WIN ? "show_baton" : this.poseName) : "idle";
+    this.model.glaivePose = this.kit === "scythe" ? this.poseName : this.kit === "glaive" ? (this.state === S.WIN ? "show_baton" : this.poseName) : "idle";
     this.updateKiraCastVisual();
     this.updateKaedeSheathVisual();
     this.model.blend(this.state === S.WIN
@@ -1358,6 +1369,18 @@ export class Fighter implements Entity {
   private readSkill() {
     if (this.isKaedeThousandCutsCasting() || this.isKiraHundredKicksCasting()) return;
     const k = this.intent.skill;
+    // NYTHERA_GRAVITY_REAPER_INSTALL_V1 — same F input for local, host and AI.
+    if (k === "f" && this.kit === "scythe") {
+      if (this.gravitySwitchCd <= 0 && ![S.HITSTUN, S.STAGGER, S.KO, S.WIN, S.KNOCKDOWN].includes(this.state) &&
+          !this.chainBoundBy && !this.status.has("freeze")) {
+        this.gravityMode = this.gravityMode === "light" ? "heavy" : "light";
+        this.gravitySwitchCd = 1.50;
+        this.model.gravityHeavy = this.gravityMode === "heavy";
+        this.model.recoil = this.gravityMode === "heavy" ? 0.36 : 0.18;
+        this.onGravityShift(this);
+      }
+      return;
+    }
     if (!k || !["z", "x", "c", "v"].includes(k)) return;
     // Prevent key spoofing, old remapped skills and online requests from using locked V.
     if (k === "v" && !this.bonusSkillUnlocked) return;
@@ -1526,6 +1549,43 @@ export class Fighter implements Entity {
     }
     this.atkId = id;
     this.atk = this.attacks[id];
+    // NYTHERA_GRAVITY_REAPER_INSTALL_V1 — clone each attack, never mutate its shared kit table.
+    if (this.kit === "scythe" && this.atk) {
+      const heavyGravity = this.gravityMode === "heavy";
+      this.atk = { ...this.atk };
+      if (/^l[1-4]$/.test(id)) {
+        const speed = heavyGravity ? 1.13 : 0.89;
+        this.atk.wind *= speed; this.atk.recover *= speed;
+        if (heavyGravity) {
+          this.atk.dmg *= 1.14; this.atk.guard *= 1.30;
+          this.atk.knock *= 1.17;
+        }
+      }
+      if (id === "heavy" && heavyGravity) {
+        this.atk.dmg = 174; this.atk.guard = 60;
+        this.atk.wind = 0.33; this.atk.knock = 6.0;
+      }
+      if (id === "z" && heavyGravity) {
+        this.atk = { ...this.atk, name: "Crescent Sentence", dmg: 138, guard: 54,
+          wind: 0.33, recover: 0.47, knock: 4.3, heavy: true,
+          pose_w: "grh_w", pose_s: "grz_s", style: "gravity_sentence" };
+      }
+      if (id === "x" && heavyGravity) {
+        this.atk = { ...this.atk, name: "Mass Cleaver", dmg: 160, guard: 53,
+          wind: 0.31, recover: 0.53, knock: 4.9, heavy: true,
+          pose_w: "grh_w", pose_s: "grh_s", style: "gravity_crush" };
+      }
+      if (id === "x_air" && !heavyGravity) {
+        this.atk = { ...this.atk, type: "melee", mode: "", name: "Airborne Crescent",
+          style: "gravity_ascend", wind: 0.16, active: 0.09, recover: 0.34,
+          dmg: 105, guard: 24, reach: 2.4, knock: 1.0, stun: 0.25, heavy: false,
+          pose_w: "grx_air_w", pose_s: "grx_s" };
+      }
+      if (id === "c" && heavyGravity) {
+        this.atk = { ...this.atk, name: "Event Collapse", mode: "gravity_collapse",
+          style: "gravity_collapse", wind: 0.34, recover: 0.58 };
+      }
+    }
     if (this.kit === "hammer" && this.atk?.style === "nesa_high_striker") this.nesaHighStrikerParried = false;
     if (this.kit === "katana" && this.atk?.name === "Thousand Cuts" && this.atk.style === "slashes") {
       this.atk = { ...this.atk, lunge: 0, recover: Math.max(this.atk.recover,
@@ -1741,6 +1801,10 @@ export class Fighter implements Entity {
       this.atkPhase <= 1 && !!this.atk &&
       ["chain_razor_cyclone", "chain_death_spiral", "chain_carousel"].includes(this.atk.style);
   }
+  private gravityMoveFactor(): number {
+    if (this.kit !== "scythe") return 1;
+    return this.gravityMode === "light" ? 1.15 : 0.86;
+  }
   private move(dt: number) {
     if (this.isKiraHundredKicksCasting()) {
       this.model.walk = 0; this.model.rotation.y = this.viewBias; return;
@@ -1789,7 +1853,7 @@ export class Fighter implements Entity {
     let v = 0;
     let walking = false;
     // No brain yet = still in the READY countdown: stand still.
-    if (this.state === S.IDLE && this.autoApproach && this.brain && o && !o.isDown() && dist > ENGAGE) { v = this.walkSpeed * (this.meteorFistArmor ? 1 : this.status.speedMult()) * this.garrickAdvanceFactor(); walking = true; }
+    if (this.state === S.IDLE && this.autoApproach && this.brain && o && !o.isDown() && dist > ENGAGE) { v = this.walkSpeed * this.gravityMoveFactor() * (this.meteorFistArmor ? 1 : this.status.speedMult()) * this.garrickAdvanceFactor(); walking = true; }
     if (this.state === S.ATTACK && this.atk && this.atkPhase <= 1 && dist > MIN_DIST + 0.15) {
       if (this.kit === "hammer" && /^l[1-4]$/.test(this.atkId)) {
         // The next swing shuffles after the knockback with deliberate weighted steps.
@@ -1855,7 +1919,7 @@ export class Fighter implements Entity {
       this.state === S.CHARGE ? 0.4 : kiraAirSteer ? 0.92 : nyxAirSteer ? 0.63 :
       this.kaizenCanWalkWhileSpinning() ? 0.72 : 0;
     if (steer > 0 && this.intent.move.lengthSq() > 0.0001) {
-      const step = this.intent.move.clone().normalize().multiplyScalar(this.moveSpeed * (this.bloodFrenzyT > 0 ? 1.15 : 1) * (this.meteorFistArmor ? 1 : this.status.speedMult()) * (this.intent.sprint && this.state === S.IDLE && this.onGround ? 1.42 : 1) * this.garrickAdvanceFactor() * steer * dt);
+      const step = this.intent.move.clone().normalize().multiplyScalar(this.moveSpeed * this.gravityMoveFactor() * (this.bloodFrenzyT > 0 ? 1.15 : 1) * (this.meteorFistArmor ? 1 : this.status.speedMult()) * (this.intent.sprint && this.state === S.IDLE && this.onGround ? 1.42 : 1) * this.garrickAdvanceFactor() * steer * dt);
       if (dist < MIN_DIST && step.dot(dir) > 0) step.addScaledVector(dir, -step.dot(dir));
       pos.add(step);
       walking = this.onGround;
@@ -1869,7 +1933,8 @@ export class Fighter implements Entity {
 
   private vertical(dt: number) {
     if (this.onGround) return;
-    this.velY -= GRAVITY * dt;
+    this.velY -= GRAVITY * (this.gravityFloatT > 0 ? 0.42 :
+      this.kit === "scythe" && this.gravityMode === "light" ? 0.78 : 1) * dt;
     this.root.position.y += this.velY * dt;
     if (this.kit === "hammer" && this.nesaAirHolding && this.velY < 0 &&
         this.root.position.y < 0.52) this.nesaReleaseAirStrike();
@@ -2287,7 +2352,7 @@ export class Fighter implements Entity {
     let walking = false;
     if (this.onGround) {
       let target = 0;
-      if (free) { target = mx * this.moveSpeed * (this.state === S.CHARGE ? 0.3 : 1.55) * (this.state === S.IDLE && this.onGround && this.intent.sprint ? 1.42 : 1) * this.garrickAdvanceFactor(); walking = mx !== 0; }
+      if (free) { target = mx * this.moveSpeed * this.gravityMoveFactor() * (this.state === S.CHARGE ? 0.3 : 1.55) * (this.state === S.IDLE && this.onGround && this.intent.sprint ? 1.42 : 1) * this.garrickAdvanceFactor(); walking = mx !== 0; }
       if (this.state === S.ATTACK && this.atk && this.atkPhase <= 1) {
         const o = this.opponent;
         const near = o && !o.isDown() && Math.abs(o.root.position.x - pos.x) < MIN_DIST && Math.abs(o.root.position.y - pos.y) < 1;
@@ -2297,7 +2362,7 @@ export class Fighter implements Entity {
         // Arena/platform mode: obey actual left/right input during the spin.
         // Don't grant Kaizen any new lunge or attack speed.
         if (this.kaizenCanWalkWhileSpinning()) {
-          target = mx * this.walkSpeed * 0.85;
+          target = mx * this.walkSpeed * this.gravityMoveFactor() * 0.85;
           if (mx) this.facing = mx;
           walking = mx !== 0;
         }
@@ -2469,6 +2534,20 @@ export class Fighter implements Entity {
           break;
         }
         if (this.poseOverride) { p = this.poseOverride; sp = 40; break; }
+        // NYTHERA_GRAVITY_REAPER_INSTALL_V1: anticipation → cut → measured follow-through.
+        if (this.kit === "scythe" && a) {
+          const elapsed = this.stateT - a.wind;
+          if (a.style === "gravity_requiem") {
+            p = elapsed < 0 ? "grv_w" : elapsed < 0.50 ? "grv_float" : "grv_finish";
+            sp = elapsed < 0 ? 18 : elapsed < 0.50 ? 23 : 49;
+          } else if (a.mode === "dive" && this.atkPhase === 1) {
+            p = "grx_air_w"; sp = 17;
+          } else if (this.atkPhase === 0) { p = a.pose_w; sp = this.gravityMode === "heavy" ? 15 : 22; }
+          else if (this.atkPhase === 1) { p = a.pose_s; sp = this.gravityMode === "heavy" ? 39 : 55; }
+          else if (this.stateT < a.wind + a.active + a.recover * 0.64) { p = a.pose_s; sp = 18; }
+          else { p = "idle"; sp = 13; }
+          break;
+        }
         // ASTER_KNIGHT_COMBAT_ANIM_V2: visual anticipation, explosive contact, shield-first reset.
         // No changes to attackStep(), active windows, lunge, collision or damage.
         if (this.kit === "knight" && this.look.element === "light" && a) {
@@ -2624,7 +2703,7 @@ export class Fighter implements Entity {
       +this.parryCounterSpin.toFixed(3), this.atkId === "pc" ? 1 : 0,
       +this.kaizenSpinSpeed.toFixed(2), this.kaizenSpinDirection, this.garrickResolve, +this.cooldowns.v.toFixed(2), this.frostShardStacks, this.frostShieldCharges, +this.frostShieldT.toFixed(2),
       this.zenithSpearOut ? 1 : 0, +this.zenithCatchShieldT.toFixed(2), +this.zenithCatchRecoilT.toFixed(2),
-      +this.zenithMagneticChargeT.toFixed(2)];
+      +this.zenithMagneticChargeT.toFixed(2), this.gravityMode === "heavy" ? 1 : 0, +this.gravitySwitchCd.toFixed(2), +this.gravityFloatT.toFixed(2)];
   }
 
   applySnapshot(s: any[]) {
@@ -2651,6 +2730,10 @@ export class Fighter implements Entity {
     this.frostShardStacks = s.length > 53 ? s[53] : 0;
     this.frostShieldCharges = s.length > 54 ? s[54] : 0;
     this.frostShieldT = s.length > 55 ? s[55] : 0;
+    this.gravityMode = s.length > 60 && s[60] === 1 ? "heavy" : "light";
+    this.gravitySwitchCd = s.length > 61 ? s[61] : 0;
+    this.gravityFloatT = s.length > 62 ? s[62] : 0;
+    this.model.gravityHeavy = this.kit === "scythe" && this.gravityMode === "heavy";
     if (this.look.element === "metal" && s.length > 58) {
       const isOut = s[56] === 1;
       if (this.zenithSpearOut !== isOut) {
@@ -2701,6 +2784,7 @@ export class Fighter implements Entity {
     d = Math.atan2(Math.sin(d), Math.cos(d));
     this.root.rotation.y += d * k;
     for (const key in this.cooldowns) this.cooldowns[key] = Math.max(this.cooldowns[key] - dt, 0);
+    this.model.gravityHeavy = this.kit === "scythe" && this.gravityMode === "heavy";
     this.atkLock = Math.max(this.atkLock - dt, 0);
     this.dashCd = Math.max(this.dashCd - dt, 0);
     if (this.state !== S.KO) this.model.rotation.y = this.viewBias + this.tempestSpin + this.cycloneSpin + this.bladeSwingYaw + this.nesaSpinYaw;
@@ -2721,7 +2805,7 @@ export class Fighter implements Entity {
       ["cbz_w", "cbz_s", "cbx_w", "cbx1_s", "cbx2_s", "cbx3_s", "cbh_w", "cbh_s", "cbv_w", "cbv_s"].includes(this.poseName));
     this.model.presentationT = this.stateT;
     this.model.presentationMode = "victory";
-    this.model.glaivePose = this.kit === "glaive" ? (this.state === S.WIN ? "show_baton" : this.poseName) : "idle";
+    this.model.glaivePose = this.kit === "scythe" ? this.poseName : this.kit === "glaive" ? (this.state === S.WIN ? "show_baton" : this.poseName) : "idle";
     this.updateKiraCastVisual();
     this.updateKaedeSheathVisual();
     this.model.blend(this.state === S.WIN

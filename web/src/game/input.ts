@@ -28,6 +28,9 @@ export class Input {
       const a = actionFor(code);
       const s = a && SKILL_KEY[a];
       if (s) this.skills.push(s);
+      // NYTHERA_GRAVITY_REAPER_INSTALL_V1: F is an optional stance skill,
+      // ignored by non-scythe fighters; ordinary remapped keys take precedence.
+      if (code === "KeyF" && !a) this.skills.push("f");
       const dir = a && MOVE_DIR[a];
       if (a && dir) {
         const now = performance.now();

@@ -72,6 +72,8 @@ export const STATS: Record<string, { hp: number; guard: number; move: number; wa
   bomb: { hp: 2100, guard: 70, move: 3.5, walk: 2.8, parry: 0.16, jump: 7.0 },
   chainblade: { hp: 2450, guard: 100, move: 3.55, walk: 2.75, parry: 0.16, jump: 7.0 },
   hammer: { hp: 2650, guard: 110, move: 3.05, walk: 2.45, parry: 0.15, jump: 7.0 },
+  // NYTHERA_GRAVITY_REAPER_INSTALL_V1
+  scythe: { hp: 2200, guard: 76, move: 3.72, walk: 3.02, parry: 0.19, jump: 8.0 },
 };
 
 const DEFAULT: Omit<Attack, "id" | "element"> = {
@@ -104,6 +106,7 @@ function parryCounterAttack(kit: string, element: string, base: Record<string, A
     sickle: [heavy.pose_w, heavy.pose_s],
     chainblade: [heavy.pose_w, heavy.pose_s],
     glaive: [heavy.pose_w, heavy.pose_s],
+    scythe: [heavy.pose_w, heavy.pose_s],
     bomb: [base.z?.pose_w ?? light.pose_w, base.z?.pose_s ?? light.pose_s],
     assassin: [base.l2?.pose_w ?? light.pose_w, base.l2?.pose_s ?? light.pose_s],
   };
@@ -120,25 +123,26 @@ function parryCounterAttack(kit: string, element: string, base: Record<string, A
     sickle: "Reaper's Waltz",
     chainblade: "Chain Cyclone",
     glaive: "Thunderwheel",
+    scythe: "Eclipse Reversal",
     bomb: "Firecracker Spin",
     assassin: "Shadow Carousel",
   };
   const reach: Record<string, number> = {
     knight: 1.95, greatsword: 2.20, hammer: 2.35, katana: 2.00,
     bow: 1.90, mage: 2.00, knuckles: 1.60, kicks: 1.85,
-    wind: 2.00, sickle: 1.95, chainblade: 2.35, glaive: 2.40,
+    wind: 2.00, sickle: 1.95, chainblade: 2.35, glaive: 2.40, scythe: 2.45,
     bomb: 1.85, assassin: 1.85,
   };
   const lunge: Record<string, number> = {
     knight: 1.5, greatsword: 1.25, hammer: 1.35, katana: 1.8,
     bow: 1.2, mage: 1.15, knuckles: 1.65, kicks: 1.95,
-    wind: 1.85, sickle: 1.9, chainblade: 1.55, glaive: 1.8,
+    wind: 1.85, sickle: 1.9, chainblade: 1.55, glaive: 1.8, scythe: 1.8,
     bomb: 1.25, assassin: 2.2,
   };
   const knock: Record<string, number> = {
     knight: 4.2, greatsword: 4.9, hammer: 5.1, katana: 4.1,
     bow: 3.6, mage: 3.8, knuckles: 3.8, kicks: 4.0,
-    wind: 4.2, sickle: 4.0, chainblade: 4.5, glaive: 4.8,
+    wind: 4.2, sickle: 4.0, chainblade: 4.5, glaive: 4.8, scythe: 4.3,
     bomb: 3.8, assassin: 4.1,
   };
   const pose = poses[kit] ?? [light.pose_w, light.pose_s];
@@ -180,6 +184,7 @@ export function attacks(kit: string, element: string): Record<string, Attack> {
     sickle: sickle,
     chainblade: chainblade,
     glaive: glaive,
+    scythe: gravityScythe,
     bomb: bomb,
     kicks: kicks,
   } as Record<string, () => Record<string, Attack>>)[kit]?.() ?? knight();
@@ -403,6 +408,11 @@ function bonusSkill(kit: string, element: string): Attack {
       return a({ name: "Iaido Flash", desc: "An instant cross-arena draw cut.", cd: 8, wind: 0.08, active: 0.16, recover: 0.45, dmg: 200, guard: 50, reach: 2.2, lunge: 18, knock: 5, stun: 0.7, heavy: true, pose_w: "charge", pose_s: "heavy_s" });
     case "bow":
       return a({ name: "Piercing Volley", desc: "Five arrows that fly through every enemy in line.", cd: 9, type: "projectile", wind: 0.2, recover: 0.4, dmg: 55, guard: 14, knock: 2, stun: 0.3, speed: 32, count: 5, spread: 0.25, style: "arrow", pierce: true, pose_w: "bow_w", pose_s: "bow_s" });
+    case "scythe":
+      return a({ name: "Black Star Requiem", desc: "Draw an eclipse, lift only enemies caught by a real opening hit, then cut a falling star through them. Final crush can be dodged after recovery.",
+        cd: 48, type: "melee", wind: 0.47, active: 1.10, recover: 0.68,
+        dmg: 35, guard: 14, reach: 2.75, knock: 1, stun: 0.18, style: "gravity_requiem",
+        pose_w: "grv_w", pose_s: "grv_float", heavy: false });
     case "glaive":
       return a({ name: "Arc Flash", desc: "A lightning-fast straight-line glaive draw dash, inspired by an anime thunder swordsman. Travels during the active window and cuts at the end; can be blocked, parried or clashed.", cd: 12,
         type: "melee", wind: 0.13, active: 0.21, recover: 0.48, dmg: 190, guard: 49, reach: 2.35, lunge: 38,
@@ -629,6 +639,45 @@ function sickle(): Record<string, Attack> {
   };
 }
 
+
+
+/** NYTHERA_GRAVITY_REAPER_INSTALL_V1 — four-beat curved basic string, one-handle scythe.
+ * Mode-specific damage, types, and poses are resolved in Fighter.startAttack. */
+function gravityScythe(): Record<string, Attack> {
+  return {
+    l1: a({ name: "Open Crescent", wind: 0.14, active: 0.08, recover: 0.19,
+      dmg: 56, guard: 14, reach: 2.40, lunge: 2.2, knock: 0.55, stun: 0.15,
+      style: "gravity_crescent", pose_w: "gr1_w", pose_s: "gr1_s", next: "l2" }),
+    l2: a({ name: "Reverse Veil", wind: 0.15, active: 0.08, recover: 0.20,
+      dmg: 60, guard: 15, reach: 2.42, lunge: 2.1, knock: 0.58, stun: 0.16,
+      style: "gravity_crescent", pose_w: "gr2_w", pose_s: "gr2_s", next: "l3" }),
+    l3: a({ name: "Sky Hook", wind: 0.17, active: 0.08, recover: 0.21,
+      dmg: 68, guard: 17, reach: 2.48, lunge: 2.3, knock: 0.8, stun: 0.18,
+      style: "gravity_crescent", pose_w: "gr3_w", pose_s: "gr3_s", next: "l4" }),
+    l4: a({ name: "Orbit Bloom", wind: 0.21, active: 0.11, recover: 0.36,
+      dmg: 90, guard: 23, reach: 2.52, lunge: 2.4, knock: 2.5, stun: 0.32,
+      style: "gravity_bloom", pose_w: "gr4_w", pose_s: "gr4_s" }),
+    heavy: a({ name: "Grave Descent", wind: 0.25, active: 0.10, recover: 0.58,
+      dmg: 148, guard: 42, reach: 2.53, lunge: 3.15, knock: 4.4, stun: 0.46, heavy: true,
+      style: "gravity_grave", pose_w: "grh_w", pose_s: "grh_s" }),
+    z: a({ name: "Crescent Snare", desc: "Moonfloat: a curving hook pulls on a confirmed hit and adds Orbit Mark. Dreadfall: a slower guard-crushing hook consumes marks.",
+      cd: 7.0, wind: 0.23, active: 0.10, recover: 0.38,
+      dmg: 100, guard: 25, reach: 2.7, lunge: 2.5, knock: 0.85, stun: 0.24,
+      style: "gravity_snare", pose_w: "grz_w", pose_s: "grz_s" }),
+    x: a({ name: "Zero-G Ascension", desc: "Moonfloat: launch and pursue on a confirmed hit. Dreadfall: overhead scythe strike. Dreadfall X in midair is a landing crush.",
+      cd: 10.0, wind: 0.29, active: 0.11, recover: 0.46,
+      dmg: 114, guard: 30, reach: 2.64, lunge: 2.9, knock: 1.4, stun: 0.32,
+      style: "gravity_ascend", pose_w: "grx_w", pose_s: "grx_s" }),
+    x_air: a({ name: "Mass Descent", desc: "Dreadfall only: descend toward the enemy with the scythe, then crash down in an avoidable circle.",
+      cd: 10.0, type: "strike", at: "self", mode: "dive", speed: 24,
+      wind: 0.11, active: 0.12, recover: 0.51,
+      dmg: 158, guard: 49, radius: 2.10, lunge: 7.0, knock: 5.8, stun: 0.51, heavy: true,
+      style: "gravity_meteor", pose_w: "grx_air_w", pose_s: "grx_air_s" }),
+    c: a({ name: "Event Horizon", desc: "Moonfloat: summon a small, escapable pulling field for 2.6s. Dreadfall: collapse an active field for area damage or make a short-range burst.",
+      cd: 15.0, type: "buff", mode: "gravity_well", wind: 0.36, active: 0.10, recover: 0.52,
+      dmg: 0, radius: 2.8, style: "gravity_well", pose_w: "grc_w", pose_s: "grc_s" }),
+  };
+}
 
 function bomb(): Record<string, Attack> {
   return {
@@ -1164,6 +1213,37 @@ const ZENITH: Record<string, Pose> = {
   znv_s: P([0.16,0.12,0], [0,-0.10,0], [-2.54,0.10,-0.22], [0.08,0,0.04], [-0.60,-0.12,0.20], [0.10,0,0.02], [-0.54,0,0.09], [0.49,0,-0.09], -0.10),
 };
 
+
+// NYTHERA_GRAVITY_REAPER_INSTALL_V1 — choreography: gather → suspend → sentence.
+// Unlike glaives, these swings are single long arcs with two-hand grips and a settled foot plant.
+const GRAVITY_SCYTHE: Record<string, Pose> = {
+  ...GLAIVE,
+  idle: P([0.025,-0.24,0.01],[0.0,0.20,0.01],[-0.89,-0.06,-0.16],[0.20,0,-0.12],[-0.97,0.18,0.20],[0.17,0,0.10],[-0.22,0,0.12],[0.27,0,-0.10],-0.06),
+  block: P([0.13,-0.09,0],[0,0.06,0],[-1.37,0.14,-0.19],[0.22,0,-0.10],[-1.42,-0.16,0.23],[0.18,0,0.08],[-0.40,0,0.13],[0.41,0,-0.11],-0.12),
+  jump: P([-0.10,-0.06,0.03],[0.04,0.09,0],[-0.88,0.10,-0.26],[0.15,0,-0.13],[-1.08,-0.12,0.25],[0.12,0,0.12],[-0.68,0,0.15],[-0.45,0,-0.13],0.03),
+  gr1_w: P([0.11,-0.69,-0.07],[0,0.39,0],[-0.86,-0.74,-0.23],[0.26,0,-0.20],[-1.04,-0.47,0.18],[0.16,0,0.14],[-0.35,0,0.10],[0.40,0,-0.08],-0.09),
+  gr1_s: P([0.16,0.70,0.06],[-0.04,-0.35,0],[-1.41,0.79,-0.15],[0.12,0,0.38],[-1.32,0.61,0.25],[0.08,0,0.16],[-0.45,0,0.12],[0.40,0,-0.07],-0.11),
+  gr2_w: P([0.10,0.68,0.03],[0,-0.34,0],[-1.32,0.84,0.12],[0.23,0,0.22],[-1.25,0.70,0.13],[0.18,0,0.06],[-0.28,0,0.12],[0.34,0,-0.10],-0.09),
+  gr2_s: P([0.18,-0.78,-0.05],[-0.09,0.48,0],[-1.28,-0.92,-0.12],[0.06,0,-0.34],[-1.43,-0.76,0.20],[0.06,0,-0.14],[-0.48,0,0.14],[0.44,0,-0.09],-0.12),
+  gr3_w: P([0.29,-0.48,-0.03],[-0.16,0.32,0],[-0.66,-0.71,-0.37],[0.45,0,-0.30],[-0.85,-0.47,0.26],[0.32,0,0.04],[-0.62,0,0.10],[0.58,0,-0.07],-0.18),
+  gr3_s: P([-0.23,0.31,0.05],[0.14,-0.10,0],[-2.53,0.30,-0.12],[0.18,0,0.12],[-2.28,0.27,0.11],[0.14,0,0.08],[-0.52,0,0.14],[0.36,0,-0.11],-0.12),
+  gr4_w: P([0.08,-1.02,0],[0,0.58,0],[-1.04,-1.06,-0.16],[0.35,0,-0.24],[-1.17,-0.83,0.20],[0.28,0,-0.12],[-0.47,0,0.12],[0.46,0,-0.09],-0.16),
+  gr4_s: P([0.18,1.08,0.06],[-0.09,-0.66,0],[-1.72,1.03,-0.04],[0.06,0,0.46],[-1.77,0.81,0.24],[0.07,0,0.29],[-0.68,0,0.13],[0.49,0,-0.11],-0.15),
+  grh_w: P([-0.22,-0.48,-0.08],[0.14,0.31,0],[-2.60,-0.24,-0.17],[0.56,0,-0.06],[-2.47,-0.29,0.16],[0.43,0,0.06],[-0.55,0,0.16],[0.53,0,-0.12],-0.20),
+  grh_s: P([0.51,0.34,0.10],[-0.24,-0.19,0],[-0.61,0.42,-0.29],[0.18,0,0.14],[-0.73,0.23,0.22],[0.13,0,-0.10],[-0.84,0,0.16],[0.62,0,-0.11],-0.26),
+  grz_w: P([0.10,-0.77,-0.09],[-0.02,0.46,0],[-1.22,-1.06,-0.23],[0.55,0,-0.29],[-1.14,-0.68,0.15],[0.29,0,-0.19],[-0.43,0,0.12],[0.43,0,-0.10],-0.13),
+  grz_s: P([0.27,0.78,0.06],[-0.12,-0.48,0],[-1.18,0.91,-0.36],[0.12,0,0.45],[-1.17,0.54,0.26],[0.08,0,0.25],[-0.63,0,0.13],[0.49,0,-0.12],-0.16),
+  grx_w: P([0.45,-0.56,-0.07],[-0.15,0.36,0],[-0.69,-0.67,-0.48],[0.40,0,-0.34],[-0.86,-0.31,0.32],[0.21,0,0.05],[-0.79,0,0.15],[0.59,0,-0.10],-0.26),
+  grx_s: P([-0.34,0.48,0.04],[0.17,-0.17,0],[-2.70,0.40,-0.18],[0.15,0,0.08],[-2.41,0.34,0.14],[0.11,0,0.14],[-0.66,0,0.13],[0.20,0,-0.09],-0.08),
+  grx_air_w: P([-0.28,-0.13,0],[0.09,0.06,0],[-2.27,-0.21,-0.30],[0.26,0,-0.10],[-2.28,0.18,0.13],[0.14,0,0.05],[-1.12,0,0.11],[-0.96,0,-0.08],0.02),
+  grx_air_s: P([0.58,0.13,0.05],[-0.29,-0.05,0],[-0.60,0.22,-0.25],[0.11,0,0.05],[-0.64,0.19,0.17],[0.09,0,-0.05],[-0.88,0,0.13],[0.69,0,-0.08],-0.25),
+  grc_w: P([-0.12,-0.59,0.02],[0.08,0.27,0],[-1.68,-0.46,-0.26],[0.44,0,0.05],[-1.52,-0.38,0.20],[0.31,0,-0.06],[-0.46,0,0.12],[0.44,0,-0.09],-0.13),
+  grc_s: P([0.24,0.43,0.02],[-0.12,-0.18,0],[-1.10,0.49,-0.36],[0.18,0,0.15],[-1.26,0.45,0.24],[0.16,0,0.11],[-0.62,0,0.12],[0.51,0,-0.09],-0.17),
+  grv_w: P([-0.22,-0.29,-0.01],[0.13,0.10,0],[-2.60,-0.16,-0.10],[0.31,0,-0.08],[-2.52,0.14,0.08],[0.23,0,0.06],[-0.59,0,0.12],[0.50,0,-0.09],-0.17),
+  grv_float: P([-0.13,0.14,0.03],[0.16,-0.07,0],[-2.24,0.21,-0.30],[0.24,0,-0.02],[-1.89,-0.23,0.36],[0.16,0,0.10],[-0.87,0,0.15],[-0.79,0,-0.11],0.05),
+  grv_finish: P([0.59,0.54,0.08],[-0.27,-0.32,0],[-0.55,0.74,-0.29],[0.12,0,0.30],[-0.77,0.51,0.13],[0.08,0,0.12],[-0.91,0,0.15],[0.68,0,-0.09],-0.28),
+};
+
 const CHAINBLADE: Record<string, Pose> = {
   ...twoHanded(KNIGHT),
   idle: P([0.06, -0.12, 0], [-0.03, 0.1, 0], [-0.86, 0.17, -0.16], [0.25, 0, -0.2], [-0.48, -0.3, 0.40], [0.17, 0, 0.08], [-0.19, 0, 0.06], [0.19, 0, -0.06], -0.055),
@@ -1236,6 +1316,7 @@ const TABLES: Record<string, Record<string, Pose>> = {
       [-0.32, -0.16, -0.24], [-0.12, 0, 0.11], [0.14, 0, -0.11], -0.055),
   },
   bow: BOW,
+  scythe: GRAVITY_SCYTHE,
   knuckles: KNUCKLES,
   bomb: {
     // Bomb held in the right hand near the chest, left hand loose.

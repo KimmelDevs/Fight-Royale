@@ -124,8 +124,45 @@ function between(a: Pose, b: Pose, u: number): Pose {
     hips_y:mix(a.hips_y,b.hips_y),
     knee:[mix(a.knee?.[0]??0,b.knee?.[0]??0),mix(a.knee?.[1]??0,b.knee?.[1]??0)] };
 }
+
+// NYTHERA_SHOWCASE_SPIN_TOSS_V3: scripted full-body rhythm aligned to the scythe's
+// independent throw/catch window in FighterModel.animateNytheraShowcase().
+const NYTHERA_SHOWCASE: Array<[number,Beat]> = [
+  [0.00, {torso:[.04,-.23,.03],head:[-.06,.15,0],arm_r:[-1.12,.23,-.23],arm_l:[-1.19,-.15,.33],leg_l:[-.25,0,.13],leg_r:[.18,0,-.12],hips_y:-.055,knee:[.18,.16]}],
+  [.53, {torso:[.23,-.57,.09],head:[.02,.37,-.04],arm_r:[-.72,-.63,-.37],arm_l:[-1.12,-.33,.48],leg_l:[-.44,0,.16],leg_r:[.38,0,-.16],hips_y:-.14,knee:[.38,.26]}],
+  [1.07,{torso:[-.11,.47,-.09],head:[-.10,-.29,.04],arm_r:[-2.25,.68,-.17],arm_l:[-1.78,.35,.32],leg_l:[-.35,0,.10],leg_r:[.48,0,-.18],hips_y:-.03,knee:[.2,.14]}],
+  [1.50,{torso:[.16,-.63,.11],head:[-.03,.25,-.03],arm_r:[-.84,-.75,-.43],arm_l:[-.94,-.4,.42],leg_l:[-.40,.03,.18],leg_r:[.34,-.04,-.12],hips_y:-.10,knee:[.31,.29]}],
+  [1.95,{torso:[-.17,.61,-.10],head:[-.15,-.33,.06],arm_r:[-2.65,.22,-.15],arm_l:[-2.24,.27,.25],leg_l:[-.16,.02,.18],leg_r:[.38,0,-.12],hips_y:-.035,knee:[.20,.14]}],
+  [2.42,{torso:[.25,-.87,.09],head:[.03,.46,-.03],arm_r:[-.92,-.8,-.49],arm_l:[-.91,-.58,.40],leg_l:[-.53,.02,.16],leg_r:[.56,-.02,-.14],hips_y:-.16,knee:[.42,.36]}],
+  [3.04,{torso:[-.22,.48,-.02],head:[-.16,-.1,0],arm_r:[-2.72,.24,-.18],arm_l:[-1.82,.18,.25],leg_l:[-.31,0,.13],leg_r:[.43,0,-.14],hips_y:-.04,knee:[.14,.18]}],
+  [3.35,{torso:[-.10,.25,.01],head:[-.26,-.07,0],arm_r:[-2.47,.16,-.24],hand_r:[-.28,0,-.04],arm_l:[-1.70,-.30,.54],hand_l:[.14,.1,.09],leg_l:[-.31,0,.13],leg_r:[.40,0,-.11],hips_y:-.02,knee:[.12,.16]}],
+  [4.08,{torso:[-.10,-.37,-.06],head:[-.32,.21,.06],arm_r:[-1.26,.47,-.48],hand_r:[-.25,0,.08],arm_l:[-2.26,-.06,.49],hand_l:[.28,0,.14],leg_l:[-.27,0,.12],leg_r:[.23,0,-.11],hips_y:0.035,knee:[.10,.08]}],
+  [4.75,{torso:[.08,.50,.06],head:[-.29,-.28,0],arm_r:[-2.05,-.25,-.30],hand_r:[.28,0,-.02],arm_l:[-1.95,.33,.31],leg_l:[-.32,0,.14],leg_r:[.45,0,-.12],hips_y:.02,knee:[.12,.09]}],
+  [5.52,{torso:[.20,-.30,.03],head:[-.16,.17,0],arm_r:[-1.69,.39,-.26],hand_r:[.24,0,.04],arm_l:[-1.48,-.35,.40],leg_l:[-.32,0,.14],leg_r:[.40,0,-.13],hips_y:-.085,knee:[.23,.23]}],
+  [5.94,{torso:[.24,-.62,.09],head:[.04,.31,0],arm_r:[-.95,-.73,-.33],arm_l:[-1.22,-.40,.36],leg_l:[-.46,0,.18],leg_r:[.41,0,-.15],hips_y:-.12,knee:[.34,.28]}],
+  [6.34,{torso:[-.17,.56,-.11],head:[-.14,-.17,0],arm_r:[-2.45,.50,-.16],arm_l:[-1.73,.30,.28],leg_l:[-.34,0,.12],leg_r:[.48,0,-.18],hips_y:-.025,knee:[.15,.12]}],
+  [6.77,{torso:[.19,-.73,.08],head:[.02,.36,0],arm_r:[-1.08,-.58,-.46],arm_l:[-1.15,-.34,.47],leg_l:[-.46,0,.18],leg_r:[.46,0,-.16],hips_y:-.16,knee:[.41,.37]}],
+  [7.30,{torso:[.37,.19,.10],head:[-.25,-.05,0],arm_r:[-.63,.44,-.41],hand_r:[.22,0,.24],arm_l:[-1.05,.16,.41],leg_l:[-.59,0,.17],leg_r:[.51,0,-.13],hips_y:-.23,knee:[.48,.33]}],
+  [7.86,{torso:[.02,-.12,.03],head:[-.17,.19,-.02],arm_r:[-1.69,.18,-.30],arm_l:[-1.22,-.19,.28],leg_l:[-.27,0,.14],leg_r:[.22,0,-.12],hips_y:-.062,knee:[.21,.18]}],
+  [8.64,{torso:[.02,-.12,.03],head:[-.17,.19,-.02],arm_r:[-1.69,.18,-.30],arm_l:[-1.22,-.19,.28],leg_l:[-.27,0,.14],leg_r:[.22,0,-.12],hips_y:-.062,knee:[.21,.18]}],
+  [9.67,{torso:[.04,-.23,.03],head:[-.06,.15,0],arm_r:[-1.12,.23,-.23],arm_l:[-1.19,-.15,.33],leg_l:[-.25,0,.13],leg_r:[.18,0,-.12],hips_y:-.055,knee:[.18,.16]}],
+  [10.20,{torso:[.04,-.23,.03],head:[-.06,.15,0],arm_r:[-1.12,.23,-.23],arm_l:[-1.19,-.15,.33],leg_l:[-.25,0,.13],leg_r:[.18,0,-.12],hips_y:-.055,knee:[.18,.16]}],
+];
+function nytheraPresentation(seconds:number,base:Pose,mode:"select"|"victory"):Pose {
+  const t=mode==="victory"? Math.min(Math.max(seconds,0),8.0):((seconds%10.2)+10.2)%10.2;
+  let i=0;
+  while (i<NYTHERA_SHOWCASE.length-2 && t>NYTHERA_SHOWCASE[i+1][0]) i++;
+  const p=NYTHERA_SHOWCASE[i],n=NYTHERA_SHOWCASE[i+1];
+  const u=Math.max(0,Math.min(1,(t-p[0])/(n[0]-p[0])));
+  const pose=between(filled(base,p[1]),filled(base,n[1]),u);
+  pose.head[1]+=Math.sin(seconds*1.5)*0.012;
+  pose.torso[0]+=Math.sin(seconds*2.5)*0.007;
+  return pose;
+}
+
 /** Entirely cosmetic; all poses use the same normalized VRM/procedural joints as combat. */
 export function presentationPose(name: string, seconds: number, base: Pose, mode: "select" | "victory" = "select"): Pose {
+  if (name.toLowerCase() === "nythera") return nytheraPresentation(seconds,base,mode);
   const entry = C[name.toLowerCase()];
   if (!entry) { // Future roster entries still receive a respectful, animated salute.
     const p = filled(base,{ torso:[.07,.07*Math.sin(seconds),0], arm_r:[-1.6-.25*Math.sin(seconds*1.5),.1,-.2],arm_l:[-.9,0,.3] });

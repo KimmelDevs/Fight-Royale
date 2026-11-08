@@ -69,6 +69,10 @@ export class Preview {
     model.ready.then(() => { if (this.model === model) this.onLoading(false); });
     this.model.traverse((o) => { if ((o as THREE.Mesh).isMesh) o.castShadow = !(o as any).userData.outline; });
     this.stand.add(this.model);
+    // NYTHERA_SHOWCASE_SPIN_TOSS_V3: widen framing so the whole overhead scythe stays visible.
+    this.camera.position.set(0, look.kit === "scythe" ? 1.42 : 1.25,
+      look.kit === "scythe" ? 5.80 : 4.6);
+    this.camera.lookAt(0, look.kit === "scythe" ? 1.12 : 0.95, 0);
     this.poses = Kits.poses(look.kit);
     this.pose = "idle";
     this.poseT = 0;
@@ -89,17 +93,30 @@ export class Preview {
       this.poseT += dt;
       // Unique, looping VRM-compatible presentation; visual only.
       // Distinct showcase timing, independent of live combat/skill logic.
-      const phase = this.mode === "victory" ? this.poseT : this.poseT % 6.2;
       const who = this.lookName.toLowerCase();
+      const phase = this.mode === "victory" ? this.poseT :
+        this.poseT % (who === "nythera" ? 10.2 : 6.2);
       this.model.presentationT = phase;
       this.model.presentationMode = this.mode;
-      this.model.glaivePose = who === "zarek" ? "show_baton" : "idle";
+      this.model.glaivePose = who === "nythera" ? "nythera_show" : who === "zarek" ? "show_baton" : "idle";
       // Kaizen: a controlled chain orbit, not an unrelated giant VFX circle.
       this.model.chainPose = who === "kaizen" && phase >= 0.55 && phase <= 2.30 ? "cbz_w" : "idle";
       // Ash: nock and pull a real bow string, then release at the flourish.
       this.model.draw = who === "ash" && phase >= 0.55 && phase < 1.35
         ? Math.min(1, (phase - 0.55) / 0.32) : 0;
-      this.model.blend(presentationPose(this.lookName, this.poseT, this.poses.idle, this.mode), dt, 11);
+      this.model.blend(presentationPose(this.lookName, this.poseT, this.poses.idle, this.mode), dt,
+        who === "nythera" ? 20 : 11);
+      if (who === "nythera") {
+        // Two distinct pirouettes support the shaft spins, but the throw/catch is weapon-only.
+        const ease = (a:number,b:number) => THREE.MathUtils.smoothstep(phase,a,b);
+        this.model.rotation.y = 2*Math.PI*(ease(1.21,2.25)+ease(6.14,6.95));
+        if (this.mode === "select") this.model.animateNytheraShowcase(phase,dt);
+        else {
+          // A mode change during an airborne throw must restore the held weapon.
+          this.model.rotation.y = 0;
+          this.model.animateNytheraShowcase(8.5,dt);
+        }
+      } else this.model.rotation.y = 0;
     }
     M.updateLight(this.camera);
     this.renderer.render(this.scene, this.camera);
