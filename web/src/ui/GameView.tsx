@@ -94,19 +94,38 @@ function ZenithTempoMeter({ stacks, seconds, blades, right = false }: {
 }
 
 function OrbitMeter({ stacks, seconds, right = false }: { stacks: number; seconds: number; right?: boolean }) {
-  const n = seconds > 0 ? Math.max(0, Math.min(3, Math.floor(stacks))) : 0;
-  return <div aria-label={`Orbit Marks ${n} of 3; ${seconds.toFixed(1)} seconds remaining`}
+  const n = seconds > 0 ? Math.max(0, Math.min(5, Math.floor(stacks))) : 0;
+  return <div aria-label={`Orbit Marks ${n} of 5; ${seconds.toFixed(1)} seconds remaining`}
     title="Nythera Orbit Marks: 25s on contact, consumed by Dreadfall's successful scythe strikes"
     style={{ marginTop: 5, display: "flex", alignItems: "center",
       justifyContent: right ? "flex-end" : "flex-start", gap: 5,
       color: "#e1baff", textShadow: "0 1px 4px #3f1768", fontSize: 11, fontWeight: 800 }}>
     <span>ORBIT</span>
-    {Array.from({ length: 3 }, (_, i) => <span key={i} style={{ fontSize: 17,
+    {Array.from({ length: 5 }, (_, i) => <span key={i} style={{ fontSize: 17,
       color: i < n ? "#e1aeff" : "#59466e", opacity: i < n ? 1 : 0.48,
       textShadow: i < n ? "0 0 7px #ad70f6" : "none" }}>◈</span>)}
     <span style={{ fontVariantNumeric: "tabular-nums", minWidth: 32 }}>
-      {n > 0 ? `${seconds.toFixed(1)}s` : "0/3"}
+      {n > 0 ? `${seconds.toFixed(1)}s` : "0/5"}
     </span>
+  </div>;
+}
+
+// Dreadfall increases Nythera's real attack speed by 0.1x per damaging hit.
+// This meter is shown to both fighters; it lasts until the round ends.
+function DreadfallTempoMeter({ hits, right = false }: { hits: number; right?: boolean }) {
+  const stacks = Math.max(0, Math.min(14, Math.floor(hits)));
+  const speed = Math.min(2.4, 1 + stacks * 0.10);
+  return <div title="Dreadfall Tempo: every real damaging hit in Dreadfall earns +0.10x attack speed. Caps at 2.40x, persists through stance switches, resets next round. Block/parry/clash deny stacks."
+    aria-label={`Nythera Dreadfall Tempo: ${stacks} of 14 stacks, ${speed.toFixed(2)}x attack speed, until end of round`}
+    style={{ marginTop: 5, padding: "4px 7px", borderRadius: 7,
+      border: "1px solid rgba(191,145,255,.54)", background: "rgba(31,15,53,.85)",
+      color: "#ecd7ff", fontSize: 10, fontWeight: 800, textAlign: right ? "right" : "left" }}>
+    <div style={{ display: "flex", justifyContent: right ? "flex-end" : "flex-start", gap: 6 }}>
+      <span>DREADFALL TEMPO</span><strong>{speed.toFixed(2)}×</strong><span>{stacks}/14 · ROUND</span>
+    </div>
+    <div style={{ display: "flex", justifyContent: right ? "flex-end" : "flex-start", gap: 2, marginTop: 3 }}>
+      {Array.from({ length: 14 }, (_, i) => <span key={i} style={{ color: i < stacks ? "#d8adff" : "#544269", fontSize: 9 }}>◆</span>)}
+    </div>
   </div>;
 }
 
@@ -286,6 +305,7 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
               {me.bleedStacks > 0 && <div style={{ color: "#ff7988", fontSize: 11, fontWeight: 800 }}>🩸 BLEED ×{me.bleedStacks}/5</div>}
               {(me.id === "nythera" || me.orbitDisplayT > 0) &&
                 <OrbitMeter stacks={me.orbitDisplayStacks} seconds={me.orbitDisplayT} />}
+              {me.id === "nythera" && <DreadfallTempoMeter hits={me.nytheraDreadfallHits} />}
               {/* ZAREK_WHITE_COUNTER_V1 */}
               {me.id === "zarek" && (
                 <div style={{ display: "flex", alignItems: "center", gap: 7,
@@ -331,6 +351,7 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
               {other.bleedStacks > 0 && <div style={{ color: "#ff7988", fontSize: 11, fontWeight: 800, textAlign: "right" }}>🩸 BLEED ×{other.bleedStacks}/5</div>}
               {(other.id === "nythera" || other.orbitDisplayT > 0) &&
                 <OrbitMeter stacks={other.orbitDisplayStacks} seconds={other.orbitDisplayT} right />}
+              {other.id === "nythera" && <DreadfallTempoMeter hits={other.nytheraDreadfallHits} right />}
               <StatusChips list={other.status} right />
             </div>
           )}

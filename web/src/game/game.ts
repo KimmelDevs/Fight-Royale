@@ -1095,7 +1095,7 @@ export class Game implements MobHost {
 
   /** Particles on anyone with an active status (runs on every machine from the synced bitmask). */
   private statusFx(dt: number) {
-    // Three unmistakable purple orbit beads above affected enemies, including
+    // Five unmistakable purple orbit beads above affected enemies, including
     // remote opponents via their replicated fighter snapshot fields.
     this.orbitFxCooldown -= dt;
     if (this.orbitFxCooldown <= 0) {
@@ -1104,9 +1104,9 @@ export class Game implements MobHost {
         if (f.isDown() || f.orbitDisplayT <= 0 || f.orbitDisplayStacks <= 0) continue;
         const origin = f.chest().add(new THREE.Vector3(0, 0.65, 0));
         for (let i = 0; i < f.orbitDisplayStacks; i++) {
-          const ang = this.time * 1.9 + (i * Math.PI * 2) / 3;
+          const ang = this.time * 1.9 + (i * Math.PI * 2) / 5;
           const bead = origin.clone().add(new THREE.Vector3(Math.cos(ang)*0.46, 0.15*Math.sin(ang*0.8), Math.sin(ang)*0.46));
-          this.fx.motes(bead, i === 2 ? "#f9e3ff" : "#c990fa", 4);
+          this.fx.motes(bead, i === 4 ? "#f9e3ff" : "#c990fa", 4);
         }
       }
     }
@@ -1863,9 +1863,16 @@ export class Game implements MobHost {
     // clear side changes and deeper Dreadfall finishes. No expanded hitboxes.
     const basic = /^l[1-6]$/.test(a.id);
     if (basic || a.type === "melee") {
-      const beat = basic ? Math.min(6, Math.max(1, Number(a.id.substring(1)))) : 3;
+      const aerial = /^air_l[1-4]$/.test(a.id);
+      const beat = basic ? Math.min(6, Math.max(1, Number(a.id.substring(1)))) :
+        aerial ? Math.max(1, Math.min(4, Number(a.id.slice(-1)))) : 3;
       this.fxp("nytheraCrescent", f.chest(), f.root.rotation.y, beat, !light);
       if (basic) this.snd(beat === 6 ? "swing_heavy" : "swing2", light ? 0.40 : 0.53);
+      if (aerial) {
+        // Four airy crescent ribbons, escalating into a bright final scythe bloom.
+        this.fxp("sparks", tip, beat === 4 ? "#f1d9ff" : col, beat === 4 ? 23 : 9, beat === 4 ? 5.2 : 3.3);
+        if (beat === 4) this.fxp("ring", tip, col, 0.91, 0.19, 0.70);
+      }
     }
     this.fxp("slashes", tip, col);
     this.fxp("flash", tip, light ? "#dbc7ff" : "#9d5cea", light ? 0.25 : 0.37, 0.12, 0.75);
@@ -4259,6 +4266,17 @@ export class Game implements MobHost {
     // but a successful parry is a clean denial. No combo beat depends on a hit.
     const gravityDamage = result === "hit" || result === "crit" || result === "ko";
     const gravityContact = gravityDamage || result === "blocked";
+    if (gravityOwner && gravityDamage && gravityOwner.gravityMode === "heavy" && a.dmg > 0) {
+      gravityOwner.nytheraDreadfallHits = Math.min(14, gravityOwner.nytheraDreadfallHits + 1);
+      const speed = gravityOwner.nytheraAttackSpeed();
+      // Only real HP damage earns speed. Block, parry, clash, and DOT do not.
+      if (gravityOwner.nytheraDreadfallHits === 1 ||
+          gravityOwner.nytheraDreadfallHits % 3 === 0 || gravityOwner.nytheraDreadfallHits === 14) {
+        this.fxp("num", gravityOwner.chest().add(new THREE.Vector3(0,0.80,0)),
+          `DREADFALL ${speed.toFixed(1)}×`, "#d9b0ff", 0.56);
+        this.fxp("motes", gravityOwner.chest(), "#a06df0", 8);
+      }
+    }
     if (gravityOwner && gravityContact && a.dmg > 0) {
       if (heavySentence && gravityDamage) {
         this.gravityMarks.delete(markKey);
@@ -4270,12 +4288,12 @@ export class Game implements MobHost {
           this.fxp("sparks", d.chest(), "#c899ff", 10 + marks*8, 5);
         }
       } else if (gravityOwner.gravityMode === "light" && !heavySentence) {
-        const n = Math.min(3, marks + 1);
+        const n = Math.min(5, marks + 1);
         this.gravityMarks.set(markKey, { stacks:n, expires:this.time + 25 });
         if (d instanceof Fighter) { d.orbitDisplayStacks = n; d.orbitDisplayT = 25; }
         this.fxp("ring", d.chest(), "#b68ef7", 0.41 + n*0.14, 0.18, 0.58);
         this.fxp("num", d.chest().add(new THREE.Vector3(0,0.72,0)),
-          `◈ ORBIT ${n}/3`, "#ddc0ff", 0.59);
+          `◈ ORBIT ${n}/5`, "#ddc0ff", 0.59);
         this.fxp("motes", d.chest(), "#dbb7ff", 7 + n*3);
       }
       if (gravityDamage && d instanceof Fighter && !d.stage && !d.isDown()) {
@@ -5185,7 +5203,8 @@ export class Game implements MobHost {
       if (f.kit === "scythe") {
         passives.push({ label: "GRAVITY", value: f.gravityMode === "light" ? "MOONFLOAT" : "DREADFALL" });
         passives.push({ label: "ORBIT ON FOE", value: rival && rival.orbitDisplayT > 0
-          ? `${rival.orbitDisplayStacks}/3 · ${rival.orbitDisplayT.toFixed(1)}s` : "0/3" });
+          ? `${rival.orbitDisplayStacks}/5 · ${rival.orbitDisplayT.toFixed(1)}s` : "0/5" });
+        passives.push({ label: "DREADFALL SPEED", value: `${f.nytheraAttackSpeed().toFixed(2)}× · ${f.nytheraDreadfallHits}/14 (round)` });
       }
       if (f.kit === "hammer") passives.push({ label: "HEARTS", value: `${f.nesaCCharges}/3` });
       if (f.kit === "bomb") passives.push({ label: "MINES", value: `${f.bobMineCharges}/4` });
@@ -5205,6 +5224,7 @@ export class Game implements MobHost {
       pct: f.pct, stocks: f.stocks, out: f.out, team: f.team, status: f.status.kinds(), bloodlust: f.bloodlust, bloodFrenzyT: f.bloodFrenzyT, bloodFestivalT: f.bloodFestivalT, clashMomentum: f.clashMomentum, chainBindT: f.chainBindT,
       chainBindKind: f.chainBindKind, gravityMode: f.gravityMode, gravitySwitchCd: f.gravitySwitchCd,
       orbitDisplayStacks: f.orbitDisplayStacks, orbitDisplayT: f.orbitDisplayT,
+      nytheraDreadfallHits: f.nytheraDreadfallHits,
       zenithTempoStacks: f.zenithTempoStacks, zenithTempoT: f.zenithMagneticChargeT,
       zenithTwinBlades: f.zenithSpearOut,
       bleedStacks: f.status.has("bleed") ? Math.max(f.status.stacks("bleed"), f.bleedDisplayStacks) : 0,

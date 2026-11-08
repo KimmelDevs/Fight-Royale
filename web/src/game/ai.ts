@@ -2555,13 +2555,15 @@ export class AiBrain implements Brain {
     if (!f.stage && !f.onGround &&
         (f.state === S.IDLE || (f.state === S.ATTACK &&
           (f.kit === "kicks" ? /^air_l[1-3]$/.test(f.atkId) :
+            f.kit === "scythe" ? /^air_l[1-4]$/.test(f.atkId) :
             f.kit === "assassin" && f.atkId === "air_l1"))) &&
         !f.airSliceUsed &&
         flatGap < f.attacks.air_l1.reach + 0.20 &&
         Math.abs(o.chest().y - f.chest().y) < 2.1 && this.airSliceCd <= 0 &&
         this.aerialAirStrikeChance(o, dt)) {
       this.aiAirTap = true;
-      this.airSliceCd = f.kit === "kicks" || f.kit === "assassin" ? rand(0.17, 0.24) : rand(0.55, 0.85);
+      this.airSliceCd = f.kit === "kicks" || f.kit === "assassin" || f.kit === "scythe"
+        ? rand(0.17, 0.24) : rand(0.55, 0.85);
       this.queue = [];
       this.hold = 0;
     }

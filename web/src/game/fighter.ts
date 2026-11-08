@@ -178,6 +178,9 @@ export class Fighter implements Entity {
   // NYTHERA_ELEGANT_REAPER_V4: passive readout on both clients, tied to the afflicted fighter.
   orbitDisplayStacks = 0;
   orbitDisplayT = 0;
+  // NYTHERA_AERIAL_DREADFALL_V9: +0.10x each real Dreadfall hit, capped at 2.40x for this round.
+  nytheraDreadfallHits = 0;
+  nytheraAttackSpeed(): number { return Math.min(2.4, 1 + Math.min(14, this.nytheraDreadfallHits) * 0.10); }
   onGravityShift: (f: Fighter) => void = () => {};
   onSwing: (f: Fighter) => void = () => {};
   // ZENITH_IRON_SOVEREIGN_V1_20261108 — pure game-side spear state.
@@ -255,6 +258,9 @@ export class Fighter implements Entity {
   // NESA_DODGE_KIRA_AIR_3_V1: Kira may deliver three separately timed air kicks per jump.
   private kiraAirKicks = 0;
   private kiraAirBuffered = false;
+  // Four separately defendable airborne scythe cuts, click-buffered like Kira's kicks.
+  private nytheraAirSlices = 0;
+  private nytheraAirBuffered = false;
   // NYX_SHADOW_COMBAT_AIR_2_V1: two separate airborne dagger hits per jump.
   private nyxAirStrikes = 0;
   private nyxAirBuffered = false;
@@ -568,6 +574,25 @@ export class Fighter implements Entity {
           knock: i === 3 ? 2.1 : 0.8, heavy: false, stagger: false, next: "" };
       }
     }
+    if (this.kit === "scythe") {
+      // Moonfloat and Dreadfall: four graceful arcs per jump, never four auto-hits.
+      // Each is a separate melee action, so the defender can block, parry,
+      // dodge or clash any individual slice.
+      const names = ["Lunar Sweep", "Veil Reversal", "Falling Crescent", "Eclipse Petal"];
+      const damage = [34, 37, 40, 52];
+      for (let n = 1; n <= 4; n++) {
+        const key = `air_l${n}`;
+        const original = this.attacks[n === 4 ? "air_l3" : key];
+        this.attacks[key] = { ...original, id: key, name: names[n - 1],
+          desc: `Air scythe cut ${n}/4: tap attack again in midair to continue. Individual cuts can be blocked, parried or clashed.`,
+          type: "melee", no_parry: false, wind: n === 4 ? 0.11 : 0.085,
+          active: 0.090, recover: n === 4 ? 0.24 : 0.115,
+          dmg: damage[n - 1], guard: n === 4 ? 22 : 12,
+          reach: 2.40 + n * 0.045, lunge: 0.18,
+          knock: n === 4 ? 2.9 : 0.35, stun: n === 4 ? 0.26 : 0.14,
+          heavy: false, stagger: false, style: "gravity_air_crescent", next: "" };
+      }
+    }
     if (this.kit === "assassin") {
       // Two real aerial melee swings, each with separate block, parry, clash and hit tests.
       this.attacks.air_l1 = { ...this.attacks.air_l1,
@@ -654,6 +679,24 @@ export class Fighter implements Entity {
           this.poses[`kira_air_${n}_${direction}_s`] = ks;
         }
       }
+      if (this.kit === "scythe") {
+        // Four alternating two-hand scythe arcs with real up/level/down aiming.
+        // Reuse proven Gravity Reaper pose sources; avoid a generic sword chop.
+        const winds = ["gr1_w", "gr2_w", "gr3_w", "gr6_w"];
+        const slashes = ["gr1_s", "gr2_s", "gr3_s", "gr6_s"];
+        for (let n = 1; n <= 4; n++) {
+          const sw = copy(source(winds[n - 1])), ss = copy(source(slashes[n - 1]));
+          sw.torso[0] += pitch < 0 ? -0.13 : pitch > 0 ? 0.07 : 0;
+          ss.torso[0] += pitch < 0 ? 0.23 : pitch > 0 ? -0.18 : 0;
+          sw.head[0] += pitch < 0 ? 0.06 : pitch > 0 ? -0.06 : 0;
+          ss.head[0] += pitch < 0 ? 0.12 : pitch > 0 ? -0.09 : 0;
+          sw.leg_l[0] -= 0.33; sw.leg_r[0] += 0.26;
+          ss.leg_l[0] -= 0.14; ss.leg_r[0] += 0.22;
+          if (n === 4) { sw.torso[1] -= 0.18; ss.torso[1] += 0.23; }
+          this.poses[`nythera_air_${n}_${direction}_w`] = sw;
+          this.poses[`nythera_air_${n}_${direction}_s`] = ss;
+        }
+      }
       if (this.kit === "assassin") {
         // Dagger one sweeps across with the right hand, dagger two reverses with the left.
         // Both poses are generated for up/level/down aim; they also work for VRM avatars.
@@ -709,15 +752,19 @@ export class Fighter implements Entity {
     // NESA_DODGE_KIRA_AIR_3_V1: 3 taps / connected kicks for Kira, one for others.
     if (this.kit === "kicks") this.kiraAirKicks = Math.min(3, this.kiraAirKicks + 1);
     if (this.kit === "assassin") this.nyxAirStrikes = Math.min(2, this.nyxAirStrikes + 1);
+    if (this.kit === "scythe") this.nytheraAirSlices = Math.min(4, this.nytheraAirSlices + 1);
     this.airSliceUsed = this.kit === "kicks" ? this.kiraAirKicks >= 3 :
-      this.kit === "assassin" ? this.nyxAirStrikes >= 2 : true;
+      this.kit === "assassin" ? this.nyxAirStrikes >= 2 :
+      this.kit === "scythe" ? this.nytheraAirSlices >= 4 : true;
     this.kiraAirBuffered = false;
     this.nyxAirBuffered = false;
+    this.nytheraAirBuffered = false;
     this.airSliceQueued = false;
     this.airSliceAngle = this.airAimAtOpponent();
     this.holding = false;
     this.startAttack(this.kit === "kicks" ? `air_l${this.kiraAirKicks}` :
-      this.kit === "assassin" ? `air_l${this.nyxAirStrikes}` : "air_l1");
+      this.kit === "assassin" ? `air_l${this.nyxAirStrikes}` :
+      this.kit === "scythe" ? `air_l${this.nytheraAirSlices}` : "air_l1");
   }
 
   isDown() { return this.state === S.KO; }
@@ -1217,6 +1264,9 @@ export class Fighter implements Entity {
           this.atkId === "air_l1" && this.nyxAirStrikes < 2) {
         // Buffer second tap during Falling Fang; release into Shadow Cross on recovery.
         this.nyxAirBuffered = true;
+      } else if (this.kit === "scythe" && this.state === S.ATTACK &&
+          /^air_l[1-4]$/.test(this.atkId) && this.nytheraAirSlices < 4) {
+        this.nytheraAirBuffered = true;
       } else this.tryAirSlice();
       return;
     }
@@ -1243,7 +1293,7 @@ export class Fighter implements Entity {
     if (pressed && this.onGround && (this.state === S.IDLE || this.state === S.BLOCK)) {
       this.velY = this.jumpV;
       this.onGround = false;
-      this.airSliceUsed = false; this.kiraAirKicks = 0; this.kiraAirBuffered = false; this.nyxAirStrikes = 0; this.nyxAirBuffered = false;
+      this.airSliceUsed = false; this.kiraAirKicks = 0; this.kiraAirBuffered = false; this.nyxAirStrikes = 0; this.nyxAirBuffered = false; this.nytheraAirSlices = 0; this.nytheraAirBuffered = false;
       if (this.state === S.BLOCK) this.setState(S.IDLE);
       // Space+Click on the same frame: jump, then swing (never anti-air launch).
       if (this.kit === "hammer" && this.nesaAirHolding) this.nesaAirChargeT = 0;
@@ -1622,6 +1672,15 @@ export class Fighter implements Entity {
       this.atk = { ...this.atk, wind: this.atk.wind / speed,
         active: this.atk.active / speed, recover: this.atk.recover / speed };
     }
+    // NYTHERA_AERIAL_DREADFALL_V9: speed earned ONLY through true damaging Dreadfall hits.
+    // Stored for the rest of the round, in either stance; caps at 2.40x.
+    if (this.kit === "scythe") {
+      const speed = this.nytheraAttackSpeed();
+      this.atk = { ...this.atk,
+        wind: this.atk.wind / speed,
+        active: this.atk.active / speed,
+        recover: this.atk.recover / speed };
+    }
     // ZENITH_TEMPO_01X_5S_V7: real hit +0.01x up to 14 stacks, resetting after 5s.
     // Actual current ceiling: 1.14x spear / 2.14x twin blades (14-stack cap).
     // Reduce REAL wind-up, active, recovery, not just pose blending.
@@ -1707,6 +1766,17 @@ export class Fighter implements Entity {
       this.airSliceUsed = this.kiraAirKicks >= 3;
       this.airSliceAngle = this.airAimAtOpponent();
       this.startAttack(`air_l${this.kiraAirKicks}`);
+      return;
+    }
+
+    if (this.kit === "scythe" && this.nytheraAirBuffered && !this.onGround &&
+        /^air_l[1-4]$/.test(this.atkId) && this.nytheraAirSlices < 4 &&
+        this.stateT >= w + ac) {
+      this.nytheraAirBuffered = false;
+      this.nytheraAirSlices++;
+      this.airSliceUsed = this.nytheraAirSlices >= 4;
+      this.airSliceAngle = this.airAimAtOpponent();
+      this.startAttack(`air_l${this.nytheraAirSlices}`);
       return;
     }
 
@@ -1955,7 +2025,7 @@ export class Fighter implements Entity {
       this.root.position.y = 0;
       this.velY = 0;
       this.onGround = true;
-      this.airSliceUsed = false; this.kiraAirKicks = 0; this.kiraAirBuffered = false; this.nyxAirStrikes = 0; this.nyxAirBuffered = false;
+      this.airSliceUsed = false; this.kiraAirKicks = 0; this.kiraAirBuffered = false; this.nyxAirStrikes = 0; this.nyxAirBuffered = false; this.nytheraAirSlices = 0; this.nytheraAirBuffered = false;
       this.airSliceQueued = false;
       this.airJump = 0;
       this.airRecoverUsed = false;
@@ -2240,7 +2310,7 @@ export class Fighter implements Entity {
     if (this.chainBoundBy) this.chainBoundBy.releaseChainBind();
     this.chainBoundBy = null;
     this.airChaseT = 0; this.airChaseMoveT = 0; this.airRecoverUsed = false;
-    this.airSliceUsed = false; this.kiraAirKicks = 0; this.kiraAirBuffered = false; this.nyxAirStrikes = 0; this.nyxAirBuffered = false; this.airSliceQueued = false;
+    this.airSliceUsed = false; this.kiraAirKicks = 0; this.kiraAirBuffered = false; this.nyxAirStrikes = 0; this.nyxAirBuffered = false; this.nytheraAirSlices = 0; this.nytheraAirBuffered = false; this.airSliceQueued = false;
     this.nesaAirHolding = false; this.nesaAirChargeT = 0; this.nesaSpinYaw = 0;
     this.nesaCCharges = 3; this.nesaCRechargeT = 0; this.nesaCArmed = true;
     this.model.nesaSpinHorizontal = 0;
@@ -2253,6 +2323,7 @@ export class Fighter implements Entity {
     this.chainFuryT = 0;
     this.judgmentT = 0; this.model.setJudgment(false);
     this.clashMomentum = 0;
+    this.nytheraDreadfallHits = 0; // new round: wipe Dreadfall speed progress
     if (this.look.element === "metal") {
       this.zenithSpearOut = false;
       this.zenithMagneticChargeT = 0;
@@ -2282,7 +2353,7 @@ export class Fighter implements Entity {
     if (this.chainBoundBy) this.chainBoundBy.releaseChainBind();
     this.chainBoundBy = null;
     this.airChaseT = 0; this.airChaseMoveT = 0;
-    this.airSliceUsed = false; this.kiraAirKicks = 0; this.kiraAirBuffered = false; this.nyxAirStrikes = 0; this.nyxAirBuffered = false; this.airSliceQueued = false;
+    this.airSliceUsed = false; this.kiraAirKicks = 0; this.kiraAirBuffered = false; this.nyxAirStrikes = 0; this.nyxAirBuffered = false; this.nytheraAirSlices = 0; this.nytheraAirBuffered = false; this.airSliceQueued = false;
     this.nesaAirHolding = false; this.nesaAirChargeT = 0; this.nesaSpinYaw = 0;
     this.nesaCCharges = 3; this.nesaCRechargeT = 0; this.nesaCArmed = true;
     this.model.nesaSpinHorizontal = 0;
@@ -2290,6 +2361,7 @@ export class Fighter implements Entity {
     this.model.parryCounterSpin = 0;
     this.parryRecoilT = 0; this.parryCounterPendingDepth = 0; this.parryCounterDepth = 0; this.counterVisualRemote = false;
     this.clashMomentum = 0;
+    this.nytheraDreadfallHits = 0;
     this.bloodlust = 0; this.bloodFrenzyT = 0; this.bloodFeintT = 0; this.sickleOut = false; this.bloodFestivalT = 0;
     this.status.clear();
     this.setState(S.KO);
@@ -2460,7 +2532,7 @@ export class Fighter implements Entity {
         pos.y = p.y;
         this.velY = 0;
         this.onGround = true;
-        this.airSliceUsed = false; this.kiraAirKicks = 0; this.kiraAirBuffered = false; this.nyxAirStrikes = 0; this.nyxAirBuffered = false;
+        this.airSliceUsed = false; this.kiraAirKicks = 0; this.kiraAirBuffered = false; this.nyxAirStrikes = 0; this.nyxAirBuffered = false; this.nytheraAirSlices = 0; this.nytheraAirBuffered = false;
         this.airSliceQueued = false;
         this.ground = p;
         this.airJumps = 1;
@@ -2683,6 +2755,7 @@ export class Fighter implements Entity {
     }
     // Directional air swings use real distinct poses, including for remote VRM models.
     if (!this.stage && this.state === S.ATTACK && (this.atkId === "air_l1" || (this.kit === "kicks" && /^air_l[2-3]$/.test(this.atkId)) ||
+        (this.kit === "scythe" && /^air_l[2-4]$/.test(this.atkId)) ||
         (this.kit === "assassin" && this.atkId === "air_l2"))) {
       const direction = this.airSliceAngle < -0.28 ? "down" :
         this.airSliceAngle > 0.28 ? "up" : "level";
@@ -2691,8 +2764,12 @@ export class Fighter implements Entity {
         p = `kira_air_${number}_${direction}_${this.atkPhase === 0 ? "w" : "s"}`;
       } else if (this.kit === "assassin") {
         p = `nyx_air_${this.atkId === "air_l2" ? 2 : 1}_${direction}_${this.atkPhase === 0 ? "w" : "s"}`;
+      } else if (this.kit === "scythe") {
+        const number = Math.max(1, Math.min(4, Number(this.atkId.slice(-1)) || 1));
+        p = `nythera_air_${number}_${direction}_${this.atkPhase === 0 ? "w" : "s"}`;
       } else p = `air_slice_${direction}_${this.atkPhase === 0 ? "w" : "s"}`;
-      sp = this.atkPhase === 0 ? (this.kit === "assassin" ? 34 : 24) : (this.kit === "assassin" ? 74 : 56);
+      sp = this.atkPhase === 0 ? (this.kit === "assassin" || this.kit === "scythe" ? 34 : 24) :
+        (this.kit === "assassin" || this.kit === "scythe" ? 78 : 56);
     }
     if (this.look.element === "metal" && this.zenithCatchRecoilT > 0 &&
         this.state !== S.KO && this.state !== S.WIN) {
@@ -2719,7 +2796,8 @@ export class Fighter implements Entity {
       this.zenithSpearOut ? 1 : 0, +this.zenithCatchShieldT.toFixed(2), +this.zenithCatchRecoilT.toFixed(2),
       +this.zenithMagneticChargeT.toFixed(2), this.gravityMode === "heavy" ? 1 : 0, +this.gravitySwitchCd.toFixed(2), +this.gravityFloatT.toFixed(2),
       this.orbitDisplayStacks, +this.orbitDisplayT.toFixed(2),
-      this.zenithTempoStacks, this.bleedDisplayStacks];
+      this.zenithTempoStacks, this.bleedDisplayStacks,
+      this.nytheraDreadfallHits]; // NYTHERA_AERIAL_DREADFALL_V9: new optional field 67
   }
 
   applySnapshot(s: any[]) {
@@ -2753,6 +2831,7 @@ export class Fighter implements Entity {
     this.orbitDisplayT = s.length > 64 ? s[64] : 0;
     this.zenithTempoStacks = s.length > 65 ? s[65] : 0;
     this.bleedDisplayStacks = s.length > 66 ? s[66] : 0;
+    this.nytheraDreadfallHits = s.length > 67 ? s[67] : 0;
     this.model.gravityHeavy = this.kit === "scythe" && this.gravityMode === "heavy";
     if (this.look.element === "metal" && s.length > 58) {
       const isOut = s[56] === 1;
