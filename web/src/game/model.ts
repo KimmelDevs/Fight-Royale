@@ -1,3 +1,6 @@
+// RAIGO_IRON_BASTION_V31 — synchronized multi-hit flail, stable Momentum, close-mid AI.
+// RAIGO_IRON_BASTION_V3 — hit-aligned swings, world lag, stable idle, impact poses.
+// RAIGO_IRON_BASTION_V2 — articulated chained flail, constrained motion and progress-driven attacks.
 // BALANCE_KIRA_KAEDE_PATTERN_AI_AIR_ICON_20261107_V1
 // KAIZEN_PARRY_SPIN_SLOW_REVERSE_V10
 // FIGHT_ROYALE_PARRY_SPIN_COUNTERS_V2
@@ -389,6 +392,39 @@ export class FighterModel extends THREE.Group {
   private roxyFloatingBook: THREE.Group | null = null;
   private roxyOpenPalm = 0;
   private glaivePivot: THREE.Group | null = null;
+  // RAIGO_IRON_BASTION_V1 — physically separate hand grips, articulated ball and curved links.
+  private raigoAxe: THREE.Group | null = null;
+  private raigoBallRoot: THREE.Group | null = null;
+  raigoFlailTip: THREE.Object3D | null = null;
+  private raigoChainFrom: THREE.Object3D | null = null;
+  private raigoLinks: THREE.Group[] = [];
+  private raigoAngle = 0;
+  private raigoLastPose = "";
+  private raigoSwingT = 0;
+  private raigoBallPrev = new THREE.Vector3();
+  private raigoQuat = new THREE.Quaternion();
+  private raigoSpinQuat = new THREE.Quaternion();
+  private raigoEuler = new THREE.Euler();
+  private raigoAnchor = new THREE.Vector3();
+  private raigoDesired = new THREE.Vector3();
+  private raigoOld = new THREE.Vector3();
+  private raigoDelta = new THREE.Vector3();
+  private raigoPathP = new THREE.Vector3();
+  private raigoPathQ = new THREE.Vector3();
+  private raigoMid = new THREE.Vector3();
+  private raigoUp = new THREE.Vector3(0,1,0);
+  private raigoBallInitialized = false;
+  // Keep the previous ball positions in world space, so fighter movement doesn't carry
+  // the heavy ball rigidly with the torso. These are reused, not allocated per frame.
+  private raigoWorldTip = new THREE.Vector3();
+  private raigoWorldPrevTip = new THREE.Vector3();
+  private raigoRootWorld = new THREE.Vector3();
+  private raigoRootPrev = new THREE.Vector3();
+  private raigoRootReady = false;
+  raigoPose = "idle";
+  raigoProgress = 0;
+  raigoBeat = 0;
+  raigoPulses = 1;
   // ZEPHYR_DRAGON_DANCER_V1 · SANJIEKUN_VISUAL_V17 — articulated rod/chain rig.
   private dragonRoot: THREE.Group | null = null;
   private dragonGhost: THREE.Group | null = null;
@@ -575,6 +611,7 @@ export class FighterModel extends THREE.Group {
       case "sickle": this.buildSickles(); break;
       case "scythe": this.buildGravityScythe(); break;
       case "glaive": this.buildGlaive(); break;
+      case "axeflail": this.buildRaigoAxeFlail(); break;
       case "tristaff": this.buildDragonStaff(); break;
       case "chainblade": this.buildChainblade(); break;
       case "assassin": this.buildDaggers(); break;
@@ -1603,6 +1640,189 @@ export class FighterModel extends THREE.Group {
   }
 
   /** ZAREK_STORM_V1: double-ended conductive glaive; meshes follow the VRM's hands. */
+  /** RAIGO_IRON_BASTION_V2: The axe belongs to the right hand. The LEFT hand grips
+   * a real visible chain handle, with the ball freely animated in fighter-local space.
+   * Chain rings are distinct links. No vertex buffers or meshes are created per frame. */
+  private buildRaigoAxeFlail() {
+    const steel=this.tn("#b8c0c7"), edge=this.tn("#f0e8d9"), iron=this.tn("#30383e"),
+      bronze=this.tn("#c09a61"), dark=this.tn("#454c51");
+    const axe=pivot(this.hand_r,[0,0,0],[PI/2,0,0]);
+    this.raigoAxe=axe;
+    mesh(axe,cyl(.043,.046,1.36,10),dark,[0,.36,0]);
+    mesh(axe,cyl(.058,.050,.37,10),iron,[0,.15,0]);
+    for(const y of [-.18,.15,.50,.89]) mesh(axe,torus(.04,.055),bronze,[0,y,0],[PI/2,0,0]);
+    const head=pivot(axe,[0,.93,0]);
+    mesh(head,box(.24,.26,.13),iron,[.025,0,0]);
+    const outline=new THREE.Shape();
+    outline.moveTo(.03,.20);outline.lineTo(.19,.36);
+    outline.bezierCurveTo(.46,.30,.61,.15,.67,.06);
+    outline.bezierCurveTo(.50,-.04,.48,-.19,.50,-.34);
+    outline.lineTo(.20,-.22);outline.lineTo(.03,-.17);outline.closePath();
+    const blade=new THREE.ExtrudeGeometry(outline,{depth:.055,bevelEnabled:true,bevelSize:.019,
+      bevelThickness:.015,bevelSegments:1,steps:1});
+    mesh(head,blade,steel,[0,0,-.027]);
+    for(let j=0;j<4;j++) mesh(head,box(.09,.018,.015),edge,[.39+j*.053,.255-j*.115,.05],
+      [0,0,-.25-j*.20]);
+    mesh(head,cyl(.13,.13,.10,8),bronze,[.04,0,0],[PI/2,0,0]);
+    this.bladeBase=pivot(axe,[0,.75,0]);
+    this.bladeTip=pivot(head,[.54,.04,0]);
+    mesh(axe,sphere(.058,12),bronze,[0,-.29,0]);
+    // Left fist physically closes around this compact handle. The chain starts HERE.
+    const handle=pivot(this.hand_l,[0,-.05,0],[PI/2,0,0]);
+    mesh(handle,cyl(.041,.044,.28,12),dark,[0,.025,0]);
+    for(const y of [-.08,.08]) mesh(handle,torus(.045,.058),bronze,[0,y,0],[PI/2,0,0]);
+    this.raigoChainFrom=pivot(handle,[0,.178,0]);
+    mesh(handle,sphere(.054,12),bronze,[0,.172,0]);
+    // The ball is NOT a child of either hand and cannot bend or stretch the character arm.
+    const ball=pivot(this,[0,1.15,0]);
+    this.raigoBallRoot=ball;
+    this.raigoFlailTip=ball;
+    mesh(ball,sphere(.205,22),iron);
+    // Visible plated facets outside the iron (rather than an invisible buried sphere).
+    for (let n=0;n<6;n++) {
+      const theta=n*TAU/6;
+      mesh(ball,box(.055,.18,.023),steel,[.188*Math.cos(theta),.04,.188*Math.sin(theta)],
+        [0,-theta,0]);
+    }
+    // Fibonacci distribution covers both poles and avoids the old equatorial band.
+    for(let n=0;n<22;n++) {
+      const y=1-2*(n+.5)/22;
+      const r=Math.sqrt(Math.max(0,1-y*y)),az=n*2.3999632297;
+      const axis=new THREE.Vector3(Math.cos(az)*r,y,Math.sin(az)*r);
+      const spike=mesh(ball,new THREE.ConeGeometry(.060,.19,7),steel,
+        axis.clone().multiplyScalar(.225));
+      spike.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),axis);
+    }
+    mesh(ball,sphere(.064,12),bronze,[0,.212,0]);
+    // Alternating interlocked rings, not a skinny stretched cylinder.
+    for(let i=0;i<32;i++) {
+      const link=pivot(this);
+      mesh(link,torus(.030,.055),i%2?steel:iron,[0,0,0],[0,i%2?PI/2:0,0]);
+      this.raigoLinks.push(link);
+    }
+    this.castPoint=ball;
+    this.shieldNode=axe;
+  }
+
+  /** Verlet-like inertial endpoint driven by timed attack arcs with a hard chain-length
+   * constraint; produces real continuous orbits instead of oscillating Euler angles.
+   * Deliberately cinematic, not a full rigid-body simulator: gameplay hit tests stay
+   * in game.ts and pass through the native block/parry/clash rules. */
+  private updateRaigoWeapon(dt:number) {
+    const axe=this.raigoAxe,ball=this.raigoBallRoot,grip=this.raigoChainFrom;
+    if(!axe || !ball || !grip) return;
+    const step=Math.min(Math.max(dt,0),.045),pose=this.raigoPose;
+    const show=pose==="raigo_show";
+    const phase=((this.presentationT%9.6)+9.6)%9.6;
+    if(pose!==this.raigoLastPose){this.raigoLastPose=pose;this.raigoSwingT=0;}
+    else this.raigoSwingT+=step;
+    // Updating only the grip's ancestor matrices avoids updating the whole model twice.
+    grip.updateWorldMatrix(true,false);
+    this.raigoAnchor.copy(grip.getWorldPosition(this.raigoAnchor));
+    this.worldToLocal(this.raigoAnchor);
+    this.getWorldPosition(this.raigoRootWorld);
+    if (this.raigoRootReady && this.raigoRootWorld.distanceToSquared(this.raigoRootPrev)>9)
+      this.raigoBallInitialized=false;
+    this.raigoRootPrev.copy(this.raigoRootWorld);
+    this.raigoRootReady=true;
+    const attacking=show||pose.endsWith("_s")||pose.startsWith("rgz_s")||pose.startsWith("rgc_s")||pose.startsWith("rgv_s");
+    const p=THREE.MathUtils.clamp(this.raigoProgress,0,1);
+    const pulseCount=show?1:Math.max(1,this.raigoPulses);
+    // The model stays in sync even while the fighter changes between axe and
+    // ball hit poses during one multi-hit skill.
+    const beatP=pulseCount>1 ? Math.min(.999,(p*pulseCount)%1) : p;
+    const wave=show?1:Math.sin(Math.PI*(.18+.76*beatP));
+    let extension=attacking ? 1.55+1.17*Math.max(.2,wave) : pose.endsWith("_w")||pose==="charge"?1.25:.78;
+    if(show) extension=phase<1.0?.75:phase<4.9?2.25:phase<7.2?2.92:1.03;
+    if(pose==="rgh_s") extension+=.15*Math.sin(Math.min(1,this.raigoSwingT/.20)*Math.PI);
+    // Phase continues across attacks; opposite rotation direction for the final reverse catch.
+    const spinSpeed=show?(phase<5?10.2:phase<7.2?13.7:7.3):attacking?11.6:pose==="idle"?.12:1.1;
+    this.raigoAngle+=step*spinSpeed*(show&&phase>7.2?-1:1);
+    const angle=this.raigoAngle + ((pose==="rgc_s"||pose==="rgv_s"||pose==="rgz_s")?this.raigoBeat*.17:0);
+    const sideSwing=pose==="rg2_s"||pose==="rg4_s"||pose==="rgc_s";
+    const overhead=pose==="rgz_s"||pose==="rgv_s"||pose==="rgz_w"||show;
+    const rise=overhead?.56:sideSwing?.05:-.32;
+    // Each impact sweeps the ball toward the front instead of leaving a hitbox
+    // disconnected from an arbitrary continuously rotating idle orbit.
+    const strikePose=pose.endsWith("_s") || pose==="rgh_s";
+    const impulse=strikePose && !show?Math.pow(Math.sin(Math.PI*beatP),2)*.92:0;
+    if(pose==="idle" || pose==="block") {
+      this.raigoDesired.copy(this.raigoAnchor).add(this.raigoDelta.set(
+        .13+Math.sin(this.t*1.3)*.035,-.66+Math.sin(this.t*1.7)*.024,
+        .19+Math.cos(this.t*1.3)*.032));
+    } else {
+      this.raigoDesired.copy(this.raigoAnchor).add(this.raigoDelta.set(
+        Math.sin(angle)*extension*(1-impulse),
+        rise+(overhead?.22:.38)*Math.cos(angle*1.03),
+        extension*(Math.cos(angle)*(1-impulse)+impulse)));
+    }
+    if(!this.raigoBallInitialized) {
+      ball.position.copy(this.raigoDesired);
+      this.raigoBallPrev.copy(ball.position);
+      ball.updateWorldMatrix(true,false);
+      ball.getWorldPosition(this.raigoWorldTip);
+      this.raigoWorldPrevTip.copy(this.raigoWorldTip);
+      this.raigoBallInitialized=true;
+    } else {
+      // Reproject previous world positions under the CURRENT root transform.
+      // Dashes, knockback and root yaw now cause natural weapon lag.
+      // worldToLocal mutates its argument: use scratch vectors so stored world history
+      // stays world-space across the next frame as well.
+      ball.position.copy(this.worldToLocal(this.raigoPathP.copy(this.raigoWorldTip)));
+      this.raigoBallPrev.copy(this.worldToLocal(this.raigoPathQ.copy(this.raigoWorldPrevTip)));
+    }
+    // Inertial follow-through: previous position carries momentum between combo strikes.
+    this.raigoOld.copy(ball.position);
+    this.raigoDelta.subVectors(ball.position,this.raigoBallPrev).multiplyScalar(Math.pow(strikePose && attacking ? .38 : .68,step*60));
+    ball.position.add(this.raigoDelta);
+    const stiffness=attacking && strikePose ? 78 : attacking ? 36 : 11;
+    const alpha=1-Math.exp(-stiffness*step);
+    ball.position.lerp(this.raigoDesired,alpha);
+    // No micro-gravity nudge: the idle hang is handled by the desired trajectory.
+    this.raigoBallPrev.copy(this.raigoOld);
+    // A controlled long chain: the ball never moves farther than its actual tether.
+    this.raigoDelta.subVectors(ball.position,this.raigoAnchor);
+    const length=this.raigoDelta.length();
+    if(length>3.05) ball.position.copy(this.raigoAnchor).addScaledVector(this.raigoDelta,3.05/length);
+    this.raigoWorldPrevTip.copy(this.raigoWorldTip);
+    ball.updateWorldMatrix(true,false);
+    ball.getWorldPosition(this.raigoWorldTip);
+    ball.rotation.x+=step*(attacking?8:pose==="idle"?.08:1.2);
+    ball.rotation.z+=step*(attacking?11:pose==="idle"?.07:1.3);
+    const axeAngles: Record<string,[number,number,number]>={
+      idle:[PI/2,.10,-.15],block:[1.24,.35,.28],charge:[2.55,-.47,-.22],
+      rg1_w:[2.10,-.50,-.26],rg1_s:[.65,.55,.29],
+      rg2_w:[1.45,.22,-.20],rg2_s:[1.24,-.36,.26],
+      rg3_w:[2.26,.48,-.18],rg3_s:[.67,-.58,.33],
+      rg4_w:[2.40,-.27,-.24],rg4_s:[.65,.51,.31],
+      rgh_w:[2.64,-.27,-.10],rgh_s:[.48,.29,.20],
+      rgz_w:[1.80,-.33,-.14],rgz_s:[1.19,.28,.14],
+      rgx_w:[1.34,-.22,-.10],rgx_s:[.91,.22,.23],
+      rgc_w:[2.15,-.36,-.17],rgc_s:[.85,.42,.28],
+      rgv_w:[2.57,-.35,-.13],rgv_s:[.70,.51,.29],rgv_final_s:[.55,.24,.26]};
+    const a=axeAngles[pose]??axeAngles.idle;
+    const target=this.raigoQuat.setFromEuler(this.raigoEuler.set(a[0],a[1],a[2],"YXZ"));
+    if(show) target.multiply(this.raigoSpinQuat.setFromAxisAngle(this.raigoUp,
+      phase<6.8?Math.sin(phase*7.5)*.68:0));
+    axe.quaternion.slerp(target,1-Math.exp(-(attacking?20:11)*step));
+    // A shallow catenary with real link nodes follows the exact grip and ball endpoints.
+    this.raigoMid.copy(this.raigoAnchor).lerp(ball.position,.5);
+    this.raigoMid.y-=attacking?.10:.32;
+    const n=this.raigoLinks.length;
+    for(let i=0;i<n;i++){
+      const t=i/n, u=Math.min(1,t+1/n);
+      this.raigoPathP.copy(this.raigoAnchor).multiplyScalar((1-t)*(1-t))
+        .addScaledVector(this.raigoMid,2*t*(1-t)).addScaledVector(ball.position,t*t);
+      this.raigoPathQ.copy(this.raigoAnchor).multiplyScalar((1-u)*(1-u))
+        .addScaledVector(this.raigoMid,2*u*(1-u)).addScaledVector(ball.position,u*u);
+      const node=this.raigoLinks[i];
+      node.position.copy(this.raigoPathP).lerp(this.raigoPathQ,.5);
+      this.raigoDelta.subVectors(this.raigoPathQ,this.raigoPathP);
+      // Rings alternate their facing plane, while retaining a constant link thickness.
+      node.quaternion.setFromUnitVectors(this.raigoUp,this.raigoDelta.normalize());
+    }
+  }
+
   private buildGlaive() {
     if (this.look.element === "metal") { this.buildZenithSpear(); return; }
     // Zarek's glaive remains unchanged.
@@ -3123,6 +3343,7 @@ export class FighterModel extends THREE.Group {
         0.10 + Math.sin(this.t * 2.0) * 0.035);
     }
     if (this.bowPivot) this.updateBow();
+    if (this.kit === "axeflail") this.updateRaigoWeapon(dt);
     if (this.kit === "chainblade") this.updateChainblade(dt);
     // Visible only for the 3-second festival; client puppet uses replicated timer too.
     const festivalOn = this.kit === "sickle" && this.bloodFestivalT > 0;
@@ -3357,10 +3578,10 @@ export class FighterModel extends THREE.Group {
       this.vrmRig.tristaffAnchor = "right";
     }
     // Staffs and bows follow the arm a lot (natural tilt); blades less, to keep swing arcs.
-    this.vrmRig.followArm = this.kit === "chainblade" ? 0.14 : this.kit === "glaive" ? 0.24 : this.kit === "scythe" ? 0.21 : this.kit === "tristaff" ? 0.20 : this.kit === "sickle" ? 0.18 : this.kit === "mage" ? 0.4 : this.kit === "bow" ? 0.5 : 0.3;
+    this.vrmRig.followArm = this.kit === "chainblade" ? 0.14 : this.kit === "glaive" ? 0.24 : this.kit === "scythe" ? 0.21 : this.kit === "tristaff" ? 0.20 : this.kit === "axeflail" ? 0.24 : this.kit === "sickle" ? 0.18 : this.kit === "mage" ? 0.4 : this.kit === "bow" ? 0.5 : 0.3;
     this.vrmRig.staff = this.kit === "mage" && this.look.element !== "frost";
     this.vrmRig.glaive = this.kit === "glaive" || this.kit === "scythe";
-    this.vrmRig.style = this.kit === "glaive" && this.look.element === "metal" ? "magnetic" : this.kit === "knight" && this.look.element === "light" ? "aster" : this.kit === "chainblade" ? "chainblade" : this.kit === "glaive" ? "storm" : this.kit === "tristaff" ? "storm" : this.kit === "sickle" ? "feral" : this.kit === "hammer" ? "nesa" : this.kit === "greatsword" ? "greatsword" : this.look.body === "m" ? "heavy" : "light";
+    this.vrmRig.style = this.kit === "glaive" && this.look.element === "metal" ? "magnetic" : this.kit === "knight" && this.look.element === "light" ? "aster" : this.kit === "chainblade" ? "chainblade" : this.kit === "glaive" ? "storm" : this.kit === "tristaff" ? "storm" : this.kit === "axeflail" ? "heavy" : this.kit === "sickle" ? "feral" : this.kit === "hammer" ? "nesa" : this.kit === "greatsword" ? "greatsword" : this.look.body === "m" ? "heavy" : "light";
     if (this.kit === "knight") { this.buildHeaterShield(); this.vrmRig.shield = true; }
     if (this.gripL) { this.vrmRig.gripL = this.gripL; this.vrmRig.bladed = this.kit === "chainblade" ? 0.58 : this.kit === "glaive" ? 0.4 : this.kit === "tristaff" ? 0.36 : this.kit === "scythe" ? 0.50 : 1; }
     if (this.look.element === "metal") {
@@ -3378,7 +3599,7 @@ export class FighterModel extends THREE.Group {
     // A longbow is about 85-90% of body height.
     if (this.kit === "bow") { this.vrmRig.archer = true; this.vrmRig.followArm = 0; this.bowPivot?.scale.setScalar(1.45); }
     // ZAREK_WEAPON_RANGE_MATCH_V1_NOV06: keep Zarek's long double-ended blade visible on VRM bodies.
-    const weaponScale = this.kit === "glaive" && this.look.element === "metal" ? 0.93 : this.kit === "glaive" ? 0.87 : this.kit === "scythe" ? 0.82 : this.kit === "tristaff" ? ZEPHYR_TRISTAFF_SIZE_V24.globalScale : VRM_WEAPON_SCALE; // ZAREK_PROPORTIONATE_GLAIVE_V1: total VRoid weapon length about -29%
+    const weaponScale = this.kit === "glaive" && this.look.element === "metal" ? 0.93 : this.kit === "glaive" ? 0.87 : this.kit === "scythe" ? 0.82 : this.kit === "tristaff" ? ZEPHYR_TRISTAFF_SIZE_V24.globalScale : this.kit === "axeflail" ? 0.83 : VRM_WEAPON_SCALE; // ZAREK_PROPORTIONATE_GLAIVE_V1: total VRoid weapon length about -29%
     for (const h of [this.hand_l, this.hand_r]) h.scale.multiplyScalar(weaponScale);
     JN.forEach((n, i) => this.joints[n].quaternion.copy(save[i]));
     this.hips.position.copy(hipsPos);

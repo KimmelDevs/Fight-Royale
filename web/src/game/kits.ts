@@ -81,6 +81,8 @@ export const STATS: Record<string, { hp: number; guard: number; move: number; wa
   tristaff: { hp: 2670, guard: 82, move: 3.90, walk: 3.05, parry: 0.205, jump: 7.9 },
   bomb: { hp: 2100, guard: 70, move: 3.5, walk: 2.8, parry: 0.16, jump: 7.0 },
   chainblade: { hp: 2450, guard: 100, move: 3.55, walk: 2.75, parry: 0.16, jump: 7.0 },
+  // RAIGO_IRON_BASTION_V1: mid-range powerhouse, punishable up close.
+  axeflail: { hp: 2375, guard: 90, move: 3.35, walk: 2.60, parry: 0.18, jump: 6.8 },
   hammer: { hp: 2650, guard: 110, move: 3.05, walk: 2.45, parry: 0.15, jump: 7.0 },
   // NYTHERA_GRAVITY_REAPER_INSTALL_V1
   scythe: { hp: 2200, guard: 84, move: 3.72, walk: 3.02, parry: 0.19, jump: 8.0 },
@@ -116,6 +118,7 @@ function parryCounterAttack(kit: string, element: string, base: Record<string, A
     sickle: [heavy.pose_w, heavy.pose_s],
     chainblade: [heavy.pose_w, heavy.pose_s],
     glaive: [heavy.pose_w, heavy.pose_s],
+    axeflail: [heavy.pose_w, heavy.pose_s],
     tristaff: [heavy.pose_w, heavy.pose_s],
     scythe: [heavy.pose_w, heavy.pose_s],
     bomb: [base.z?.pose_w ?? light.pose_w, base.z?.pose_s ?? light.pose_s],
@@ -134,6 +137,7 @@ function parryCounterAttack(kit: string, element: string, base: Record<string, A
     sickle: "Reaper's Waltz",
     chainblade: "Chain Cyclone",
     glaive: "Thunderwheel",
+    axeflail: "Chain Breaker",
     tristaff: "Dragon's Answer",
     scythe: "Eclipse Reversal",
     bomb: "Firecracker Spin",
@@ -142,19 +146,19 @@ function parryCounterAttack(kit: string, element: string, base: Record<string, A
   const reach: Record<string, number> = {
     knight: 1.95, greatsword: 2.20, hammer: 2.35, katana: 2.00,
     bow: 1.90, mage: 2.00, knuckles: 1.60, kicks: 1.85,
-    wind: 2.00, sickle: 1.95, chainblade: 2.35, glaive: 2.40, tristaff: 2.25, scythe: 2.45,
+    wind: 2.00, sickle: 1.95, chainblade: 2.35, glaive: 2.40, axeflail: 3.15, tristaff: 2.25, scythe: 2.45,
     bomb: 1.85, assassin: 1.85,
   };
   const lunge: Record<string, number> = {
     knight: 1.5, greatsword: 1.25, hammer: 1.35, katana: 1.8,
     bow: 1.2, mage: 1.15, knuckles: 1.65, kicks: 1.95,
-    wind: 1.85, sickle: 1.9, chainblade: 1.55, glaive: 1.8, tristaff: 2.0, scythe: 1.8,
+    wind: 1.85, sickle: 1.9, chainblade: 1.55, glaive: 1.8, axeflail: 0.55, tristaff: 2.0, scythe: 1.8,
     bomb: 1.25, assassin: 2.2,
   };
   const knock: Record<string, number> = {
     knight: 4.2, greatsword: 4.9, hammer: 5.1, katana: 4.1,
     bow: 3.6, mage: 3.8, knuckles: 3.8, kicks: 4.0,
-    wind: 4.2, sickle: 4.0, chainblade: 4.5, glaive: 4.8, tristaff: 4.3, scythe: 4.3,
+    wind: 4.2, sickle: 4.0, chainblade: 4.5, glaive: 4.8, axeflail: 5.5, tristaff: 4.3, scythe: 4.3,
     bomb: 3.8, assassin: 4.1,
   };
   const pose = poses[kit] ?? [light.pose_w, light.pose_s];
@@ -196,6 +200,7 @@ export function attacks(kit: string, element: string): Record<string, Attack> {
     sickle: sickle,
     chainblade: chainblade,
     glaive: glaive,
+    axeflail: axeFlail,
     tristaff: dragonStaff,
     scythe: gravityScythe,
     bomb: bomb,
@@ -408,6 +413,10 @@ function bonusSkill(kit: string, element: string): Attack {
       return a({ name: "Healing Water", desc: "Create a 5s healing water pool. You and allies standing inside recover 3.5% max HP every 0.6s (up to 28% per cast).", cd: 15, type: "buff", mode: "healing_water", duration: 5, radius: 2.6, wind: 0.24, recover: 0.45, pose_w: "mh_w", pose_s: "m3_s" });
     case "assassin":
       return a({ name: "Venom Fan", desc: "A wide spray of five poisoned blades.", cd: 7, type: "projectile", wind: 0.12, recover: 0.3, dmg: 42, guard: 12, knock: 1.2, stun: 0.3, speed: 24, count: 5, spread: 0.5, style: "shuriken", pose_w: "as1_w", pose_s: "as1_s" });
+    case "axeflail":
+      return a({ name: "Twin Judgment", desc: "Swing the axe and launch the chained ball along opposite paths, then draw them together in five independently defendable impacts. The final convergence consumes full Chain Momentum for bonus power.",
+        cd: 43, wind: 0.48, active: 1.58, recover: 0.82, dmg: 51, guard: 19, reach: 3.55,
+        knock: 0.9, stun: 0.16, style: "raigo_twinned", pose_w: "rgv_w", pose_s: "rgv_s" });
     case "chainblade":
       return a({ name: "Serpent Bind", desc: "Bind an opponent with your chain for up to 4 seconds. Press Z to reel them in, lift them, and smash them side to side; X lifts and swings them over Kaizen before a heavy behind-the-back slam. Both stay locked until the finisher ends.", cd: 13,
         wind: 0.29, active: 0.12, recover: 0.62, dmg: 85, guard: 29, reach: 2.9, knock: 1.0, stun: 0.55,
@@ -679,6 +688,31 @@ function dragonStaff(): Record<string, Attack> {
       cd: 17, type: "melee", wind: 0.29, active: 1.18, recover: 0.57,
       dmg: 49, guard: 16, reach: 2.42, lunge: 1.8, knock: 0.7, stun: 0.16,
       style: "zephyr_cyclone", pose_w: "zdc_w", pose_s: "zdc_s" }),
+  };
+}
+
+/** RAIGO_IRON_BASTION_V1: axe works inside, ball outside; proper per-hit defense checks. */
+function axeFlail(): Record<string, Attack> {
+  return {
+    l1: a({ name:"Iron Entry", wind:.18, active:.09, recover:.24, dmg:57, guard:18,
+      reach:2.22, lunge:1.2, knock:.8, stun:.18, style:"raigo_axe", pose_w:"rg1_w", pose_s:"rg1_s", next:"l2" }),
+    l2: a({ name:"Outer Orbit", wind:.27, active:.12, recover:.34, dmg:65, guard:21,
+      reach:3.05, lunge:.35, knock:1.8, stun:.25, style:"raigo_ball", pose_w:"rg2_w", pose_s:"rg2_s", next:"l3" }),
+    l3: a({ name:"Axe Return", wind:.19, active:.11, recover:.29, dmg:69, guard:22,
+      reach:2.40, lunge:1.0, knock:1.2, stun:.23, style:"raigo_axe", pose_w:"rg3_w", pose_s:"rg3_s", next:"l4" }),
+    l4: a({ name:"Iron Cross", wind:.28, active:.15, recover:.47, dmg:106, guard:35,
+      reach:3.15, lunge:.45, knock:4, stun:.41, style:"raigo_ball", pose_w:"rg4_w", pose_s:"rg4_s" }),
+    heavy: a({ name:"Crushing Verdict", wind:.39, active:.15, recover:.66, dmg:180, guard:63,
+      reach:3.20, lunge:.40, knock:6.8, stun:.60, heavy:true, style:"raigo_execute", pose_w:"rgh_w", pose_s:"rgh_s" }),
+    z: a({ name:"Iron Comet", desc:"A spinning chained-ball release followed by a chain-assisted return. Three separate blockable/parryable impacts; the last clean hit reels the enemy in.",
+      cd:10, wind:.36, active:1.05, recover:.53, dmg:55, guard:20, reach:3.45, lunge:.2,
+      knock:.9, stun:.18, style:"raigo_comet", pose_w:"rgz_w", pose_s:"rgz_s" }),
+    x: a({ name:"Chain Reversal", desc:"Brace both weapons in a 0.36s counter stance. Successfully catching an attack redirects the flail into a counterattack; missing the read leaves recovery.",
+      cd:11, type:"buff", mode:"counter", duration:.36, wind:.04, active:.04, recover:.60,
+      style:"raigo_counter", pose_w:"rgx_w", pose_s:"rgx_s" }),
+    c: a({ name:"Iron Tempest", desc:"Alternate axe and spiked-ball attacks across five timed angles. Each contact can be blocked, parried, clashed, or dodged.",
+      cd:17, wind:.32, active:1.42, recover:.60, dmg:49, guard:17,
+      reach:3.2, lunge:.2, knock:.8, stun:.14, style:"raigo_tempest", pose_w:"rgc_w", pose_s:"rgc_s" }),
   };
 }
 
@@ -1348,6 +1382,34 @@ const DRAGON_STAFF: Record<string, Pose> = {
   zd_sway: P([.09,-.31,-.11],[-.07,.18,.08],[-.9,.31,-.43],[.15,0,.13],[-1.14,-.31,.39],[.24,0,.1],[-.17,0,.17],[.31,0,-.19],-.09),
 };
 
+// RAIGO_IRON_BASTION_V1: rooted, shoulder-driven axe and left-handed flail.
+// Weapon itself supplies continuous ball orbit while these keyframes control footwork/arms.
+const AXE_FLAIL: Record<string, Pose> = {
+  ...GLAIVE,
+  idle:K(P([.15,-.29,0],[-.07,.20,0],[-.69,.19,-.27],[.37,.02,-.10],[-.92,-.26,.32],[.33,0,.12],[-.38,-.08,.19],[.30,.09,-.19],-.18),.27,.32),
+  block:P([.28,-.12,0],[-.03,.12,0],[-1.31,.20,-.33],[.46,0,-.12],[-1.48,-.33,.39],[.37,0,.06],[-.49,0,.18],[.43,0,-.15],-.22),
+  charge:P([.30,-.46,0],[.02,.29,0],[-1.78,.39,-.25],[.54,0,-.12],[-1.27,-.30,.34],[.42,0,.1],[-.56,0,.16],[.5,0,-.13],-.18),
+  rg1_w:K(P([.20,-.72,.05],[0,.38,0],[-1.66,-.50,-.42],[.58,0,-.20],[-1.06,-.29,.41],[.48,0,.13],[-.63,-.09,.22],[.48,.12,-.15],-.23),.64,.36),
+  rg1_s:K(P([.36,.65,-.07],[-.11,-.25,0],[-.91,.59,-.38],[.17,0,.18],[-1.37,.22,.37],[.31,0,.1],[-.73,.09,.23],[.61,-.11,-.20],-.27),.77,.55),
+  rg2_w:P([.14,.60,.04],[-.05,-.36,0],[-1.12,.31,-.31],[.4,0,-.17],[-2.04,-.48,.40],[.47,0,.15],[-.52,0,.15],[.5,0,-.13],-.16),
+  rg2_s:K(P([.28,-.74,-.09],[-.07,.42,0],[-1.43,-.12,-.27],[.31,0,.13],[-1.50,.55,.41],[.18,0,.28],[-.72,-.13,.25],[.41,.16,-.19],-.24),.62,.39),
+  rg3_w:K(P([.24,.67,.03],[-.05,-.25,0],[-1.90,.49,-.38],[.58,0,-.04],[-1.25,.31,.33],[.24,0,.1],[-.64,.13,.23],[.48,-.10,-.22],-.23),.52,.61),
+  rg3_s:K(P([.39,-.61,-.06],[-.07,.27,0],[-.60,-.51,-.42],[.20,0,.28],[-1.12,-.25,.39],[.28,0,.17],[-.78,-.10,.24],[.62,.13,-.19],-.29),.74,.59),
+  rg4_w:P([-.10,-.62,.04],[.1,.38,0],[-2.33,-.36,-.36],[.62,0,-.12],[-2.28,.29,.32],[.52,0,.17],[-.57,0,.14],[.40,0,-.14],-.16),
+  rg4_s:K(P([.57,.55,0],[-.20,-.13,0],[-.89,.54,-.37],[.19,0,.29],[-1.08,-.42,.31],[.26,0,.1],[-.83,.16,.23],[.64,-.14,-.18],-.31),.76,.51),
+  rgh_w:K(P([-.34,-.50,0],[.08,.26,0],[-2.62,.31,-.23],[.49,0,-.07],[-2.22,-.31,.3],[.44,0,.13],[-.78,0,.20],[.47,0,-.22],-.29),.82,.66),
+  rgh_s:K(P([.63,.38,0],[-.24,-.08,0],[-.61,.31,-.41],[.2,0,.31],[-.83,-.18,.41],[.2,0,.18],[-.91,0,.22],[.71,0,-.18],-.35),.95,.72),
+  rgz_w:P([.07,-.30,0],[.02,.30,0],[-.99,.17,-.33],[.4,0,-.13],[-2.43,-.17,.35],[.57,0,.15],[-.39,0,.17],[.37,0,-.14],-.12),
+  rgz_s:K(P([.20,.44,0],[-.13,-.26,0],[-1.40,.36,-.31],[.22,0,.24],[-1.74,.50,.34],[.38,0,.14],[-.76,-.09,.23],[.58,.14,-.19],-.27),.67,.45),
+  rgx_w:P([.32,-.19,0],[-.06,.15,0],[-1.27,.15,-.31],[.37,0,-.16],[-1.48,-.31,.38],[.38,0,.16],[-.57,0,.18],[.50,0,-.17],-.22),
+  rgx_s:P([.17,.37,0],[-.10,-.14,0],[-1.25,.44,-.28],[.34,0,.22],[-1.64,.31,.35],[.38,0,.1],[-.62,0,.17],[.55,0,-.13],-.19),
+  rgc_w:P([.18,-.63,0],[.03,.25,0],[-1.81,-.21,-.39],[.47,0,-.14],[-1.73,-.37,.41],[.42,0,.12],[-.52,0,.19],[.47,0,-.15],-.18),
+  rgc_s:K(P([.35,.76,.06],[-.13,-.28,0],[-1.37,.68,-.38],[.22,0,.29],[-1.61,.49,.42],[.19,0,.24],[-.77,.17,.25],[.60,-.18,-.19],-.29),.60,.77),
+  rgv_w:P([-.22,-.41,0],[.12,.21,0],[-2.50,-.33,-.33],[.51,0,-.07],[-2.34,.25,.38],[.55,0,.11],[-.62,0,.12],[.39,0,-.14],-.17),
+  rgv_s:K(P([.44,.51,0],[-.18,-.18,0],[-1.01,.52,-.35],[.22,0,.31],[-1.13,-.42,.46],[.23,0,.19],[-.71,.10,.20],[.54,-.12,-.16],-.28),.58,.49),
+  rgv_final_s:K(P([.62,-.28,0],[-.19,.16,0],[-.64,.22,-.38],[.24,0,.18],[-.76,.62,.40],[.17,0,.26],[-.91,.13,.25],[.74,-.15,-.20],-.34),.91,.73),
+};
+
 const CHAINBLADE: Record<string, Pose> = {
   ...twoHanded(KNIGHT),
   idle: P([0.06, -0.12, 0], [-0.03, 0.1, 0], [-0.86, 0.17, -0.16], [0.25, 0, -0.2], [-0.48, -0.3, 0.40], [0.17, 0, 0.08], [-0.19, 0, 0.06], [0.19, 0, -0.06], -0.055),
@@ -1404,6 +1466,7 @@ const TABLES: Record<string, Record<string, Pose>> = {
   mage: MAGE,
   sickle: SICKLE,
   glaive: GLAIVE,
+  axeflail: AXE_FLAIL,
   tristaff: DRAGON_STAFF,
   assassin: ASSASSIN,
   greatsword: { ...twoHanded(KNIGHT), ...GARRICK_SWINGS },

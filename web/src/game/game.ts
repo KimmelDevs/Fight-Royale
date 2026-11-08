@@ -1596,6 +1596,15 @@ export class Game implements MobHost {
 
   /** The whoosh / cast / release sound when an attack comes out. */
   private swingSound(f: Fighter, a: Attack) {
+    // ZEPHYR_ORIGINAL_SOUND_PACK_V1_20261109: Zephyr uses original MP3 names, not renamed aliases.
+    if (f.kit === "tristaff") {
+      if (a.style === "zephyr_reversal") this.snd("gear_fast_lock_tap", 0.40);
+      else if (a.style === "zephyr_cyclone" || a.style === "zephyr_ninefold") this.snd("spacey_swish_spin", 0.41);
+      else if (a.style === "zephyr_serpent" || a.style === "zephyr_twin_fang") this.snd("long_sweeping_air_swoosh", 0.38);
+      else if (a.heavy || a.id === "heavy") this.snd("throw_hard_wind_woosh", 0.55);
+      else this.snd("fast_whip_strike", 0.53);
+      return;
+    }
     if (f.look.element === "metal" && f.kit === "glaive") {
       const sound = a.style === "zenith_rail" ? "metal_arrow_fast_hit" :
         a.style === "zenith_arsenal" ? "sci_fi_gear_turn" :
@@ -1629,6 +1638,15 @@ export class Game implements MobHost {
 
   /** The impact sound for a clean hit, by what hit it. */
   private hitSound(attacker: Entity | null, a: Attack, crit: boolean) {
+    // ZEPHYR_ORIGINAL_SOUND_PACK_V1_20261109: real contact only, leaving normal blocks/parries/clashes intact.
+    if (attacker instanceof Fighter && attacker.kit === "tristaff") {
+      const finalBeat = /_(?:5|9)$/.test(a.id) &&
+        (a.style === "zephyr_cyclone" || a.style === "zephyr_ninefold");
+      this.snd(a.heavy || finalBeat ? "cinematic_whoosh_deep_impact" : "metal_impact_whip",
+        a.heavy || finalBeat ? 0.64 : 0.53);
+      if (crit) this.snd("crit", 0.40);
+      return;
+    }
     if (attacker instanceof Fighter && attacker.look.element === "metal" && attacker.kit === "glaive") {
       this.snd("metal_arrow_hit", 0.5);
       if (crit) this.snd("crit", 0.45);
@@ -1939,6 +1957,25 @@ export class Game implements MobHost {
     // ZEPHYR_DRAGON_DANCER_V1: each swing has a real combat hitbox.
     const a = f.atk!;
     this.swingSound(f, a);
+    // RAIGO_IRON_BASTION_V1 — true melee collisions on each individual weapon pass.
+    if (f.kit === "axeflail") {
+      const tip=f.model.raigoFlailTip?.getWorldPosition(new THREE.Vector3()) ?? f.chest();
+      this.fxp("sparks",tip,"#e5b46d",a.style==="raigo_execute"?21:10,4.5);
+      if (["raigo_comet","raigo_tempest","raigo_twinned"].includes(a.style)) {
+        this.raigoSequenceSwing(f,a); return;
+      }
+      if (a.type === "melee") {
+        const serial=f.swingSerial, round=this.round;
+        const delay=Math.min(.07,Math.max(.025,a.active*.50));
+        this.laterCombo(f,delay,()=>{
+          if(this.round!==round || f.isDown() || f.swingSerial!==serial ||
+             f.state!==S.ATTACK || f.atk?.id!==a.id) return;
+          this.melee(f,a);
+        });
+        return;
+      }
+    }
+
     if (f.kit === "tristaff") {
       const p = f.model.bladeTip.getWorldPosition(new THREE.Vector3());
       this.fxp("slashes", p, "#76eed1");
@@ -2425,6 +2462,7 @@ export class Game implements MobHost {
   // The switch is authority-only: puppet snapshots update visuals, not hits.
   private zephyrSwitchFlourish(f:Fighter) {
     if(f.kit!=="tristaff"||f.puppet)return;
+    this.snd("gear_fast_lock_tap", 0.38); // ZEPHYR_ORIGINAL_SOUND_PACK_V1_20261109
     const mode=f.dragonMode;
     const tuning=DRAGON_SWITCH_ATTACKS[mode];
     if(!tuning)return;
@@ -2470,7 +2508,40 @@ export class Game implements MobHost {
       this.fxp("slashes", tip, i % 2 ? "#aafbe8" : "#5ed9bd");
       this.fxp("sparks", tip, "#dcffec", last ? 25 : 10, last ? 6 : 3);
       if (last) this.fxp("ring", tip, "#8cf2d3", 0.9, 0.19, 0.72);
+      // ZEPHYR_ORIGINAL_SOUND_PACK_V1_20261109: sound follows each REAL scheduled hit, not merely a long animation.
+      if (i > 0) this.snd(last ? "cinematic_whoosh_deep_impact" :
+        i % 3 === 0 ? "spacey_swish_spin" : "fast_whip_strike", last ? 0.52 : 0.31);
       this.melee(f, hit);
+    });
+  }
+
+  /** RAIGO_IRON_BASTION_V1: collision stays with the existing guard/parry/clash pipeline. */
+  private raigoSequenceSwing(f: Fighter, a: Attack) {
+    const count=a.style==="raigo_comet"?3:a.style==="raigo_tempest"?5:5;
+    const step=a.active/count;
+    const serial=f.swingSerial, round=this.round;
+    for (let i=0; i<count; i++) this.laterCombo(f,i*step+step*.42,()=>{
+      if (round!==this.round || f.isDown() || f.swingSerial!==serial ||
+        f.state!==S.ATTACK || f.atk?.style!==a.style) return;
+      const last=i===count-1;
+      const isAxe=a.style==="raigo_tempest" ? (i===0 || i===2) :
+        a.style==="raigo_twinned" ? (i===1 || i===3) : false;
+      const attack: Attack={...a, id:`${a.id}_${i+1}`,
+        style:a.style==="raigo_twinned" && last?"raigo_ball_execute":
+          a.style==="raigo_comet" && last?"raigo_comet_pull":
+          isAxe?"raigo_axe":"raigo_ball",
+        dmg:last ? a.dmg*1.75 : a.dmg*(i%2===0?.90:1.0),
+        guard:last ? a.guard*1.8 : a.guard,
+        knock:last ? (a.id==="v"?6.0:3.0) : 0.65,
+        stun:last ? .38 : .12,
+        reach:isAxe ? 2.45 : a.reach, heavy:false,
+      };
+      f.model.raigoBeat=i;
+      const tip=f.model.raigoFlailTip?.getWorldPosition(new THREE.Vector3()) ?? f.chest();
+      this.fxp("slashes",tip,"#e3bb86");
+      this.fxp("sparks",tip,last?"#fff0ca":"#b7a27d",last?25:12,last?6:3);
+      if(last) this.fxp("ring",f.chest(),"#e0a85c",1.1,.18,.65);
+      this.melee(f,attack);
     });
   }
 
@@ -2529,6 +2600,33 @@ export class Game implements MobHost {
           dy > (aerialPredatorHook ? 3.15 : antiAir ? 3.25 : airCombo ? 1.8 : 1.3) ||
           (aerialPredatorHook && Math.hypot(Math.max(0, dist - d.radius * 0.4), dy * 0.72) > a.reach + 0.2) ||
           (dist > 0.6 && dir.dot(fwd) < (a.dragonBehind ? -1 : (a.dragonArcCos ?? (antiAir ? -0.08 : 0.15))))) continue;
+      // RAIGO_IRON_BASTION_V1: a swinging flail has an actual blind spot near the body.
+      if (f.kit === "axeflail" && (a.style==="raigo_ball" || a.style==="raigo_comet_pull" || a.style==="raigo_ball_execute") && dist<1.20) continue;
+      if (f.kit === "axeflail" && (a.style==="raigo_ball" || a.style==="raigo_comet_pull" || a.style==="raigo_ball_execute")) {
+        // Hits cannot reach farther than the actual modeled flail can extend.
+        // The tip's current orbit is allowed a modest hitbox sweep tolerance.
+        const ballTip = f.model.raigoFlailTip;
+        if (ballTip) {
+          ballTip.updateWorldMatrix(true,false);
+          const ballWorld = ballTip.getWorldPosition(new THREE.Vector3());
+          const bx=ballWorld.x-f.root.position.x, bz=ballWorld.z-f.root.position.z;
+          const visible=Math.hypot(bx,bz), visualReach=visible+.43;
+          // Early active-frame contacts should not be shortened by the rendered orbit lag.
+          const allowed=Math.min(a.reach,Math.max(visualReach,a.reach*.85));
+          if(dist-d.radius+.25>allowed) continue;
+          // The ball cannot hit a target on the opposite side of its sweeping arc.
+          // A wider angular tolerance allows an actual moving ball's swept volume.
+          const sequence=f.atk?.style;
+          const n=sequence==="raigo_comet"?3:sequence==="raigo_tempest"||sequence==="raigo_twinned"?5:1;
+          const beat=(Math.max(0,Math.min(.9999,f.model.raigoProgress))*n)%1;
+          // During the impact window, tolerate a small visual tracking lag
+          // ONLY directly in front of Raigo at close-mid distance.
+          const impactGrace=n>1 && beat>=.30 && beat<=.58 &&
+            dist-d.radius<=Math.min(a.reach,2.6) && dir.dot(fwd)>.58;
+          if(!impactGrace && visible>.35 && dist>1.9 &&
+             (bx*dir.x+bz*dir.z)/visible<-.12) continue;
+        }
+      }
       const hitPos = d.chest().addScaledVector(dir, -0.15);
       const result = this.applyHit(f, d, a, f.atkPower, hitPos, dir, false);
       if (result === "hit" || result === "crit" || result === "ko") {
@@ -2541,6 +2639,26 @@ export class Game implements MobHost {
         if (a.style === "glaive_crescent_launch" && d instanceof Fighter) {
           d.velY = Math.max(d.velY, d.stage ? 6.2 : 5.1);
           d.onGround = false;
+        }
+      }
+      // A clean third hit briefly reels the target inward, but never through block/parry.
+      if (f.kit === "axeflail" && a.style === "raigo_comet_pull" &&
+          (result === "hit" || result === "crit") && d instanceof Fighter) {
+        const toward=f.root.position.clone().sub(d.root.position).setY(0);
+        const amount=Math.min(.9,Math.max(0,toward.length()-2.0));
+        if (toward.lengthSq()>1e-5 && amount>0) {
+          const dest=d.root.position.clone().addScaledVector(toward.normalize(),amount);
+          if (d.stage) dest.x=THREE.MathUtils.clamp(dest.x,d.stage.blast.l+1,d.stage.blast.r-1);
+          else { const radius=Math.hypot(dest.x,dest.z); if(radius>d.arenaRadius-.4) {
+            const s=(d.arenaRadius-.4)/radius; dest.x*=s; dest.z*=s;
+          }}
+          const start=d.root.position.clone(), round=this.round;
+          for (let s=1;s<=5;s++) this.laterCombo(f,s*.03,()=>{
+            if (this.round!==round || d.isDown() || f.isDown()) return;
+            const t=s/5, ease=t*t*(3-2*t);
+            d.root.position.lerpVectors(start,dest,ease);
+          });
+          this.fxp("ring",d.chest(),"#efb870",.75,.16,.70);
         }
       }
       if (f.kit === "chainblade" && a.style === "chain_predator_hook" &&
@@ -4434,7 +4552,24 @@ export class Game implements MobHost {
     const balancedAttack = gravityOwner && a.dmg > 0
       ? { ...zenithAttack, dmg: zenithAttack.dmg * (nytheraBasic ? 0.90 : 0.80) }
       : zenithAttack;
-    const result = d.receiveHit(attacker, balancedAttack, (riposte ? power * 1.15 : power) * sentenceMult);
+    // RAIGO_IRON_BASTION_V1: empower only confirmed heavy hits, don't consume on whiff.
+    const raigoEmpowered=attacker instanceof Fighter && attacker.kit === "axeflail" &&
+      attacker.raigoMomentum===3 && (a.style==="raigo_execute" || a.style==="raigo_ball_execute" || a.id==="heavy");
+    const raigoAttack=raigoEmpowered ? {...balancedAttack,dmg:balancedAttack.dmg*1.28,
+      guard:balancedAttack.guard*1.25,knock:balancedAttack.knock*1.15} : balancedAttack;
+    const result = d.receiveHit(attacker, raigoAttack, (riposte ? power * 1.15 : power) * sentenceMult);
+    if (attacker instanceof Fighter && attacker.kit === "axeflail" &&
+        (result === "hit" || result === "crit" || result === "ko")) {
+      if (raigoEmpowered) {
+        attacker.consumeRaigoMomentum();
+        this.fxp("ring",d.chest(),"#fff1b5",1.55,.24,.83);
+        this.fxp("num",d.chest().add(new THREE.Vector3(0,.75,0)),"IRON VERDICT","#ffe5ad",.78);
+      } else if (!a.id.startsWith("v_")) {
+        // The ultimate cannot charge its own final empowered hit for free.
+        attacker.earnRaigoMomentum(`swing:${attacker.swingSerial}`);
+      }
+    }
+
     // GUARD_FATIGUE_V26: real defended contact penalizes the *attacker*.
     // Each separate hit of a multi-hit move counts; dodges/clashes and misses do not.
     // Guard breaks also count because they were blocked contacts.
@@ -4685,9 +4820,14 @@ export class Game implements MobHost {
         break;
       case "parry": {
         const df = d as Fighter;
+        if (df.kit === "axeflail") {
+          df.earnRaigoMomentum(`parry:${this.time.toFixed(3)}`);
+          this.fxp("sparks",df.chest(),"#f4c982",20,5);
+        }
         df.recoverFromParry(); // FIGHT_ROYALE_V31_MOONFLOAT_ORBIT_PARRY: +20% max guard, -1 fatigue (once per parry)
         if (df.kit === "tristaff") {
           df.earnDragonRhythm();
+          this.snd("gear_fast_lock_tap", 0.42); // ZEPHYR_ORIGINAL_SOUND_PACK_V1_20261109 timed parry
           this.fxp("num", df.chest().add(new THREE.Vector3(0, 0.82, 0)),
             `DRAGON RHYTHM ${df.dragonRhythm}/3`, "#98f3d5", 0.7);
         }
@@ -4740,8 +4880,13 @@ export class Game implements MobHost {
       }
       case "counter": {
         const df = d as Fighter;
+        if (df.kit === "axeflail") {
+          df.earnRaigoMomentum(`counter:${this.time.toFixed(3)}`);
+          this.fxp("ring",df.chest(),"#f3c47e",1.1,.22,.72);
+        }
         if (df.kit === "tristaff") {
           df.earnDragonRhythm();
+          this.snd("metal_impact_whip", 0.51); // ZEPHYR_ORIGINAL_SOUND_PACK_V1_20261109 successful counter
           this.fxp("ring", df.chest(), "#76eed1", 0.74, 0.18, 0.71);
           this.fxp("num", df.chest().add(new THREE.Vector3(0, .85, 0)),
             `DRAGON COUNTER ${df.dragonRhythm}/3`, "#c7ffeb", .8);
@@ -4845,6 +4990,7 @@ export class Game implements MobHost {
     // ZAREK_WEAPON_CLASH_MOMENTUM_V1: reward genuine opposing melee weapon contact,
     // not passive blocks, parries, shield hits or projectile defenses.
     for (const fighter of [a, b]) {
+      if (fighter.kit === "axeflail") fighter.earnRaigoMomentum(`swing:${fighter.swingSerial}`);
       this.awardZarekClash(fighter);
       if (fighter.kit === "tristaff") fighter.earnDragonRhythm();
       if (fighter.kit === "hammer" && /^l\d+$/.test(fighter.atkId))
@@ -5478,6 +5624,7 @@ export class Game implements MobHost {
           value: `${f.guardFatigueStacks}/10`,
           desc: "Each defended hit adds 1 fatigue (max 10), slowing total boosted attack speed by 2% per stack. Successful parries remove 1 stack and recover 20% maximum guard. Decays by 1 every 3 seconds without another defended hit." });
       if (f.kit === "tristaff") passives.push({ label: "RHYTHM", value: `${f.dragonRhythm}/3 · ${f.dragonRhythmT.toFixed(1)}s · ${["STAFF","SPLIT","WHIP","FOLDED"][f.dragonMode]}` });
+      if (f.kit === "axeflail") passives.push({ label: "MOMENTUM", value: `${f.raigoMomentum}/3 · ${f.raigoMomentumT.toFixed(1)}s` });
       if (f.kit === "hammer") passives.push({ label: "HEARTS", value: `${f.nesaCCharges}/3` });
       if (f.kit === "bomb") passives.push({ label: "MINES", value: `${f.bobMineCharges}/4` });
       if (f.look.name === "Aster" && rival && rival.status.stacks("weaken") > 0)
@@ -5537,7 +5684,7 @@ export class Game implements MobHost {
     };
     const info = (f: Fighter) => ({ id: CHARACTERS[f.charIndex].id, name: f.look.name + (isCpu(f.owner) && f.owner !== "cpu" ? " (CPU)" : ""), hp: f.hp, maxHp: f.maxHp, guard: f.guard, maxGuard: f.maxGuard, down: f.isDown(), glow: f.look.glow,
       pct: f.pct, stocks: f.stocks, out: f.out, team: f.team, status: f.status.kinds(), bloodlust: f.bloodlust, bloodFrenzyT: f.bloodFrenzyT, bloodFestivalT: f.bloodFestivalT, clashMomentum: f.clashMomentum, chainBindT: f.chainBindT,
-      chainBindKind: f.chainBindKind, dragonRhythm: f.dragonRhythm, dragonRhythmT: f.dragonRhythmT, dragonMode: f.dragonMode, dragonModeCd: f.dragonModeCd, gravityMode: f.gravityMode, gravitySwitchCd: f.gravitySwitchCd, // ZEPHYR_MODE_HUD_SYNC_V25
+      chainBindKind: f.chainBindKind, raigoMomentum: f.raigoMomentum, raigoMomentumT: f.raigoMomentumT, dragonRhythm: f.dragonRhythm, dragonRhythmT: f.dragonRhythmT, dragonMode: f.dragonMode, dragonModeCd: f.dragonModeCd, gravityMode: f.gravityMode, gravitySwitchCd: f.gravitySwitchCd, // ZEPHYR_MODE_HUD_SYNC_V25
       orbitDisplayStacks: f.orbitDisplayStacks, orbitDisplayT: f.orbitDisplayT,
       nytheraDreadfallHits: f.nytheraDreadfallHits,
       passives: spectatorDetail(f, this.fighters.find(foe => foe !== f && foe.team !== f.team) ?? null)?.passives ?? [],

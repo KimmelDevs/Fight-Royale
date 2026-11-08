@@ -188,10 +188,31 @@ function zephyrPresentation(seconds: number, base: Pose, mode: "select" | "victo
   return between(filled(base,lo[1]),filled(base,hi[1]),u);
 }
 
+// RAIGO_IRON_BASTION_V1: axe and flail are independently moving during presentation.
+function raigoShow(seconds:number, base:Pose, mode:"select"|"victory"):Pose {
+  const t=mode==="select"?((seconds%9.6)+9.6)%9.6:Math.min(seconds,8.6);
+  const beats: Array<[number,Beat]> = [
+    [0,{torso:[.17,-.20,0],arm_r:[-.80,.17,-.34],arm_l:[-.95,-.23,.32],hips_y:-.14}],
+    [1.1,{torso:[.12,-.52,.03],arm_r:[-1.45,.32,-.41],arm_l:[-1.70,-.37,.38],hips_y:-.17}],
+    [2.4,{torso:[-.09,.40,.07],arm_r:[-1.82,.46,-.30],arm_l:[-2.43,.10,.27],hips_y:-.10}],
+    [3.5,{torso:[.24,-.37,-.05],arm_r:[-1.50,-.20,-.52],arm_l:[-2.50,.15,.32],hips_y:-.19}],
+    [4.6,{torso:[.11,.42,.02],arm_r:[-2.22,.34,-.22],arm_l:[-1.74,-.43,.36],hips_y:-.11}],
+    [5.5,{torso:[-.16,-.52,.07],arm_r:[-2.63,-.35,-.29],arm_l:[-2.12,.28,.46],hips_y:-.09}],
+    [6.65,{torso:[.18,.54,-.04],arm_r:[-1.90,.45,-.47],arm_l:[-1.52,-.58,.33],hips_y:-.13}],
+    [7.6,{torso:[.51,.28,0],arm_r:[-.75,.36,-.40],arm_l:[-.99,-.11,.35],leg_l:[-.52,0,.13],leg_r:[.37,0,-.17],hips_y:-.26,knee:[.49,.46]}],
+    [8.6,{torso:[.18,-.20,0],arm_r:[-.80,.17,-.34],arm_l:[-.95,-.23,.32],hips_y:-.14}],
+    [9.6,{torso:[.17,-.20,0],arm_r:[-.80,.17,-.34],arm_l:[-.95,-.23,.32],hips_y:-.14}],
+  ];
+  let i=0;while(i<beats.length-2&&t>beats[i+1][0])i++;
+  const lo=beats[i],hi=beats[i+1],u=Math.max(0,Math.min(1,(t-lo[0])/Math.max(.001,hi[0]-lo[0])));
+  return between(filled(base,lo[1]),filled(base,hi[1]),u);
+}
+
 /** Entirely cosmetic; all poses use the same normalized VRM/procedural joints as combat. */
 export function presentationPose(name: string, seconds: number, base: Pose, mode: "select" | "victory" = "select"): Pose {
   if (name.toLowerCase() === "nythera") return nytheraPresentation(seconds,base,mode);
   if (name.toLowerCase() === "zephyr") return zephyrPresentation(seconds,base,mode);
+  if (name.toLowerCase() === "raigo") return raigoShow(seconds,base,mode);
   const entry = C[name.toLowerCase()];
   if (!entry) { // Future roster entries still receive a respectful, animated salute.
     const p = filled(base,{ torso:[.07,.07*Math.sin(seconds),0], arm_r:[-1.6-.25*Math.sin(seconds*1.5),.1,-.2],arm_l:[-.9,0,.3] });

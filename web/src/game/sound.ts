@@ -19,6 +19,14 @@ const COMBAT_SOUNDS = new Set(["clash", "parry", "block", "guard_break"]);
  */
 const DEFAULT_MAX = 1.6;
 const MAX_LEN: Record<string, number> = {
+  // ZEPHYR_ORIGINAL_SOUND_PACK_V1_20261109: short, responsive character-specific effects.
+  "spacey_swish_spin": 0.85,
+  "fast_whip_strike": 0.45,
+  "gear_fast_lock_tap": 0.4,
+  "throw_hard_wind_woosh": 0.9,
+  "metal_impact_whip": 0.65,
+  "long_sweeping_air_swoosh": 1.15,
+  "cinematic_whoosh_deep_impact": 1.55,
   explosion: 2.5, thunder: 2.5, meteor: 2.2, rocks: 1.8, slam: 2, ready: 1.5, fight: 2.5,
   victory: 5, defeat: 5, wave: 4, heal: 2.5, burn: 1.5, shock: 1.2, water: 1.6, splash: 1.4, cast: 1.2,
   rage: 1.8, teleport: 1.4, ko: 2,
@@ -172,4 +180,12 @@ export const Sound = new SoundEngine();
 /** Effects every match needs, decoded when a match starts. */
 export const MATCH_SOUNDS = ["swing", "swing2", "swing_heavy", "whoosh_light", "hit_blade", "hit_blade2", "hit_blunt",
   "hit_blunt2", "hit_kick", "hit_heavy", "crit", "block", "parry", "guard_break", "clash", "dash", "jump", "land", "ko",
-  "ready", "fight", "victory", "defeat"];
+  "ready", "fight", "victory", "defeat",
+  "spacey_swish_spin", // ZEPHYR_ORIGINAL_SOUND_PACK_V1_20261109: spin
+  "fast_whip_strike", // ZEPHYR_ORIGINAL_SOUND_PACK_V1_20261109: strike
+  "gear_fast_lock_tap", // ZEPHYR_ORIGINAL_SOUND_PACK_V1_20261109: catch
+  "throw_hard_wind_woosh", // ZEPHYR_ORIGINAL_SOUND_PACK_V1_20261109: throw
+  "metal_impact_whip", // ZEPHYR_ORIGINAL_SOUND_PACK_V1_20261109: counter
+  "long_sweeping_air_swoosh", // ZEPHYR_ORIGINAL_SOUND_PACK_V1_20261109: cyclone
+  "cinematic_whoosh_deep_impact", // ZEPHYR_ORIGINAL_SOUND_PACK_V1_20261109: finisher
+];

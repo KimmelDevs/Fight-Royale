@@ -156,6 +156,8 @@ const FIGHT_STYLES: Readonly<Record<string, FightStyle>> = {
   raven: { range: 5.75, heavy: 0.40, combo: 0.47, bait: 0.20, pressure: 0.30, skillBias: [1.4, 1.25, 1.35] },
   ash: { range: 6.20, heavy: 0.50, combo: 0.40, bait: 0.44, pressure: 0.19, skillBias: [1.5, 1.0, 1.4] },
   veyr: { range: 1.59, heavy: 0.15, combo: 0.98, bait: 0.68, pressure: 0.94, skillBias: [1.0, 1.35, 1.5] },
+  // RAIGO_IRON_BASTION_V1: hold midrange, guard against rushdown, punish approach.
+  raigo: { range: 2.90, heavy: 0.30, combo: 0.73, bait: 0.69, pressure: 0.55, skillBias: [1.35, 1.60, 1.22] },
   zarek: { range: 2.10, heavy: 0.30, combo: 0.91, bait: 0.35, pressure: 0.86, skillBias: [1.3, 1.2, 1.45] },
   // ZEPHYR_DRAGON_DANCER_V1: aggressive counter-based three-section staff duelist.
   zephyr: { range: 2.15, heavy: 0.20, combo: 0.96, bait: 0.58, pressure: 0.78, skillBias: [1.35, 1.75, 1.1] },
@@ -2656,8 +2658,7 @@ export class AiBrain implements Brain {
         f.intent.attack || f.intent.skill || f.intent.block ||
         f.intent.dash.lengthSq() > 0.01 ||
         this.blockWait >= 0 || this.blockHold > 0 ||
-        o.guard < o.maxGuard * 0.30 ||
-        (o.state === S.ATTACK && o.atkPhase < 2)) {
+        o.guard < o.maxGuard * 0.30) {
       this.fatigueCircleT = 0;
       return false;
     }

@@ -4,6 +4,7 @@
 import * as THREE from "three";
 import * as M from "./mat";
 import { FighterModel } from "./model";
+import { Sound } from "./sound"; // ZEPHYR_ORIGINAL_SOUND_PACK_V1_20261109
 import * as Kits from "./kits";
 import type { Look } from "./roster";
 import { presentationPose } from "./presentation";
@@ -63,6 +64,7 @@ export class Preview {
     this.model = null;
     if (!look) return;
     this.lookName = look.name;
+    if (look.kit === "tristaff") Sound.preload(["spacey_swish_spin", "fast_whip_strike", "gear_fast_lock_tap", "throw_hard_wind_woosh", "metal_impact_whip", "long_sweeping_air_swoosh", "cinematic_whoosh_deep_impact"]);
     const model = new FighterModel(look);
     this.model = model;
     this.onLoading(model.loading);
@@ -78,6 +80,30 @@ export class Preview {
     this.poseT = 0;
   }
 
+  // ZEPHYR_ORIGINAL_SOUND_PACK_V1_20261109: original-filename sound cues for the 9-second preview choreography.
+  private zephyrShowSound(previous: number, current: number) {
+    if (this.mode !== "select" || this.lookName.toLowerCase() !== "zephyr" ||
+        document.visibilityState === "hidden" || current - previous > 0.20) return;
+    const cues: ReadonlyArray<readonly [number, string, number]> = [
+      [0.45, "spacey_swish_spin", 0.31],
+      [1.16, "fast_whip_strike", 0.27],
+      [2.60, "spacey_swish_spin", 0.30],
+      [3.74, "long_sweeping_air_swoosh", 0.28],
+      [4.54, "throw_hard_wind_woosh", 0.42],
+      [6.25, "gear_fast_lock_tap", 0.43],
+      [7.08, "spacey_swish_spin", 0.28],
+      [7.62, "cinematic_whoosh_deep_impact", 0.43],
+    ];
+    const start = Math.floor(previous / 9);
+    const end = Math.floor(current / 9);
+    for (let cycle = start; cycle <= end; cycle++) {
+      for (const [moment, name, volume] of cues) {
+        const event = cycle * 9 + moment;
+        if (previous < event && current >= event) Sound.play(name, volume, 0.02);
+      }
+    }
+  }
+
   private tick(dt: number) {
     const w = this.canvas.clientWidth, h = this.canvas.clientHeight;
     if (this.canvas.width !== Math.floor(w * this.renderer.getPixelRatio())) {
@@ -90,17 +116,20 @@ export class Preview {
     this.drag = 0;
     this.stand.rotation.y = Math.sin(this.spin) * 0.6;
     if (this.model) {
+      const previousPresentationTime = this.poseT;
       this.poseT += dt;
+      this.zephyrShowSound(previousPresentationTime, this.poseT);
       // Unique, looping VRM-compatible presentation; visual only.
       // Distinct showcase timing, independent of live combat/skill logic.
       const who = this.lookName.toLowerCase();
       const phase = this.mode === "victory" ? this.poseT :
-        this.poseT % (who === "nythera" ? 10.2 : who === "zephyr" ? 9 : 6.2);
+        this.poseT % (who === "raigo" ? 9.6 : who === "nythera" ? 10.2 : who === "zephyr" ? 9 : 6.2);
       this.model.presentationT = phase;
       this.model.presentationMode = this.mode;
       this.model.glaivePose = who === "nythera" ? "nythera_show" : who === "zarek" ? "show_baton" : "idle";
       this.model.dragonMode = who === "zephyr" ? Math.min(3,Math.floor((this.poseT%9)/2.25)) : 0;
       this.model.dragonPose = who === "zephyr" ? "show_tristaff" : "idle";
+      this.model.raigoPose = who === "raigo" ? "raigo_show" : "idle";
       // Kaizen: a controlled chain orbit, not an unrelated giant VFX circle.
       this.model.chainPose = who === "kaizen" && phase >= 0.55 && phase <= 2.30 ? "cbz_w" : "idle";
       // Ash: nock and pull a real bow string, then release at the flourish.

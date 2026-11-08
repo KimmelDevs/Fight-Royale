@@ -178,6 +178,14 @@ export const CHARACTERS: Character[] = [
       hair: "#263f45", hair_shade: "#76939a", iris_top: "#1e8c7e", iris_bottom: "#b6ffe2", eye_dark: "#113034",
       tunic: "#203a43", band: "#85bba5", pants: "#19242e", boots: "#202936", metal: "#e0e8df", trim: "#d5be82",
       cape: "#274a53", cape_bottom: "#84c7ae", glow: "#78eed0", shield: "#243e48", emblem: "#e8d9a0" } },
+  // RAIGO_IRON_BASTION_V1: placeholder Garrick VRM, original dual weapon animations.
+  { id: "raigo", title: "Iron Bastion", role: "Warrior - Chained Axe & Flail",
+    desc: "A mid-range iron weapon master. Keep the spiked ball in motion, catch incoming attacks with the chain, then spend Momentum on a crushing axe-and-flail finish.",
+    stats: { power: 5, speed: 2, range: 4, defense: 4 },
+    look: { name: "Raigo", body: "m", vrm: "garrick", kit: "axeflail", element: "iron", outfit: "knight", style: "short", hat: "none",
+      hair: "#292b30", hair_shade: "#66676c", iris_top: "#ba7a30", iris_bottom: "#f2ca79", eye_dark: "#332416",
+      tunic: "#343c3b", band: "#6c7863", pants: "#22292b", boots: "#292c30", metal: "#b4b7ba", trim: "#c9a86b",
+      cape: "#343e3d", cape_bottom: "#566654", glow: "#e3af69", shield: "#464844", emblem: "#e8c58b" } },
 
 ];
 

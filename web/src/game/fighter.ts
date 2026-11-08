@@ -500,6 +500,28 @@ export class Fighter implements Entity {
     this.dragonRhythmT = ZEPHYR_PASSIVE_TUNING.rhythmSeconds;
   }
   onSwing: (f: Fighter) => void = () => {};
+  // RAIGO_IRON_BASTION_V1 — host-owned momentum; client receives snapshot.
+  raigoMomentum = 0;
+  raigoMomentumT = 0;
+  private raigoLastAward = "";
+  private raigoLastOffenseSerial = -1;
+  earnRaigoMomentum(token: string) {
+    if (this.kit !== "axeflail" || this.isDown()) return;
+    if (token.startsWith("swing:")) {
+      const serial=Number(token.slice(6));
+      if (!Number.isFinite(serial) || serial === this.raigoLastOffenseSerial) return;
+      this.raigoLastOffenseSerial=serial;
+    } else if (token === this.raigoLastAward) return;
+    this.raigoLastAward = token;
+    this.raigoMomentum = Math.min(3, this.raigoMomentum + 1);
+    this.raigoMomentumT = 5.0;
+  }
+  consumeRaigoMomentum() {
+    if (this.raigoMomentum !== 3) return false;
+    this.raigoMomentum = 0;
+    this.raigoMomentumT = 0;
+    return true;
+  }
   // ZENITH_IRON_SOVEREIGN_V1_20261108 — pure game-side spear state.
   zenithSpearOut = false;
   // ZENITH_TWIN_BLADES_CATCH_CHOREO_V5_20261108: recovery is CC-only protection, never HP invulnerability.
@@ -1214,6 +1236,10 @@ export class Fighter implements Entity {
     this.dashT = Math.max(this.dashT - dt, 0);
     this.readDash();
     this.wardT = Math.max(this.wardT - dt, 0);
+    if (this.kit === "axeflail" && this.raigoMomentum > 0) {
+      this.raigoMomentumT = Math.max(0, this.raigoMomentumT - dt);
+      if (this.raigoMomentumT === 0) this.raigoMomentum = 0;
+    }
     this.frostShieldT = Math.max(0, this.frostShieldT - dt);
     if (this.frostShieldT === 0) this.frostShieldCharges = 0;
     this.rageT = Math.max(this.rageT - dt, 0);
@@ -1473,6 +1499,11 @@ export class Fighter implements Entity {
     this.model.dragonProgress = this.state === S.ATTACK && this.atk ?
       Math.max(0, Math.min(1, this.stateT / Math.max(0.01, this.atk.wind + this.atk.active))) : 0;
     this.model.glaivePose = this.kit === "scythe" ? this.poseName : this.kit === "glaive" ? (this.state === S.WIN ? "show_baton" : this.poseName) : "idle";
+    this.model.raigoPose = this.kit === "axeflail" ? (this.state === S.WIN ? "raigo_show" : this.poseName) : "idle";
+    // RAIGO_IRON_BASTION_V31: beat count follows the ATTACK, not the current pose.
+    this.model.raigoPulses = this.kit === "axeflail" && this.atk ?
+      ({ raigo_comet: 3, raigo_tempest: 5, raigo_twinned: 5 } as Record<string, number>)[this.atk.style] ?? 1 : 1;
+    this.model.raigoProgress = this.kit === "axeflail" && this.atk ? Math.max(0, Math.min(1, (this.stateT - this.atk.wind)/Math.max(.08,this.atk.active))) : 0;
     this.updateKiraCastVisual();
     this.updateKaedeSheathVisual();
     this.model.blend(this.state === S.WIN
@@ -3164,6 +3195,22 @@ export class Fighter implements Entity {
           else { p = a.pose_s; sp = 12; }
           break;
         }
+        // RAIGO_IRON_BASTION_V1: alternating real axe+ball grip silhouettes.
+        if (this.kit === "axeflail" && a) {
+          if (["raigo_comet","raigo_tempest","raigo_twinned"].includes(a.style)) {
+            const elapsed=this.stateT-a.wind;
+            const beats=a.style==="raigo_comet" ? ["rgz_s","rg2_s","rgz_s"] :
+              a.style==="raigo_tempest" ? ["rg1_s","rg2_s","rg3_s","rg2_s","rg4_s"] :
+              ["rg2_s","rg1_s","rg4_s","rg3_s","rgv_final_s"];
+            const count=beats.length;
+            p=elapsed<0 ? a.pose_w : beats[Math.min(count-1,Math.floor(elapsed/Math.max(.08,a.active/count)))];
+            sp=elapsed<0 ? 19 : 49;
+          } else if (this.atkPhase === 0) { p=a.pose_w; sp=20; }
+          else if (this.atkPhase === 1) { p=a.pose_s; sp=52; }
+          else if (this.stateT<a.wind+a.active+a.recover*.72) { p=a.pose_s; sp=17; }
+          else { p="idle"; sp=11; }
+          break;
+        }
         // NYX_SHADOW_COMBAT_AIR_2_V1: fast dagger contact, compact recover, no wide robotic arms.
         if (this.kit === "assassin" && a) {
           if (this.atkPhase === 0) { p = a.pose_w; sp = 29; }
@@ -3357,7 +3404,7 @@ export class Fighter implements Entity {
       this.passiveAshHits, this.passiveAshProcs, this.passiveNesaHits,
       this.passiveKaizenWeaken, this.passiveEmberGroundHits,
       this.passiveEmberPatches, this.dragonRhythm, +this.dragonRhythmT.toFixed(2), this.dragonMode,
-      this.guardFatigueStacks, +this.guardFatigueDecayT.toFixed(2)]; // GUARD_FATIGUE_V26: optional tail, indices 86-87
+      this.guardFatigueStacks, +this.guardFatigueDecayT.toFixed(2), this.raigoMomentum, +this.raigoMomentumT.toFixed(2)]; // GUARD_FATIGUE_V26: optional tail, indices 86-87
   }
 
   applySnapshot(s: any[]) {
@@ -3419,6 +3466,9 @@ export class Fighter implements Entity {
       this.model.zenithCatchRecoilT = this.zenithCatchRecoilT;
       this.zenithMagneticChargeT = s.length > 59 ? (s[59] ?? 0) : 0;
     }
+    // RAIGO_LATEST_SRC_FIX: append-only, backwards-compatible network indices.
+    this.raigoMomentum = s.length > 88 ? s[88] : 0;
+    this.raigoMomentumT = s.length > 89 ? s[89] : 0;
     this.hp = s[8];
     this.guard = s[9];
     this.model.walk = s[10];
@@ -3484,6 +3534,11 @@ export class Fighter implements Entity {
     this.model.dragonProgress = this.state === S.ATTACK && this.atk ?
       Math.max(0, Math.min(1, this.stateT / Math.max(0.01, this.atk.wind + this.atk.active))) : 0;
     this.model.glaivePose = this.kit === "scythe" ? this.poseName : this.kit === "glaive" ? (this.state === S.WIN ? "show_baton" : this.poseName) : "idle";
+    this.model.raigoPose = this.kit === "axeflail" ? (this.state === S.WIN ? "raigo_show" : this.poseName) : "idle";
+    // RAIGO_IRON_BASTION_V31: beat count follows the ATTACK, not the current pose.
+    this.model.raigoPulses = this.kit === "axeflail" && this.atk ?
+      ({ raigo_comet: 3, raigo_tempest: 5, raigo_twinned: 5 } as Record<string, number>)[this.atk.style] ?? 1 : 1;
+    this.model.raigoProgress = this.kit === "axeflail" && this.atk ? Math.max(0, Math.min(1, (this.stateT - this.atk.wind)/Math.max(.08,this.atk.active))) : 0;
     this.updateKiraCastVisual();
     this.updateKaedeSheathVisual();
     this.model.blend(this.state === S.WIN
