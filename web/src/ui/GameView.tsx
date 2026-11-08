@@ -1,3 +1,4 @@
+// PASSIVE_ROSTER_V10 — roster-wide passives, readable HUD and CPU visibility.
 // ZAREK_ARC_FLASH_CPU_SPECTATOR_COOLDOWNS_20261107_V1
 // FOURTH_SKILL_V_MASTER_AI_TWO_ROW_ROSTER_20261107_V1
 // FIGHT_ROYALE_VICTORY_HIGHLIGHTS_V1
@@ -137,29 +138,50 @@ function Bar({ v, color, right }: { v: number; color: string; right?: boolean })
   );
 }
 
-/** CPU-only compact column: skill icons, keys and countdowns, never skill names. */
+
+// V10: all passives use the same opaque, readable black counter panel.
+type PassiveReadout = { label: string; value: string; desc?: string; icon?: string };
+function PassiveHUD({ list, right = false }: { list?: PassiveReadout[]; right?: boolean }) {
+  if (!list?.length) return null;
+  return <div className="fr-passive-readouts" style={{ textAlign: right ? "right" : "left" }}
+    aria-label="Live passive stacks and effects">
+    {list.map((p, idx) => <div key={`${p.label}-${idx}`} className="fr-passive-row" title={p.desc || p.label}>
+      {p.icon && <Icon src={p.icon} alt={`${p.label} passive`} size={27} />}
+      <div className="fr-passive-content">
+        <strong>{p.label}</strong><b>{p.value}</b>
+      </div>
+    </div>)}
+  </div>;
+}
+
+/** CPU spectator: full skill names, explanations, live cooldowns and passive descriptions. */
 function CpuSpectatorSkills({ data, side }: {
   data: NonNullable<NonNullable<Hud["spectatorSkills"]>["left"]>;
   side: "left" | "right";
 }) {
   return (
     <section className={`cpu-spectator-column ${side}`} aria-label={`${side === "left" ? "CPU 1" : "CPU 2"} cooldowns and passives`}>
-      <div className="cpu-spectator-heading">SKILL COOLDOWNS</div>
+      <div className="cpu-spectator-heading">SKILLS · LIVE COOLDOWNS</div>
       <div className="cpu-spectator-slots">
         {data.slots.map((slot) => (
-          <div className="cpu-spectator-skill" key={slot.key}>
-            <Icon src={skillIcon(data.kit, data.element, slot.icon)} alt={`${slot.key.toUpperCase()} icon`} size={25} />
-            <b>{slot.key.toUpperCase()}</b>
-            <strong className={slot.cd <= 0.05 ? "ready" : "waiting"}>
-              {slot.cd <= 0.05 ? "0.0s" : `${slot.cd.toFixed(1)}s`}
-            </strong>
+          <div className="fr-cpu-skill-detail" key={slot.key} title={slot.desc}>
+            <Icon src={skillIcon(data.kit, data.element, slot.icon)} alt={`${slot.key.toUpperCase()} icon`} size={29} />
+            <div className="fr-cpu-skill-content">
+              <div className="fr-cpu-skill-title"><strong>{slot.key.toUpperCase()} · {slot.name}</strong>
+                <b className={slot.cd <= 0.05 ? "ready" : "waiting"}>{slot.cd <= 0.05 ? "READY" : `${slot.cd.toFixed(1)}s`}</b>
+              </div>
+              <p>{slot.desc}</p>
+            </div>
           </div>
         ))}
       </div>
-      <div className="cpu-spectator-heading passive">PASSIVE</div>
+      <div className="cpu-spectator-heading passive">PASSIVES · LIVE STACKS</div>
       {data.passives.length ? data.passives.map((p, idx) => (
-        <div className="cpu-spectator-passive" key={`${p.label}-${idx}`}>
-          <span>{p.label}</span><b>{p.value}</b>
+        <div className="fr-cpu-passive-detail" key={`${p.label}-${idx}`}>
+          {p.icon && <Icon src={p.icon} alt={`${p.label} passive`} size={29} />}
+          <div className="fr-cpu-passive-content"><strong>{p.label}</strong><b>{p.value}</b>
+            <p>{p.desc}</p>
+          </div>
         </div>
       )) : <div className="cpu-spectator-empty">No active stacks</div>}
     </section>
@@ -300,14 +322,14 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
               <div className="nm"><Icon src={charIcon(me.id)} alt={me.name} size={44} />{me.name}</div>
               <Bar v={me.hp / me.maxHp} color="#7fd65b" />
               <div className="guard"><Bar v={me.guard / me.maxGuard} color={me.guard / me.maxGuard > 0.25 ? "#f2c94c" : "#ff7043"} /></div>
-              {me.id === "roxy" && <RoxyFrostbiteMeter stacks={me.frostShardStacks} shards={me.frostShieldCharges} shieldT={me.frostShieldT} />}
-              {me.id === "zenith" && <ZenithTempoMeter stacks={me.zenithTempoStacks} seconds={me.zenithTempoT} blades={me.zenithTwinBlades} />}
+              {false && me.id === "roxy" && <RoxyFrostbiteMeter stacks={me.frostShardStacks} shards={me.frostShieldCharges} shieldT={me.frostShieldT} />}
+              {false && me.id === "zenith" && <ZenithTempoMeter stacks={me.zenithTempoStacks} seconds={me.zenithTempoT} blades={me.zenithTwinBlades} />}
               {me.bleedStacks > 0 && <div style={{ color: "#ff7988", fontSize: 11, fontWeight: 800 }}>🩸 BLEED ×{me.bleedStacks}/5</div>}
-              {(me.id === "nythera" || me.orbitDisplayT > 0) &&
+              {false && (me.id === "nythera" || me.orbitDisplayT > 0) &&
                 <OrbitMeter stacks={me.orbitDisplayStacks} seconds={me.orbitDisplayT} />}
-              {me.id === "nythera" && <DreadfallTempoMeter hits={me.nytheraDreadfallHits} />}
+              {false && me.id === "nythera" && <DreadfallTempoMeter hits={me.nytheraDreadfallHits} />}
               {/* ZAREK_WHITE_COUNTER_V1 */}
-              {me.id === "zarek" && (
+              {false && me.id === "zarek" && (
                 <div style={{ display: "flex", alignItems: "center", gap: 7,
                   marginTop: 5, color: "#ffffff", textShadow: "0 1px 3px rgba(0, 0, 0, 0.95)", fontSize: 11 }}>
                   <Icon src="/icons/skills/glaive-passive.webp" alt="Clash Counter" size={25}
@@ -322,9 +344,10 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
                   </div>
                 </div>
               )}
+              {!cfg.spectator && <PassiveHUD list={me.passives} />}
               <div className="num">{Math.ceil(me.hp)} / {Math.round(me.maxHp)}</div>
               <StatusChips list={me.status} />
-              {me.id === "veyr" && (
+              {false && me.id === "veyr" && (
                 <div style={{ marginTop: 7, fontSize: 11, color: "#ff9cb6" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
                     <b>{me.bloodFrenzyT > 0 ? "BLOOD FRENZY" : "BLOODLUST"}</b>
@@ -346,12 +369,13 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
               <div className="nm">{other.name}{other.tag ? `  (${other.tag})` : ""}<Icon src={charIcon(other.id)} alt={other.name} size={44} /></div>
               <Bar v={other.hp / other.maxHp} color="#e8534a" right />
               <div className="guard"><Bar v={other.guard / other.maxGuard} color="#f2c94c" right /></div>
-              {other.id === "roxy" && <RoxyFrostbiteMeter stacks={other.frostShardStacks} shards={other.frostShieldCharges} shieldT={other.frostShieldT} right />}
-              {other.id === "zenith" && <ZenithTempoMeter stacks={other.zenithTempoStacks} seconds={other.zenithTempoT} blades={other.zenithTwinBlades} right />}
+              {false && other.id === "roxy" && <RoxyFrostbiteMeter stacks={other.frostShardStacks} shards={other.frostShieldCharges} shieldT={other.frostShieldT} right />}
+              {false && other.id === "zenith" && <ZenithTempoMeter stacks={other.zenithTempoStacks} seconds={other.zenithTempoT} blades={other.zenithTwinBlades} right />}
               {other.bleedStacks > 0 && <div style={{ color: "#ff7988", fontSize: 11, fontWeight: 800, textAlign: "right" }}>🩸 BLEED ×{other.bleedStacks}/5</div>}
-              {(other.id === "nythera" || other.orbitDisplayT > 0) &&
+              {false && (other.id === "nythera" || other.orbitDisplayT > 0) &&
                 <OrbitMeter stacks={other.orbitDisplayStacks} seconds={other.orbitDisplayT} right />}
-              {other.id === "nythera" && <DreadfallTempoMeter hits={other.nytheraDreadfallHits} right />}
+              {false && other.id === "nythera" && <DreadfallTempoMeter hits={other.nytheraDreadfallHits} right />}
+              {!cfg.spectator && <PassiveHUD list={other.passives} right />}
               <StatusChips list={other.status} right />
             </div>
           )}

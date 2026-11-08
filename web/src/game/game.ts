@@ -1,3 +1,4 @@
+// PASSIVE_ROSTER_V10 — roster-wide passives, readable HUD and CPU visibility.
 // ROXY_V7_5PCT_LIGHT_CHARGED_BIRD_NO_WIND_20261108: remove unavailable Frostwing wind sound.
 // AI_ROOK_NESA_KIRA_MERGED_V1_20261108
 // KAIZEN_PARRY_SPEED_MINUS_10_PERCENT_20261107_V1
@@ -1218,8 +1219,11 @@ export class Game implements MobHost {
     f.onSickleRecast = (x) => this.recastBloodSickle(x);
     f.onSnowCommand = (x, key) => this.commandSnowSummon(x, key);
     f.onTrigger = (x) => {
-      const t = this.traps.find((k) => k.kind === "barrel" && k.owner === x);
-      if (t) { this.snd("click", 0.8); this.detonate(t); } else x.barrelOut = false;
+      const barrels = this.traps.filter(k => k.kind === "barrel" && k.owner === x);
+      if (barrels.length) {
+        this.snd("click", 0.8);
+        for (const t of barrels) this.detonate(t);
+      } else x.barrelOut = false;
     };
     f.onAirJump = (x) => {
       // A burst of wind under the feet: two expanding rings like a gust platform, a flash,
@@ -2857,27 +2861,38 @@ export class Game implements MobHost {
   }
 
   private plantMine(f: Fighter, a: Attack) {
-    if (f.kit === "bomb" && this.traps.some(t => t.kind === "mine" && t.owner === f) &&
-        this.traps.filter(t => t.kind === "mine" && t.owner === f).length >= 2) return;
+    // Each confirmed mine blast adds one mine to future casts, up to 8 per cast.
+    const limit = Math.min(8, 2 + f.passiveBobMines);
+    const existing = this.traps.filter(t => t.kind === "mine" && t.owner === f).length;
+    const n = Math.min(1 + f.passiveBobMines, 8, Math.max(0, limit - existing));
     const fwd = new THREE.Vector3(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
-    const mine = this.addTrap("mine", f, a, f.root.position.clone().addScaledVector(fwd, 0.6).setY(0));
-    mine.arm = 0.5;
-    mine.life = 25;
-    // Exactly two active Bob mines; excess ammo stays in the inventory.
-    const mines = this.traps.filter((t) => t.kind === "mine" && t.owner === f);
-    f.bobMineCount = mines.length;
+    const side = new THREE.Vector3(-fwd.z, 0, fwd.x);
+    for (let i = 0; i < n; i++) {
+      const offset = (i - (n - 1) / 2) * 0.77;
+      const mine = this.addTrap("mine", f, a, f.root.position.clone()
+        .addScaledVector(fwd, 0.85 + Math.floor(i / 5) * 0.65)
+        .addScaledVector(side, offset).setY(0));
+      mine.arm = 0.5; mine.life = 25;
+    }
+    f.bobMineCount = this.traps.filter(t => t.kind === "mine" && t.owner === f).length;
     this.snd("land", 0.6);
   }
 
   private placeBarrel(f: Fighter, a: Attack) {
-    const old = this.traps.find((t) => t.kind === "barrel" && t.owner === f);
-    if (old) this.detonate(old);
+    // Bomb Expert spawns additional kegs, detonated together by the ordinary C recast.
     const fwd = new THREE.Vector3(Math.sin(f.root.rotation.y), 0, Math.cos(f.root.rotation.y));
-    const keg = this.addTrap("barrel", f, a, f.root.position.clone().addScaledVector(fwd, 1.2).setY(0));
-    keg.life = 25;
+    const side = new THREE.Vector3(-fwd.z, 0, fwd.x);
+    const n = Math.min(8, 1 + f.passiveBobBarrels);
+    for (let i = 0; i < n; i++) {
+      const offset = (i - (n - 1) / 2) * 0.90;
+      const keg = this.addTrap("barrel", f, a, f.root.position.clone()
+        .addScaledVector(fwd, 1.35 + Math.floor(i / 5) * 0.7)
+        .addScaledVector(side, offset).setY(0));
+      keg.life = 25;
+      if (i === 0) f.barrelPos.copy(keg.pos);
+      this.fxp("ring", keg.pos.clone(), "#c98a52", 1.2, 0.2, 0.55);
+    }
     f.barrelOut = true;
-    f.barrelPos.copy(keg.pos);
-    this.fxp("ring", keg.pos.clone(), "#c98a52", 1.4, 0.3, 0.7);
     this.snd("slam", 0.5);
   }
 
@@ -2897,10 +2912,12 @@ export class Game implements MobHost {
       t.owner.bobMineCount = this.traps.filter(x => x.kind === "mine" && x.owner === t.owner).length;
     this.emit(["trapEnd", t.id]);
     if (fizzle) this.fxp("smoke", t.pos.clone(), "#8a8a8a");
-    if (t.kind === "barrel" && t.owner) {
+    if (t.kind === "barrel" && t.owner &&
+        !this.traps.some(other => other.kind === "barrel" && other.owner === t.owner)) {
       t.owner.barrelOut = false;
-      // The keg's cooldown starts now.
-      for (const k of ["z", "x", "c"]) if (t.owner.attacks[k]?.type === "barrel") t.owner.cooldowns[k] = t.atk.cd * t.owner.cdMult;
+      // Begin normal cooldown only after the last keg in the group disappears.
+      for (const k of ["z", "x", "c"]) if (t.owner.attacks[k]?.type === "barrel")
+        t.owner.cooldowns[k] = t.atk.cd * t.owner.cdMult;
     }
   }
 
@@ -3853,8 +3870,9 @@ export class Game implements MobHost {
     visual.position.copy(center);
     this.scene.add(visual);
     this.magicPools.push({ id, kind, owner: f, team: f.team, center, radius,
-      time: a.duration, age: 0, nextPulse: 0.6, visual });
-    this.emit(["magicPool", id, kind, center.toArray(), radius, a.duration, f.id, f.team]);
+      time: a.duration * (f.look.name === "Marina" ? 1 + f.passiveWaterHealer * 0.02 : 1), age: 0, nextPulse: 0.6, visual });
+    const poolDuration = a.duration * (f.look.name === "Marina" ? 1 + f.passiveWaterHealer * 0.02 : 1);
+    this.emit(["magicPool", id, kind, center.toArray(), radius, poolDuration, f.id, f.team]);
     const el = kind === "static_field";
     this.fxp("ring", center, el ? "#ac84ff" : "#65dcff", radius, 0.38, 0.82);
     this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.8, 0)),
@@ -3886,7 +3904,8 @@ export class Game implements MobHost {
                 Math.abs(e.root.position.y - pool.center.y) > 1.6) continue;
             if (water) {
               if (!(e instanceof Fighter) || e.hp >= e.maxHp) continue;
-              const amount = Math.min(e.maxHp - e.hp, e.maxHp * 0.035);
+              const amount = Math.min(e.maxHp - e.hp, e.maxHp * 0.035 *
+                (pool.owner.look.name === "Marina" ? 1 + pool.owner.passiveWaterHealer * 0.02 : 1));
               e.heal(amount);
               this.fxp("splash", e.chest(), 5, 0.45, "#77e9ff");
               this.fxp("num", e.chest().add(new THREE.Vector3(0, 0.55, 0)),
@@ -3909,6 +3928,11 @@ export class Game implements MobHost {
   }
 
   private applyBuff(f: Fighter, a: Attack) {
+    if (f.look.name === "Marina" && ["ward", "heal", "healing_water"].includes(a.mode)) {
+      f.passiveWaterHealer = Math.min(10, f.passiveWaterHealer + 1);
+      this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.8, 0)),
+        `WATER HEALER ${f.passiveWaterHealer}/10`, "#7bdfff", 0.64);
+    }
     // PvP versions of defensive magic are weaker than in survival.
     const pvp = this.cfg.mode !== "survival";
     this.snd(a.mode === "heal" ? "heal" : a.mode === "rage" ? "rage"
@@ -3924,8 +3948,9 @@ export class Game implements MobHost {
       // Marina Z is intentionally the full eight-second ward, even in PvP.
       const dur = f.kit === "mage" && f.look.element === "water" ? a.duration
         : (pvp ? Math.min(a.duration, 2) : a.duration);
-      f.wardT = dur;
-      this.fxp("bubble", f.id, dur);
+      const wardDur = f.look.name === "Marina" ? dur * (1 + f.passiveWaterHealer * 0.02) : dur;
+      f.wardT = wardDur;
+      this.fxp("bubble", f.id, wardDur);
       if (f.look.element === "frost") {
         this.fxp("ring", f.root.position.clone().setY(this.plat ? f.root.position.y : 0), "#c2f1ff", 1.4, 0.3, 0.9);
         this.fxp("motes", f.chest(), "#e9fcff", 24);
@@ -3934,10 +3959,11 @@ export class Game implements MobHost {
       this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.9, 0)), "WARD", "#8fe6ff", 0.9);
     } else if (a.mode === "heal") {
       const frac = pvp ? 0.16 : 0.25;
-      f.heal(f.maxHp * frac);
+      const healAmt = f.maxHp * frac * (f.look.name === "Marina" ? 1 + f.passiveWaterHealer * 0.02 : 1);
+      f.heal(healAmt);
       this.fxp("splash", f.chest(), 30, 1.2, "#7fe0ff");
       this.fxp("ring", f.root.position.clone(), "#9dff9a", 1.6, 0.4, 0.9);
-      this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.9, 0)), `+${Math.round(f.maxHp * frac)}`, "#9dff9a", 1.1);
+      this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.9, 0)), `+${Math.round(healAmt)}`, "#9dff9a", 1.1);
     } else if (a.mode === "rage") {
       f.rageT = a.duration;
       this.fxp("flash", f.chest(), "#ff5a3d", 0.7, 0.3, 0.8);
@@ -4107,6 +4133,8 @@ export class Game implements MobHost {
       }
     }
     this.emberPatches = this.emberPatches.filter(p => p.ttl > 0);
+    for (const f of this.fighters) if (f.look.name === "Ember")
+      f.passiveEmberPatches = this.emberPatches.filter(p => p.ownerId === f.id).length;
   }
 
   private castEmberIgnition(f: Fighter, a: Attack) {
@@ -4246,6 +4274,13 @@ export class Game implements MobHost {
       a.dmg > 0 && a.style !== "gravity_well" && a.style !== "gravity_requiem";
     const sentenceMult = heavySentence ? 1 + marks * 0.08 : 1;
     const result = d.receiveHit(attacker, zenithAttack, (riposte ? power * 1.15 : power) * sentenceMult);
+    // PASSIVES_V10: only actual resolved outcomes count; this runs on the host.
+    if (d instanceof Fighter) d.passiveOnDefense(result);
+    if (attacker instanceof Fighter) {
+      attacker.passiveOnHitAttack(a, result, this.time);
+      if (attacker.kit === "hammer" && result === "clash" && /^l\d+$/.test(a.id))
+        attacker.passiveNesaHits++; // genuine weapon clash; blocks/parries excluded
+    }
     // ZENITH_TEMPO_01X_5S_V7: +0.01x speed and one BLEED stack per
     // successful physical/projectile contact. Guard, parry, clash and DOT ticks
     // never grant stacks. Bleed caps at x5 and refreshes for 5s on reapplication.
@@ -4588,7 +4623,11 @@ export class Game implements MobHost {
     this.fxp("impactFrame", "clash", "#ffe5a2", 0.80);
     // ZAREK_WEAPON_CLASH_MOMENTUM_V1: reward genuine opposing melee weapon contact,
     // not passive blocks, parries, shield hits or projectile defenses.
-    for (const fighter of [a, b]) this.awardZarekClash(fighter);
+    for (const fighter of [a, b]) {
+      this.awardZarekClash(fighter);
+      if (fighter.kit === "hammer" && /^l\d+$/.test(fighter.atkId))
+        fighter.passiveNesaHits++; // Nesa gains speed on real basic clashes
+    }
     // VEYR_BLOODLUST_CARRION_V7: reward a genuine Carrion Sweep weapon collision.
     if ([a, b].some(f => f.kit === "sickle" && f.atk?.style === "sickle_carrion")) {
       this.fxp("slashes", pos, "#ff527f");
@@ -5179,9 +5218,11 @@ export class Game implements MobHost {
           else cd = Math.max(cd, f.chainBindT);
         }
         if (f.bloodFestivalT > 0) cd = Math.max(cd, f.bloodFestivalT);
-        return { key, icon: a.id, cd, max };
+        return { key, icon: a.id, name: a.name,
+          desc: a.desc || `${a.type === "buff" ? "Support" : "Combat"} · ${Math.round(a.dmg)} damage · ${a.cd.toFixed(1)}s base CD`,
+          cd, max };
       });
-      const passives: Array<{ label: string; value: string }> = [];
+      const passives: Array<{ label: string; value: string; desc?: string; icon?: string }> = [];
       if (f.look.name === "Zarek") {
         passives.push({ label: "CLASH", value: `${f.clashMomentum} · ${Math.min(2, 1 + Math.min(5, f.clashMomentum) * 0.2).toFixed(1)}×` });
       }
@@ -5218,13 +5259,57 @@ export class Game implements MobHost {
         passives.push({ label: "SHADOW", value: `${f.nyxShadowBoostT.toFixed(1)}s` });
       if (f.rageT > 0) passives.push({ label: "DMG BUFF", value: `${f.rageT.toFixed(1)}s` });
       if (f.judgmentT > 0) passives.push({ label: "BUFF", value: `${f.judgmentT.toFixed(1)}s` });
-      return { slots, passives, kit: f.kit, element: f.look.element, glow: f.look.glow };
+      // PASSIVE_ROSTER_V10: all 20 heroes have visible readable information.
+      // New counters are added to the already existing named mechanic panels.
+      const displayId = CHARACTERS[f.charIndex]?.id ?? "";
+      const add = (label: string, value: string, desc: string) => passives.push({ label, value, desc });
+      if (f.orbitDisplayT > 0) passives.push({ label: "ORBIT MARKED",
+        value: `${f.orbitDisplayStacks}/5 · ${f.orbitDisplayT.toFixed(1)}s`,
+        desc: "Nythera's Orbit Marks on this fighter. Each Moonfloat contact builds a mark (max 5); 25s duration.",
+        icon: "/icons/passives/nythera.webp" });
+      if (displayId === "aster") add("SHIELD RESOLVE", `${(f.passiveGuard * 0.5).toFixed(1)} stacks · +${Math.round(f.passiveGuard * 0.5 * 5)}% DEF · +${Math.round((f.passiveKnightSpeed() - 1) * 100)}% Judgment SPD`,
+        "Parry +1 stack; block +0.5. Each stack boosts defense 5%; shield skills and Judgment gain 1% speed per stack. No stack cap; lasts the whole match.");
+      if (displayId === "vesper") add("DUELIST RESOLVE", `${(f.passiveGuard * 0.5).toFixed(1)} stacks · ${f.passiveDamageMult().toFixed(2)}× DMG`,
+        "Parry +1 stack; block +0.5. Each stack boosts outgoing damage 5%. No cap; lasts the entire match.");
+      if (displayId === "kaede" || displayId === "kira") add("COUNTER BLOOM", `${f.passiveSwordCounter}/4 · ${f.passiveDamageMult().toFixed(2)}× DMG`,
+        "Successful Z counter attacks build up to 4 stacks, each adding +5% damage. All baseline attacks start 20% weaker. Resets each round.");
+      if (displayId === "ember") add("SCORCHING GROUND", `${f.passiveEmberPatches}/5 patches · ${f.passiveEmberGroundHits} hits`,
+        "Existing passive fire patches: tracks active burning ground and successful ground-fire hits. Resets each round.");
+      if (displayId === "marina") add("WATER HEALER", `${f.passiveWaterHealer}/10 · +${f.passiveWaterHealer * 2}% duration/heal`,
+        "Each successful shield or healing cast adds one stack (max 10). +2% shield/field duration and +2% healing per stack. Resets each round.");
+      if (displayId === "nyx") add("AMBUSH", `${f.passiveNyxAmbush} stacks · ${(1 + f.passiveNyxAmbush * 0.02).toFixed(2)}× ranged`,
+        "Each C hit adds +2% damage to ranged skills for the remainder of the round.");
+      if (displayId === "rook") add("COMBO CHAMPION", `${f.passiveRookBest} best · +${f.passiveRookBest}% DMG`,
+        "Highest consecutive damaging-hit combo this round becomes a +1% damage bonus per hit. Blocks/parries interrupt the current chain.");
+      if (displayId === "gale") add("TEMPEST SMASH", `${f.passiveGaleSmashes} hit refunds`,
+        "Each successful smash skill hit cuts all currently running skill cooldowns by 10%. Base cooldowns never change.");
+      if (displayId === "bob") add("BOMB EXPERT", `Mines ×${Math.min(8, 1 + f.passiveBobMines)} · Barrels ×${Math.min(8, 1 + f.passiveBobBarrels)}`,
+        "Successful mine or barrel hits add another device to future casts of that type (up to 8 per cast). Does not affect basic, charged, paralyze throw, or cluster bombs.");
+      if (displayId === "raven") add("CHAIN PARALYSIS", `${(rival?.status.paralyzeImmunityRemaining() ?? 0).toFixed(1)}s foe immunity`,
+        "All damaging special skills paralyze. Status lasts one extra second but slows and jolts less; victims gain 4s immunity after paralysis ends.");
+      if (displayId === "ash") add("PRECISE RHYTHM", `${f.passiveAshHits}/5 hits · ${f.passiveAshProcs}/2 refunds`,
+        "-20% maximum HP. Five uninterrupted damaging hits shorten remaining Z cooldown by 30%, up to twice per round; blocks/parries reset the chain.");
+      if (displayId === "nesa") add("HAMMER TEMPO", `${f.passiveNesaHits} stacks · ${(1 + f.passiveNesaHits * 0.01).toFixed(2)}× SPD`,
+        "Each damaging basic hit or real weapon clash grants +1% attack speed. Blocks/parries do not count. Resets each round.");
+      if (displayId === "kaizen") add("BINDING GRASP", `${rival?.passiveKaizenWeaken ?? 0}/5 on foe`,
+        "Each confirmed chain grab weakens the grabbed enemy's damage by 5%, max 5 stacks (25%). Resets each round.");
+      if (displayId === "garrick") passives.push({ label: "RESOLVE INFO", value: `${f.garrickResolve}/3`, desc: "Parrying or clashing with projectiles earns Resolve; higher stacks improve his unstoppable approach." });
+      if (displayId === "veyr") passives.push({ label: "BLOODLUST INFO", value: `${Math.round(f.bloodlust)}/100`, desc: "Successful sickle hits charge Bloodlust; Frenzy activates when the meter fills." });
+      if (displayId === "zarek") passives.push({ label: "CLASH INFO", value: `${f.clashMomentum}`, desc: "Real weapon clashes build Momentum and improve basic-attack speed." });
+      if (displayId === "roxy") passives.push({ label: "FROSTBITE INFO", value: `${f.frostShardStacks}/4`, desc: "Real frost shard hits build Frostbite toward the next freeze attempt." });
+      if (displayId === "zenith") passives.push({ label: "BLADE TEMPO INFO", value: `${f.zenithTempoStacks}/14 · ${f.zenithMagneticChargeT.toFixed(1)}s`, desc: "Each successful hit grants +0.01× attack speed for 5 seconds; at most 14 stacks. Twin-blade stance has its own base speed." });
+      if (displayId === "nythera") passives.push({ label: "REAPER INFO", value: `${f.nytheraDreadfallHits}/14 · ${rival?.orbitDisplayStacks ?? 0}/5 Orbit`, desc: "Orbit Marks last 25s; damaging Dreadfall strikes gain +0.10× attack speed, max 2.40× for the round. Can chain four air slices." });
+      return { slots, passives: passives.map(p => ({ ...p,
+        icon: p.icon ?? `/icons/passives/${displayId}.webp`,
+        desc: p.desc || `Current ${p.label.toLowerCase()} status for ${f.look.name}.` })),
+        kit: f.kit, element: f.look.element, glow: f.look.glow };
     };
     const info = (f: Fighter) => ({ id: CHARACTERS[f.charIndex].id, name: f.look.name + (isCpu(f.owner) && f.owner !== "cpu" ? " (CPU)" : ""), hp: f.hp, maxHp: f.maxHp, guard: f.guard, maxGuard: f.maxGuard, down: f.isDown(), glow: f.look.glow,
       pct: f.pct, stocks: f.stocks, out: f.out, team: f.team, status: f.status.kinds(), bloodlust: f.bloodlust, bloodFrenzyT: f.bloodFrenzyT, bloodFestivalT: f.bloodFestivalT, clashMomentum: f.clashMomentum, chainBindT: f.chainBindT,
       chainBindKind: f.chainBindKind, gravityMode: f.gravityMode, gravitySwitchCd: f.gravitySwitchCd,
       orbitDisplayStacks: f.orbitDisplayStacks, orbitDisplayT: f.orbitDisplayT,
       nytheraDreadfallHits: f.nytheraDreadfallHits,
+      passives: spectatorDetail(f, this.fighters.find(foe => foe !== f && foe.team !== f.team) ?? null)?.passives ?? [],
       zenithTempoStacks: f.zenithTempoStacks, zenithTempoT: f.zenithMagneticChargeT,
       zenithTwinBlades: f.zenithSpearOut,
       bleedStacks: f.status.has("bleed") ? Math.max(f.status.stacks("bleed"), f.bleedDisplayStacks) : 0,

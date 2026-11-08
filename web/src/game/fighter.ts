@@ -1,3 +1,4 @@
+// PASSIVE_ROSTER_V10 — roster-wide passives, readable HUD and CPU visibility.
 // AI_ROOK_NESA_KIRA_MERGED_V1_20261108
 // KAIZEN_PARRY_SPEED_MINUS_10_PERCENT_20261107_V1
 // BALANCE_KIRA_KAEDE_PATTERN_AI_AIR_ICON_20261107_V1
@@ -90,6 +91,90 @@ export interface Entity {
 }
 
 export class Fighter implements Entity {
+  // PASSIVE_ROSTER_V10: host-authoritative roster passive statistics. Only knight
+  // shield mastery (Aster/Vesper) survives an inter-round revive.
+  passiveGuard = 0;       // half-stack points: block=1, parry=2
+  passiveSwordCounter = 0; // Kaede/Kira successful Z: 4 max
+  passiveWaterHealer = 0;
+  passiveNyxAmbush = 0;
+  passiveRookCurrent = 0;
+  passiveRookLastAt = -99;
+  passiveRookBest = 0;
+  passiveGaleSmashes = 0;
+  passiveBobMines = 0; // successful mine hits -> +1 mine per cast
+  passiveBobBarrels = 0; // successful barrel hits -> +1 barrel per cast
+  passiveAshHits = 0;
+  passiveAshProcs = 0;
+  passiveAshLastHit = -99;
+  passiveNesaHits = 0;
+  passiveKaizenWeaken = 0; // on the VICTIM (0-5)
+  passiveEmberGroundHits = 0;
+  passiveEmberPatches = 0;
+  passiveMatchKey = "";
+  passiveDamageMult() {
+    if (this.look.name === "Vesper") return 1 + this.passiveGuard * 0.5 * 0.05;
+    if (this.kit === "katana" || this.kit === "kicks") return 1 + this.passiveSwordCounter * 0.05;
+    if (this.kit === "knuckles") return 1 + this.passiveRookBest * 0.01;
+    if (this.kit === "assassin") return 1; // C bonus applies only to ranged skills
+    return 1;
+  }
+  passiveKnightSpeed() {
+    // Shield mastery: +1% speed per full equivalent stack; amplified form for Aster.
+    return this.kit === "knight" ? 1 + this.passiveGuard * 0.5 * 0.01 : 1;
+  }
+  passiveResetRound() {
+    // Aster/Vesper explicitly carry shield mastery across the WHOLE MATCH.
+    if (this.look.name !== "Aster" && this.look.name !== "Vesper") this.passiveGuard = 0;
+    this.passiveSwordCounter = 0; this.passiveWaterHealer = 0;
+    this.passiveNyxAmbush = 0; this.passiveRookCurrent = 0; this.passiveRookBest = 0; this.passiveRookLastAt = -99;
+    this.passiveGaleSmashes = 0; this.passiveBobMines = 0; this.passiveBobBarrels = 0;
+    this.passiveAshHits = 0; this.passiveAshProcs = 0; this.passiveAshLastHit = -99;
+    this.passiveNesaHits = 0; this.passiveKaizenWeaken = 0;
+    this.passiveEmberGroundHits = 0; this.passiveEmberPatches = 0;
+  }
+  passiveOnDefense(result: string) {
+    if (this.kit !== "knight" || !["Aster", "Vesper"].includes(this.look.name)) return;
+    if (result === "parry") this.passiveGuard += 2;
+    else if (result === "blocked") this.passiveGuard += 1;
+  }
+  passiveOnHitAttack(a: Attack, result: string, now: number) {
+    const real = result === "hit" || result === "crit" || result === "ko";
+    if (!real) {
+      if (this.kit === "bow" && ["blocked", "parry", "guard_break", "counter"].includes(result)) this.passiveAshHits = 0;
+      if (this.kit === "knuckles" && ["blocked", "parry", "guard_break", "counter"].includes(result)) this.passiveRookCurrent = 0;
+      return;
+    }
+    if (this.kit === "katana" && a.id === "z") this.passiveSwordCounter = Math.min(4, this.passiveSwordCounter + 1);
+    if (this.kit === "kicks" && a.id === "z") this.passiveSwordCounter = Math.min(4, this.passiveSwordCounter + 1);
+    if (this.kit === "assassin" && a.id === "c") this.passiveNyxAmbush++;
+    if (this.kit === "knuckles") {
+      if (now - this.passiveRookLastAt > 2.8) this.passiveRookCurrent = 0;
+      this.passiveRookLastAt = now;
+      this.passiveRookCurrent++;
+      this.passiveRookBest = Math.max(this.passiveRookBest, this.passiveRookCurrent);
+    }
+    if (this.kit === "wind" && (["z", "x", "c", "v"].includes(a.id) || a.id.endsWith("_air")) &&
+        (a.type === "strike" || a.mode === "dive" || a.style.includes("slam"))) {
+      this.passiveGaleSmashes++;
+      for (const k of ["z", "x", "c", "v"]) if (this.cooldowns[k] > 0)
+        this.cooldowns[k] *= 0.90; // current cooldown only, base CD is NEVER modified
+    }
+    if (this.kit === "bomb" && a.type === "mine") this.passiveBobMines++;
+    if (this.kit === "bomb" && a.type === "barrel") this.passiveBobBarrels++;
+    if (this.kit === "bow") {
+      if (now - this.passiveAshLastHit > 3.0) this.passiveAshHits = 0;
+      this.passiveAshLastHit = now;
+      this.passiveAshHits++;
+      if (this.passiveAshHits >= 5 && this.passiveAshProcs < 2) {
+        this.passiveAshHits = 0;
+        this.passiveAshProcs++;
+        this.cooldowns.z *= 0.70; // 30% of REMAINING Z cooldown, max twice per round
+      }
+    }
+    if (this.kit === "hammer" && /^l\d+$/.test(a.id)) this.passiveNesaHits++;
+    if (this.kit === "mage" && this.look.element === "fire" && a.id === "ember_ground") this.passiveEmberGroundHits++;
+  }
+
   id = 0;
   kind = "fighter";
   team = 0;
@@ -531,6 +616,8 @@ export class Fighter implements Entity {
     this.kit = look.kit;
     const st = Kits.STATS[this.kit];
     this.maxHp = st.hp; this.maxGuard = st.guard; this.moveSpeed = st.move; this.walkSpeed = st.walk;
+    // Ash pays 20% of his baseline HP for his new uninterrupted hit-chain passive.
+    if (this.kit === "bow") this.maxHp *= 0.80;
     // Aster only: +12% HP (2500 -> 2800), +25% shield guard (100 -> 125).
     if (this.kit === "knight" && look.element === "light") {
       this.maxHp *= 1.12;
@@ -603,6 +690,11 @@ export class Fighter implements Entity {
         name: "Shadow Cross", type: "melee", wind: 0.095, active: 0.105, recover: 0.23,
         dmg: 38, guard: 16, reach: 2.17, lunge: 0,
         knock: 2.2, stun: 0.30, heavy: false, stagger: false, next: "" };
+    }
+    // Kaede and Kira sacrifice 20% of EVERY baseline basic/skill hit to build
+    // their capped four-tier counter-based comeback damage (+5% per stack).
+    if (this.kit === "katana" || this.kit === "kicks") {
+      for (const move of Object.values(this.attacks)) if (move.dmg > 0) move.dmg *= 0.80;
     }
     this.root.rotation.order = "YXZ";
     this.model = new FighterModel(look);
@@ -1388,6 +1480,8 @@ export class Fighter implements Entity {
   beginChainBind(victim: Fighter, kind: "x" | "v") {
     if (this.chainBindTarget || victim.chainBoundBy || victim.isDown() || this.isDown()) return;
     this.chainBindTarget = victim;
+    // Confirmed grab: permanent for this round, max 5 stacks, -5% damage each.
+    victim.passiveKaizenWeaken = Math.min(5, victim.passiveKaizenWeaken + 1);
     this.chainBindKind = kind;
     this.chainBindT = 4;
     this.chainChoiceArmed = false; // require a new key press after the bind connects
@@ -1490,7 +1584,7 @@ export class Fighter implements Entity {
     // A mine charge only spends after a legal cast; two deployed mines is a hard cap.
     const bobMine = this.kit === "bomb" && this.attacks[k]?.type === "mine";
     if (bobMine) {
-      if (this.bobMineCharges <= 0 || this.bobMineCount >= 2) return;
+      if (this.bobMineCharges <= 0 || this.bobMineCount >= Math.min(8, 2 + this.passiveBobMines)) return;
       const wasFull = this.bobMineCharges === 4;
       this.bobMineCharges -= 1;
       if (wasFull) this.bobMineRechargeT = Math.max(0.2, this.attacks[k].cd * this.cdMult);
@@ -1666,6 +1760,21 @@ export class Fighter implements Entity {
     if (this.kit === "knuckles" && this.atk?.name === "Meteor Fist") this.knock = 0;
     if (this.kit === "chainblade" && this.chainFuryT > 0 && /^l\d+$/.test(id))
       this.atk = { ...this.atk, reach: this.atk.reach + 0.32, guard: this.atk.guard * 1.12 };
+    // Match-long shield mastery: speed is gained from actual successful defenses.
+    // Aster uses it during Judgment and on shield-related sword skills;
+    // Vesper converts her defensive stacks into damage instead of speed.
+    if (this.look.name === "Aster" && this.kit === "knight" &&
+        (this.judgmentT > 0 || id === "z" || id === "v")) {
+      const speed = this.passiveKnightSpeed();
+      this.atk = { ...this.atk, wind: this.atk.wind / speed,
+        active: this.atk.active / speed, recover: this.atk.recover / speed };
+    }
+    // Nesa: unblocked basic contacts and genuine clashes build round-long attack speed.
+    if (this.kit === "hammer") {
+      const speed = 1 + this.passiveNesaHits * 0.01;
+      this.atk = { ...this.atk, wind: this.atk.wind / speed,
+        active: this.atk.active / speed, recover: this.atk.recover / speed };
+    }
     // Each real clash adds +20% light-combo speed, capped at 2x. Counter itself is uncapped.
     if (this.kit === "glaive" && this.look.element !== "metal" && /^l[1-9]$/.test(id)) {
       const speed = 1 + Math.min(this.clashMomentum, 5) * 0.20;
@@ -2104,15 +2213,31 @@ export class Fighter implements Entity {
       return "warded"; // zero HP AND guard damage, exactly one crystal spent per hit
     }
     if (this.wardT > 0) { this.model.recoil = 0.4; return "warded"; }
-    if (this.counterT > 0 && !a.no_parry) { this.counterT = 0; return "counter"; }
+    if (this.counterT > 0 && !a.no_parry) {
+      this.counterT = 0;
+      if (this.kit === "katana" || this.kit === "kicks") this.passiveSwordCounter = Math.min(4, this.passiveSwordCounter + 1);
+      return "counter";
+    }
     let dmg = a.dmg * power;
     if (a.type === "projectile" && this.garrickIsAdvancing(attacker)) dmg *= 0.75;
     // Garrick Ground Slam's sword-plant startup is braced, not invulnerable.
     if (this.kit === "greatsword" && this.state === S.ATTACK &&
         this.atk?.name === "Ground Slam" && this.stateT <= this.atk.wind + 0.035)
       dmg *= 0.67;
-    // Aster's armor reduces incoming HP damage by 10%, including guard breaks.
-    if (this.kit === "knight" && this.look.element === "light") dmg *= 0.90;
+    // PASSIVE_ROSTER_V10: apply only real combat-based damage multipliers.
+    if (attacker instanceof Fighter) {
+      dmg *= attacker.passiveDamageMult();
+      dmg *= 1 - 0.05 * Math.min(5, attacker.passiveKaizenWeaken);
+      if (attacker.kit === "assassin" && ["z", "x", "c", "v"].includes(a.id) &&
+          (a.type === "projectile" || a.type === "strike" || a.type === "lob"))
+        dmg *= 1 + attacker.passiveNyxAmbush * 0.02;
+    }
+    // Aster's armor + persistent additive defense readings: diminishing damage taken
+    // avoids negative damage even though his stack count has no cap.
+    if (this.kit === "knight" && this.look.element === "light") {
+      dmg *= 0.90;
+      dmg /= 1 + this.passiveGuard * 0.5 * 0.05;
+    }
     this.knockFrom = attacker ? attacker.root.position.x : this.root.position.x - this.facing;
     // Veyr's Blood Festival forbids the perfect-parry outcome against his melee swings.
     // A regular block still costs guard, and simultaneous attacks can still clash.
@@ -2218,6 +2343,12 @@ export class Fighter implements Entity {
     this.model.flash();
     if (this.hp <= 0) { this.ko(); return "ko"; }
     // Even during Blood Festival, damage and non-stunning conditions still land.
+    // RAVEN_CHAIN_PARALYSIS_V10: every offensive special can paralyze on real HP damage.
+    // Immunity is enforced in StatusSet AFTER the prior paralyze expires.
+    if (attacker instanceof Fighter && attacker.look.name === "Raven" &&
+        /^(z|x|c|v)(?:_air)?$/.test(a.id) &&
+        a.dmg > 0 && a.effect !== "paralyze" && this.zenithCatchShieldT <= 0)
+      this.status.apply("paralyze", 1.2, 0, attacker);
     if (a.effect && this.zenithCatchShieldT <= 0 &&
         !(this.bloodFestivalT > 0 && a.effect === "paralyze") &&
         !(this.meteorFistArmor && (a.effect === "paralyze" || a.effect === "slow")))
@@ -2324,6 +2455,7 @@ export class Fighter implements Entity {
     this.judgmentT = 0; this.model.setJudgment(false);
     this.clashMomentum = 0;
     this.nytheraDreadfallHits = 0; // new round: wipe Dreadfall speed progress
+    this.passiveResetRound();
     if (this.look.element === "metal") {
       this.zenithSpearOut = false;
       this.zenithMagneticChargeT = 0;
@@ -2362,6 +2494,7 @@ export class Fighter implements Entity {
     this.parryRecoilT = 0; this.parryCounterPendingDepth = 0; this.parryCounterDepth = 0; this.counterVisualRemote = false;
     this.clashMomentum = 0;
     this.nytheraDreadfallHits = 0;
+    this.passiveResetRound();
     this.bloodlust = 0; this.bloodFrenzyT = 0; this.bloodFeintT = 0; this.sickleOut = false; this.bloodFestivalT = 0;
     this.status.clear();
     this.setState(S.KO);
@@ -2797,7 +2930,13 @@ export class Fighter implements Entity {
       +this.zenithMagneticChargeT.toFixed(2), this.gravityMode === "heavy" ? 1 : 0, +this.gravitySwitchCd.toFixed(2), +this.gravityFloatT.toFixed(2),
       this.orbitDisplayStacks, +this.orbitDisplayT.toFixed(2),
       this.zenithTempoStacks, this.bleedDisplayStacks,
-      this.nytheraDreadfallHits]; // NYTHERA_AERIAL_DREADFALL_V9: new optional field 67
+      this.nytheraDreadfallHits,
+      this.passiveGuard, this.passiveSwordCounter, this.passiveWaterHealer,
+      this.passiveNyxAmbush, this.passiveRookCurrent, this.passiveRookBest,
+      this.passiveGaleSmashes, this.passiveBobMines, this.passiveBobBarrels,
+      this.passiveAshHits, this.passiveAshProcs, this.passiveNesaHits,
+      this.passiveKaizenWeaken, this.passiveEmberGroundHits,
+      this.passiveEmberPatches]; // PASSIVE_ROSTER_V10: optional appended snapshot fields
   }
 
   applySnapshot(s: any[]) {
@@ -2832,6 +2971,14 @@ export class Fighter implements Entity {
     this.zenithTempoStacks = s.length > 65 ? s[65] : 0;
     this.bleedDisplayStacks = s.length > 66 ? s[66] : 0;
     this.nytheraDreadfallHits = s.length > 67 ? s[67] : 0;
+    this.passiveGuard = s[68] ?? 0; this.passiveSwordCounter = s[69] ?? 0;
+    this.passiveWaterHealer = s[70] ?? 0; this.passiveNyxAmbush = s[71] ?? 0;
+    this.passiveRookCurrent = s[72] ?? 0; this.passiveRookBest = s[73] ?? 0;
+    this.passiveGaleSmashes = s[74] ?? 0; this.passiveBobMines = s[75] ?? 0;
+    this.passiveBobBarrels = s[76] ?? 0; this.passiveAshHits = s[77] ?? 0;
+    this.passiveAshProcs = s[78] ?? 0; this.passiveNesaHits = s[79] ?? 0;
+    this.passiveKaizenWeaken = s[80] ?? 0; this.passiveEmberGroundHits = s[81] ?? 0;
+    this.passiveEmberPatches = s[82] ?? 0;
     this.model.gravityHeavy = this.kit === "scythe" && this.gravityMode === "heavy";
     if (this.look.element === "metal" && s.length > 58) {
       const isOut = s[56] === 1;

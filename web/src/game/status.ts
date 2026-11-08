@@ -1,3 +1,4 @@
+// PASSIVE_ROSTER_V10 — roster-wide passives, readable HUD and CPU visibility.
 // ASTER_WEAKEN_50S_5_STACKS_V1_20261107
 // Status effects that skills leave on whoever they hit (fighters and survival mobs).
 //   burn     - fire damage over time
@@ -14,7 +15,7 @@ export const STATUS: Record<StatusKind, { label: string; color: string; bit: num
   burn: { label: "BURN", color: "#ff7a2e", bit: 1, text: (t, p) => `Burn: ${p} dmg/s for ${t}s` },
   poison: { label: "POISON", color: "#8ee05a", bit: 2, text: (t, p) => `Poison: ${p} dmg/s for ${t}s, stacks x3` },
   bleed: { label: "BLEED", color: "#e0303e", bit: 4, text: (t, p) => `Bleed: ${p} dmg/s per stack for ${t}s (Zenith: up to x5; x1.5 while moving)` },
-  paralyze: { label: "PARALYZED", color: "#ffe066", bit: 8, text: (t) => `Paralyze: ${t}s (slowed, jolted every second)` },
+  paralyze: { label: "PARALYZED", color: "#ffe066", bit: 8, text: (t) => `Paralyze: ${t}s (22% slowed, jolted every 1.6s; 4s immunity after recovery)` },
   slow: { label: "SLOWED", color: "#7fc8ff", bit: 16, text: (t, p) => `Slow: -${Math.round((1 - p) * 100)}% movement, attack and cast speed for ${t}s` },
   freeze: { label: "FROZEN", color: "#c5f7ff", bit: 64, text: (t) => `Freeze: immobilized and unable to attack for ${t}s` },
   weaken: { label: "WEAKENED", color: "#fff2b0", bit: 32, text: (t, p) => `Weaken: -${Math.round((1 - p) * 100)}% outgoing damage per stack (multiplicative); up to 5 stacks (${Math.round((1 - Math.pow(p, 5)) * 100)}% max). Lasts ${t}s; each hit adds a stack and refreshes the timer.` },
@@ -23,8 +24,8 @@ export const STATUS: Record<StatusKind, { label: string; color: string; bit: num
 const DOT_TICK = 0.5;
 const POISON_STACKS = 3;
 const WEAKEN_STACKS = 5;
-const JOLT_EVERY = 1.0;
-const PARALYZE_SPEED = 0.6;
+const JOLT_EVERY = 1.6; // V10: softened jolt frequency
+const PARALYZE_SPEED = 0.78; // V10: 22% slow instead of 40%
 
 interface Active { t: number; p: number; stacks: number; tick: number; jolt: number }
 
@@ -35,6 +36,8 @@ export class StatusSet {
   grantCcImmunity(t: number) { this.ccImmuneT = Math.max(this.ccImmuneT, t); }
   // ROXY_FLOATING_BOOK_FROSTWING_FREEZE_V4_20261108: immunity starts AFTER thawing.
   private freezeImmuneT = 0;
+  private paralyzeImmuneT = 0;
+  paralyzeImmunityRemaining() { return this.paralyzeImmuneT; }
   freezeImmunityRemaining() { return this.freezeImmuneT; }
   /** Bitmask of active effects (also set directly on online puppets). */
   mask = 0;
@@ -43,6 +46,8 @@ export class StatusSet {
 
   apply(kind: StatusKind, t: number, p: number, src: unknown = null): boolean {
     if (this.ccImmuneT > 0 && (kind === "freeze" || kind === "paralyze" || kind === "slow")) return false;
+    if (kind === "paralyze" && this.paralyzeImmuneT > 0) return false;
+    if (kind === "paralyze") t += 1.0; // V10: one extra second, once on application
     // Incoming Freeze may damage, but cannot refresh, chain, or bypass thaw immunity.
     if (kind === "freeze" && (this.m.has("freeze") || this.freezeImmuneT > 0)) return false;
     if (src) this.src = src;
@@ -80,7 +85,7 @@ export class StatusSet {
   has(kind: StatusKind) { return (this.mask & STATUS[kind].bit) !== 0; }
   stacks(kind: StatusKind) { return this.m.get(kind)?.stacks ?? 0; }
   consume(kind: StatusKind) { const n = this.stacks(kind); this.m.delete(kind); this.syncMask(); return n; }
-  clear() { this.m.clear(); this.mask = 0; this.src = null; this.freezeImmuneT = 0; this.ccImmuneT = 0; }
+  clear() { this.m.clear(); this.mask = 0; this.src = null; this.freezeImmuneT = 0; this.ccImmuneT = 0; this.paralyzeImmuneT = 0; }
 
   /** Slow also affects attack animation and the casting/wind-up of skills. */
   actionSpeedMult() {
@@ -112,7 +117,9 @@ export class StatusSet {
     const dots: { kind: StatusKind; dmg: number }[] = [];
     let jolt = false;
     let thawed = false;
+    let paralyzeExpired = false;
     this.freezeImmuneT = Math.max(0, this.freezeImmuneT - dt);
+    this.paralyzeImmuneT = Math.max(0, this.paralyzeImmuneT - dt);
     this.ccImmuneT = Math.max(0, this.ccImmuneT - dt);
     for (const [kind, s] of this.m) {
       s.t -= dt;
@@ -131,8 +138,10 @@ export class StatusSet {
       if (s.t <= 0) {
         this.m.delete(kind);
         if (kind === "freeze") thawed = true;
+        if (kind === "paralyze") paralyzeExpired = true;
       }
     }
+    if (paralyzeExpired) this.paralyzeImmuneT = 4; // 4s begins when paralyze ENDS
     if (thawed) {
       // 4s total re-freeze lockout, beginning at thaw; 2s of 35% slow.
       this.freezeImmuneT = 4.0;

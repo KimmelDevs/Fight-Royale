@@ -127,6 +127,7 @@ export class FighterModel extends THREE.Group {
   gravityHeavy = false;
   private gravityHalo: THREE.Group | null = null;
   private gravityScythe: THREE.Group | null = null;
+  private gravityStanceBadges: THREE.Sprite[] = []; // NYTHERA_REAPER_AI_STANCE_BLADE_V11
   // NYTHERA_SHOWCASE_SPIN_TOSS_V3 — cosmetic duplicate used only in character preview.
   private gravityPreviewFlyer: THREE.Group | null = null;
   private gravityShowFlying = false;
@@ -741,11 +742,58 @@ export class FighterModel extends THREE.Group {
   /** NYTHERA_GRAVITY_REAPER_INSTALL_V1 — Eclipsed Mourning, not a reused sickle.
    * The crescent is an extruded Bezier steel blade with a separate glowing cutting rim.
    * Right hand holds shaft, left hand IK is anchored lower on the same grip. */
+
+  // NYTHERA_REAPER_AI_STANCE_BLADE_V11: compact in-world mode symbols, not a
+  // fixed-screen HUD. Both local and remote fighters use synced gravityHeavy.
+  private buildGravityStanceBadges() {
+    if (typeof document === "undefined") return;
+    const make = (heavy: boolean): THREE.Sprite => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 128; canvas.height = 128;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Canvas unavailable for gravity badge");
+      ctx.beginPath(); ctx.arc(64, 64, 54, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(6,7,18,0.91)"; ctx.fill();
+      ctx.lineWidth = 7; ctx.strokeStyle = heavy ? "#c78aff" : "#91e4ff"; ctx.stroke();
+      ctx.lineJoin = "round"; ctx.lineCap = "round";
+      if (heavy) {
+        // Purple falling-weight glyph: three downward strokes.
+        ctx.strokeStyle = "#f2d8ff"; ctx.lineWidth = 9;
+        ctx.beginPath(); ctx.moveTo(64,25); ctx.lineTo(64,82);
+        ctx.moveTo(38,61); ctx.lineTo(64,88); ctx.lineTo(90,61); ctx.stroke();
+        ctx.fillStyle = "#d9a6ff";
+        ctx.beginPath(); ctx.moveTo(40,96); ctx.lineTo(88,96);
+        ctx.lineTo(79,105); ctx.lineTo(49,105); ctx.closePath(); ctx.fill();
+      } else {
+        // Pale crescent moon = Moonfloat / light gravity.
+        ctx.fillStyle = "#dbf7ff";
+        ctx.beginPath(); ctx.arc(60,62,29,-1.12,2.05,false);
+        ctx.quadraticCurveTo(91,84,82,33); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = "#9bdeff";
+        ctx.beginPath(); ctx.arc(89,87,5,0,Math.PI*2); ctx.fill();
+      }
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      const mat = new THREE.SpriteMaterial({map: tex, transparent: true,
+        depthWrite: false, depthTest: true, toneMapped: false});
+      const sprite = new THREE.Sprite(mat);
+      sprite.name = heavy ? "Nythera Dreadfall icon" : "Nythera Moonfloat icon";
+      sprite.position.set(0, 2.13, 0);
+      sprite.scale.set(0.38, 0.38, 1);
+      sprite.renderOrder = 4;
+      this.add(sprite);
+      this.gravityStanceBadges.push(sprite);
+      return sprite;
+    };
+    make(false); make(true);
+  }
+
   private buildGravityScythe() {
     const scythe = pivot(this.hand_r, [0, 0, 0], [PI / 2, 0, 0]);
     scythe.name = "Eclipsed Mourning — Nythera";
     scythe.scale.setScalar(0.95);
     this.gravityScythe = scythe;
+    this.buildGravityStanceBadges();
     const dark = this.tn("#181229"), steel = this.tn("#b79cdb");
     const edgeSteel = this.tn("#c8ecff"), gold = this.tn("#d090d6");
     mesh(scythe, cyl(0.019, 0.021, 1.87, 12), dark, [0,-0.04,0]);
@@ -760,6 +808,9 @@ export class FighterModel extends THREE.Group {
     // Back of the blade climbs high, then sweeps outward to a needle-sharp
     // hooked beak; concave lower edge is much thinner than Nythera V1.
     // This is a single blade, never a double-sided polearm.
+    // 10% shorter blade head ONLY: original haft, grip, reach and timings stay unchanged.
+    const bladeHead = pivot(scythe, [0, 0.0755, 0]);
+    bladeHead.scale.set(0.90, 0.90, 1);
     shape.moveTo(-0.024, 0.755);
     shape.bezierCurveTo(-0.20, 1.045, -0.36, 1.48, -0.60, 1.615);
     shape.bezierCurveTo(-0.88, 1.755, -1.17, 1.69, -1.365, 1.465);
@@ -769,18 +820,18 @@ export class FighterModel extends THREE.Group {
     const geo = new THREE.ExtrudeGeometry(shape, { depth:0.021, bevelEnabled:true,
       bevelThickness:0.0045, bevelSize:0.003, bevelSegments:2, curveSegments:32 });
     geo.translate(0,0,-0.0105);
-    mesh(scythe, geo, steel);
+    mesh(bladeHead, geo, steel);
     // Polished hooked cutting edge is visibly thinner than the whole blade.
     const edgeCurve = new THREE.CatmullRomCurve3([
       new THREE.Vector3(-0.06,0.83,0.015), new THREE.Vector3(-0.37,1.29,0.015),
       new THREE.Vector3(-0.68,1.49,0.015), new THREE.Vector3(-1.02,1.55,0.015),
       new THREE.Vector3(-1.365,1.465,0.015)]);
-    mesh(scythe, new THREE.TubeGeometry(edgeCurve, 34, 0.0058, 5, false), edgeSteel);
+    mesh(bladeHead, new THREE.TubeGeometry(edgeCurve, 34, 0.0058, 5, false), edgeSteel);
     // Fine violet spine inlay, kept behind the silver cutting edge.
     const spineCurve = new THREE.CatmullRomCurve3([
       new THREE.Vector3(-0.13,0.91,0.014), new THREE.Vector3(-0.35,1.41,0.014),
       new THREE.Vector3(-0.66,1.61,0.014), new THREE.Vector3(-1.02,1.60,0.014)]);
-    mesh(scythe, new THREE.TubeGeometry(spineCurve, 25, 0.004, 5, false), gold);
+    mesh(bladeHead, new THREE.TubeGeometry(spineCurve, 25, 0.004, 5, false), gold);
     const rear = pivot(scythe,[0,-0.94,0]);
     mesh(rear, sphere(0.068,16), gold, [0,0,0],[0,0,0],[1,1.2,0.62]);
     mesh(rear, sphere(0.038,12), this.gem(), [0,-0.014,0]);
@@ -794,8 +845,8 @@ export class FighterModel extends THREE.Group {
     }
     this.gripL = pivot(scythe,[0,-0.29,0]);
     // Use cutting-edge positions for native trails, melee contact and weapon clash.
-    this.bladeBase = pivot(scythe,[-0.26,1.10,0]);
-    this.bladeTip = pivot(scythe,[-1.36,1.465,0]);
+    this.bladeBase = pivot(bladeHead,[-0.26,1.10,0]);
+    this.bladeTip = pivot(bladeHead,[-1.36,1.465,0]);
     this.castPoint = this.bladeTip;
     this.shieldNode = scythe;
   }
@@ -2306,6 +2357,10 @@ export class FighterModel extends THREE.Group {
       d.node.position.copy(d.base).add(v(0.025 * Math.sin(phase),
         0.026 * Math.cos(phase * 0.72), 0.015 * Math.cos(phase)));
       d.node.scale.setScalar(0.65 + 0.35 * (1 + Math.sin(phase * 1.3)));
+    }
+    if (this.gravityStanceBadges.length === 2) {
+      this.gravityStanceBadges[0].visible = !this.gravityHeavy;
+      this.gravityStanceBadges[1].visible = this.gravityHeavy;
     }
     if (this.gravityScythe) {
       // NYTHERA_SHOWCASE_SPIN_TOSS_V3: actual scythe transforms now match body beats.

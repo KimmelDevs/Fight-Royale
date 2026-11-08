@@ -1,3 +1,4 @@
+// PASSIVE_ROSTER_V10 — roster-wide passives, readable HUD and CPU visibility.
 // AI_CHARACTER_FIGHTING_STYLES_V1_20261108
 // AI_ADVANCED_FOOTWORK_V1_20261108
 // AI_ROOK_NESA_KIRA_MERGED_V1_20261108
@@ -161,7 +162,7 @@ const FIGHT_STYLES: Readonly<Record<string, FightStyle>> = {
   zenith: { range: 2.10, heavy: 0.12, combo: 0.98, bait: 0.25, pressure: 1.00, skillBias: [1.45, 1.35, 1.10] },
   // Nythera: orbit at the rim of a reaping arc; chain lights in Moonfloat,
   // then commit to Dreadfall once she observes real contact/recovery.
-  nythera: { range: 2.31, heavy: 0.20, combo: 0.93, bait: 0.39, pressure: 0.84, skillBias: [1.28, 1.22, 0.74] },
+  nythera: { range: 2.00, heavy: 0.13, combo: 1.08, bait: 0.18, pressure: 1.26, skillBias: [1.55, 1.35, 1.01] },
 };
 
 // CHARACTER_STYLES_V1: existing FIGHT_STYLES already holds base preferences.
@@ -199,7 +200,7 @@ const CHARACTER_PERSONALITY: Readonly<Record<string, PersonalityProfile>> = {
   nesa:    { role: "bruiser",     pressure: 1.03, probe: 1.04, reset: 0.45, vReserve: 0.85, spacing:  0.19 },
   roxy:    { role: "controller",  pressure: 0.60, probe: 1.16, reset: 0.90, vReserve: 0.52, spacing:  0.26 },
   zenith:  { role: "duelist", pressure: 1.85, probe: 0.63, reset: 0.17, vReserve: 0.89, spacing: -0.16 },
-  nythera: { role: "duelist", pressure: 1.37, probe: 0.84, reset: 0.30, vReserve: 1.07, spacing: 0.07 },
+  nythera: { role: "duelist", pressure: 1.68, probe: 0.52, reset: 0.15, vReserve: 0.85, spacing: -0.08 },
 };
 // Difficulty affects how often bots make informed, committed personality reads.
 const CHARACTER_IQ = [
@@ -1474,6 +1475,7 @@ export class AiBrain implements Brain {
   private nytheraLastContactAt = -100;
   private nytheraNextPlanAt = 0;
   private nytheraLastStanceAt = -100;
+  private nytheraActionCycle = 0; // NYTHERA_REAPER_AI_STANCE_BLADE_V11
   private nytheraOrbitDir = 1;
   private nytheraOrbitFlipAt = 0;
 
@@ -1495,91 +1497,108 @@ export class AiBrain implements Brain {
     if (now - this.nytheraLastContactAt > 3.8) this.nytheraRecentContacts = 0;
   }
 
+  // NYTHERA_REAPER_AI_STANCE_BLADE_V11: use skills and move instead of passively
+  // re-blocking Zenith. Reads only public opponent animations, distance and HP.
   private nytheraV2Plan(f: Fighter, o: Fighter): boolean {
     if (f.kit !== "scythe" || f.isDown() || o.isDown()) return false;
     const now = this.threats.now();
-    if (now < this.nytheraNextPlanAt || f.intent.skill || f.intent.attack || f.intent.block ||
-        f.intent.dash.lengthSq() > 0.01 || this.blockWait >= 0 || this.blockHold > 0 ||
-        this.comboParryTarget > now || f.chainBoundBy || f.status.has("freeze")) return false;
+    if (now < this.nytheraNextPlanAt || f.intent.skill || f.intent.attack ||
+        f.intent.dash.lengthSq() > 0.01 || f.chainBoundBy ||
+        f.status.has("freeze") || f.atkLock > 0) return false;
     const gap = f.root.position.clone().setY(0).distanceTo(o.root.position.clone().setY(0));
-    const verticalGap = Math.abs(o.root.position.y - f.root.position.y);
-    const punish = this.hasPunishWindow(o) || o.stunRemaining > 0.18 ||
-      o.state === S.STAGGER || o.state === S.HITSTUN;
-    const threat = o.state === S.ATTACK && o.atkPhase <= 1 && !!o.atk &&
-      gap < (o.atk.reach || 2.0) + 0.55;
+    const dy = Math.abs(o.root.position.y - f.root.position.y);
+    const a = o.atk;
+    const danger = o.state === S.ATTACK && o.atkPhase === 1 && !!a &&
+      a.type === "melee" && gap < a.reach + 0.25;
+    const windup = o.state === S.ATTACK && o.atkPhase === 0 && !!a &&
+      a.type === "melee" && gap < a.reach + 0.30;
+    const punish = this.hasPunishWindow(o) || o.stunRemaining > 0.15 ||
+      o.state === S.HITSTUN || o.state === S.STAGGER;
     const ready = (k: "z" | "x" | "c" | "v") => !!f.attacks[k] &&
       (f.cooldowns[k] ?? 1) <= 0 && (k !== "v" || f.bonusSkillUnlocked);
-    const act = (key: "z" | "x" | "c" | "v" | "f") => {
-      this.queue = []; this.hold = 0;
-      f.intent.attack = false;
-      f.intent.skill = key;
-      this.nytheraNextPlanAt = now + [0.96, 0.65, 0.38, 0.22][this.iqLevel];
-      if (key === "f") {
+    const act = (k: "z" | "x" | "c" | "v" | "f") => {
+      this.queue = []; this.hold = 0; this.blockWait = -1;
+      this.blockHold = 0; this.comboParryTarget = -1;
+      f.intent.block = false; f.intent.attack = false;
+      f.intent.skill = k;
+      this.nytheraActionCycle++;
+      this.nytheraNextPlanAt = now + [0.64, 0.39, 0.24, 0.15][this.iqLevel];
+      if (k === "f") {
         this.nytheraLastStanceAt = now;
         this.nytheraRecentContacts = 0;
       }
       return true;
     };
-
-    // Aerial chase is a legal air-basic, not a teleport or forced enemy launch.
+    // The dedicated aerial follow-up lives in the real attack-tap path below.
+    // X in Dreadfall is an air dive; it still needs a real opening.
     if (!f.onGround) {
-      if (f.gravityMode === "light" && f.state === S.IDLE &&
-          o.root.position.y > 0.40 && gap < 2.15 && verticalGap < 1.55 &&
-          this.iqLevel >= 1 && Math.random() < [0.08,0.38,0.67,0.86][this.iqLevel]) {
-        this.queue = []; this.hold = 0;
-        f.intent.attack = true;
-        this.nytheraNextPlanAt = now + 0.43;
-        return true;
-      }
-      if (f.gravityMode === "heavy" && f.state === S.IDLE && ready("x") &&
-          gap < 2.5 && o.root.position.y < f.root.position.y &&
-          Math.random() < [0.10,0.30,0.55,0.78][this.iqLevel]) return act("x");
+      if (!danger && f.gravityMode === "heavy" && f.state === S.IDLE &&
+          ready("x") && gap < 2.4 && o.root.position.y < f.root.position.y - 0.20 &&
+          this.iqLevel >= 2 && Math.random() < 0.30) return act("x");
       return false;
     }
-
     const free = f.state === S.IDLE || f.state === S.BLOCK ||
       (f.state === S.ATTACK && f.atkPhase === 2 && !!f.atk &&
-       f.stateT >= f.atk.wind + f.atk.active + 0.08);
-    if (!free || threat || verticalGap > 1.9) return false;
-
-    // F is a real stance input. Mode swaps occur after observable setups,
-    // not every time the opponent wobbles. Minimum 2.6s between decisions.
-    const canShift = f.gravitySwitchCd <= 0 && now - this.nytheraLastStanceAt > 2.6;
-    if (canShift && f.gravityMode === "light" && gap < 3.05 &&
+       f.stateT >= f.atk.wind + f.atk.active + 0.04);
+    if (!free || dy > 1.65) return false;
+    // Respect a live blade or an observed parry read; never gain free i-frames.
+    if (danger || (windup && gap < 1.20 && !punish)) return false;
+    // Old anti-Zenith guard plans can survive into *neutral*. Do not let them
+    // deny every legal offensive input when there is no current threat.
+    if (f.state === S.IDLE || f.state === S.BLOCK) {
+      this.blockWait = -1; this.blockHold = 0;
+      this.comboParryTarget = -1; f.intent.block = false;
+    }
+    const canShift = f.gravitySwitchCd <= 0 && now - this.nytheraLastStanceAt > 2.3;
+    // Light gravity gathers marks; heavy gravity converts them to damage/tempo.
+    if (canShift && f.gravityMode === "light" && gap < 3.10 &&
         (this.nytheraRecentContacts >= 2 ||
-          (this.nytheraRecentContacts >= 1 && punish && gap < 2.65))) {
-      return act("f");
-    }
-    if (canShift && f.gravityMode === "heavy" &&
-        (gap > 3.65 ||
-         (now - this.nytheraLastStanceAt > 5.8 && !punish &&
-          now - this.nytheraLastContactAt > 3.2))) {
-      return act("f");
-    }
-
-    // CPU difficulty affects the chance to recognize an opening.
-    if (Math.random() > [0.32, 0.56, 0.78, 0.94][this.iqLevel]) return false;
+         (this.nytheraRecentContacts >= 1 && punish) ||
+         (now - this.nytheraLastStanceAt > 8 && gap < 2.05))) return act("f");
+    // Dreadfall already earns round-long speed, so do not switch away every
+    // time the enemy briefly retreats; close in with the weapon instead.
+    if (canShift && f.gravityMode === "heavy" && gap > 4.15 &&
+        now - this.nytheraLastContactAt > 3.5) return act("f");
+    const guarding = o.state === S.BLOCK;
+    // Only use the ultimate in actual range: its separate strikes remain
+    // parryable, blockable and clashable even if the first swing misses.
+    if (ready("v") && gap > 0.85 && gap < 2.60 && dy < 1.0 &&
+        (punish || (guarding && o.guard < o.maxGuard * 0.48) ||
+         (this.iqLevel >= 2 && this.nytheraActionCycle % 6 === 4)) &&
+        Math.random() < [0.05, 0.25, 0.56, 0.76][this.iqLevel]) return act("v");
     if (f.gravityMode === "light") {
-      // Moonfloat: catch an approach with Z, lift a recovering enemy with X,
-      // or prepare Event Horizon to cut off a predictable rush lane.
-      if (ready("x") && gap > 0.85 && gap < 2.54 &&
-          (punish || (o.state === S.BLOCK && o.guard < o.maxGuard * 0.44))) return act("x");
-      if (ready("z") && gap >= 1.35 && gap < 3.03 &&
-          (punish || o.state === S.BLOCK || gap > 2.35)) return act("z");
-      if (ready("c") && gap > 1.9 && gap < 3.55 &&
-          (punish || o.state === S.IDLE) && this.iqLevel >= 1) return act("c");
-      if (ready("v") && punish && gap < 2.65 && gap > 0.80 && this.iqLevel >= 2) return act("v");
+      // Actually cast Event Horizon to cut off an approaching or retreating foe.
+      if (ready("c") && gap >= 2.15 && gap <= 3.80 && dy < 1.25 &&
+          (o.state === S.IDLE || punish || guarding) &&
+          Math.random() < [0.15, 0.50, 0.72, 0.88][this.iqLevel]) return act("c");
+      // Alternate hook and launch; don't require a hit-confirm on the previous cut.
+      if (ready("z") && gap > 0.85 && gap <= 2.92 &&
+          (gap > 1.65 || guarding || punish || this.nytheraActionCycle % 3 === 1))
+        return act("z");
+      if (ready("x") && gap > 0.78 && gap <= 2.62 &&
+          (punish || guarding || this.nytheraActionCycle % 2 === 0)) return act("x");
     } else {
-      // Dreadfall: spend a genuine punish window on execution instead of
-      // waiting at range, or break a defending enemy's guard with a hook.
-      if (ready("v") && punish && gap > 0.70 && gap < 2.75 && this.iqLevel >= 2) return act("v");
-      if (ready("x") && gap < 2.62 && gap > 0.65 &&
-          (punish || o.guard < o.maxGuard * 0.48)) return act("x");
-      if (ready("z") && gap >= 1.18 && gap < 2.90 &&
-          (punish || o.state === S.BLOCK)) return act("z");
-      if (ready("c") && gap < 2.15 && gap > 0.50 && punish) return act("c");
+      // Heavy stance aggressively cashes marks and builds Dreadfall speed.
+      if (ready("x") && gap > 0.75 && gap <= 2.58 &&
+          (punish || guarding || this.nytheraActionCycle % 3 === 0)) return act("x");
+      if (ready("z") && gap > 0.82 && gap <= 2.80 &&
+          (punish || guarding || this.nytheraActionCycle % 2 === 1)) return act("z");
+      if (ready("c") && gap <= 2.15 && gap > 0.55 &&
+          (punish || guarding) && this.iqLevel >= 1) return act("c");
     }
-    this.nytheraNextPlanAt = now + [0.45,0.32,0.22,0.14][this.iqLevel];
+    // Melee basics are vital for generating marks, Dreadfall tempo, and combo
+    // pressure. A missed skill opportunity is not a reason to stand in place.
+    if (f.state === S.IDLE && gap > 0.38 && gap <= 2.52 && dy < 1.25 &&
+        (punish || guarding || Math.random() < [0.34, 0.69, 0.86, 0.95][this.iqLevel])) {
+      this.queue = []; this.hold = 0;
+      this.blockWait = -1; this.blockHold = 0; this.comboParryTarget = -1;
+      f.intent.block = false; f.intent.attack = true;
+      this.nytheraActionCycle++;
+      this.nytheraNextPlanAt = now + [0.42, 0.28, 0.19, 0.125][this.iqLevel];
+      return true;
+    }
+    // No free attack at out-of-range targets; footwork will close the gap.
+    this.nytheraNextPlanAt = now + [0.28, 0.20, 0.14, 0.11][this.iqLevel];
     return false;
   }
 
@@ -1592,17 +1611,19 @@ export class AiBrain implements Brain {
     const gap = toward.length();
     if (gap < 0.10) return;
     toward.divideScalar(gap);
-    if (o.state === S.ATTACK && o.atkPhase === 0 && o.atk?.type === "melee" &&
-        gap < o.atk.reach + 0.65) return;
+    // Circle a winding-up spear instead of stopping in front of it.
+    const entering = o.state === S.ATTACK && o.atkPhase === 0 &&
+      o.atk?.type === "melee" && gap < o.atk.reach + 0.65;
     const now = this.threats.now();
     if (now > this.nytheraOrbitFlipAt) {
       this.nytheraOrbitFlipAt = now + [2.0,1.62,1.25,1.0][this.iqLevel];
       if (Math.random() < 0.26) this.nytheraOrbitDir *= -1;
     }
     const side = new THREE.Vector3(-toward.z,0,toward.x).multiplyScalar(this.nytheraOrbitDir);
-    const band = f.gravityMode === "light" ? 2.27 : 1.94;
+    const band = f.gravityMode === "light" ? 1.82 : 1.72; // V11: close far enough to actually hit
     const steer = new THREE.Vector3();
-    if (gap > band + 0.35) steer.copy(toward).addScaledVector(side,0.30);
+    if (entering) steer.copy(side).addScaledVector(toward,-0.36);
+    else if (gap > band + 0.35) steer.copy(toward).addScaledVector(side,0.30);
     else if (gap < 1.03) steer.copy(side).addScaledVector(toward,-0.18);
     else steer.copy(side).addScaledVector(toward, gap > band ? 0.24 : -0.06);
     if (steer.lengthSq() < 0.001) return;
@@ -1929,7 +1950,7 @@ export class AiBrain implements Brain {
     // until the real 5s timer expires. Never grant invulnerability/extra guard.
     // At low guard, disengage using actual movement/dash rules to avoid a break.
     const visibleTempo = o.zenithTempoStacks > 0 && o.zenithMagneticChargeT > 0;
-    if (visibleTempo && canInput && !f.dashing() && gap < 3.85) {
+    if (visibleTempo && f.kit !== "scythe" && canInput && !f.dashing() && gap < 3.85) {
       const guardLow = f.guard < f.maxGuard * (charged ? 0.47 : 0.39);
       this.queue = []; this.hold = 0;
       this.blockWait = -1; this.blockHold = 0;
@@ -2518,9 +2539,10 @@ export class AiBrain implements Brain {
     // NESA_AI_EDGE_GIANT_KIRA_AIR_MOVE_V2: Kira can reposition between air kicks.
     // Use the same directional input and capped movement available to the player.
     // NYX_SHADOW_COMBAT_AIR_2_V1: airborne dagger pursuit uses normal steering.
-    if (!f.stage && (f.kit === "kicks" || f.kit === "assassin") &&
+    if (!f.stage && (f.kit === "kicks" || f.kit === "assassin" || f.kit === "scythe") &&
         !f.onGround && f.state === S.ATTACK &&
-        (f.kit === "kicks" ? /^air_l[1-3]$/.test(f.atkId) : /^air_l[1-2]$/.test(f.atkId))) {
+        (f.kit === "kicks" ? /^air_l[1-3]$/.test(f.atkId) :
+          f.kit === "scythe" ? /^air_l[1-4]$/.test(f.atkId) : /^air_l[1-2]$/.test(f.atkId))) {
       const toward = o.root.position.clone().sub(f.root.position).setY(0);
       const distance = toward.length();
       if (distance > 1.1) f.intent.move.copy(toward.divideScalar(distance));
@@ -2560,10 +2582,13 @@ export class AiBrain implements Brain {
         !f.airSliceUsed &&
         flatGap < f.attacks.air_l1.reach + 0.20 &&
         Math.abs(o.chest().y - f.chest().y) < 2.1 && this.airSliceCd <= 0 &&
-        this.aerialAirStrikeChance(o, dt)) {
+        (f.kit === "scythe" ?
+          Math.random() < [0.20, 0.55, 0.82, 0.96][this.iqLevel] :
+          this.aerialAirStrikeChance(o, dt))) {
       this.aiAirTap = true;
-      this.airSliceCd = f.kit === "kicks" || f.kit === "assassin" || f.kit === "scythe"
-        ? rand(0.17, 0.24) : rand(0.55, 0.85);
+      this.airSliceCd = f.kit === "scythe" ? rand(0.085, 0.115) :
+        f.kit === "kicks" || f.kit === "assassin" ? rand(0.17, 0.24) :
+        rand(0.55, 0.85);
       this.queue = [];
       this.hold = 0;
     }
