@@ -73,7 +73,7 @@ export const STATS: Record<string, { hp: number; guard: number; move: number; wa
   chainblade: { hp: 2450, guard: 100, move: 3.55, walk: 2.75, parry: 0.16, jump: 7.0 },
   hammer: { hp: 2650, guard: 110, move: 3.05, walk: 2.45, parry: 0.15, jump: 7.0 },
   // NYTHERA_GRAVITY_REAPER_INSTALL_V1
-  scythe: { hp: 2200, guard: 76, move: 3.72, walk: 3.02, parry: 0.19, jump: 8.0 },
+  scythe: { hp: 2200, guard: 84, move: 3.72, walk: 3.02, parry: 0.19, jump: 8.0 },
 };
 
 const DEFAULT: Omit<Attack, "id" | "element"> = {
@@ -641,31 +641,39 @@ function sickle(): Record<string, Attack> {
 
 
 
-/** NYTHERA_GRAVITY_REAPER_INSTALL_V1 — four-beat curved basic string, one-handle scythe.
+/** NYTHERA_SIX_HIT_REAPER_TRAILS_V3_20261108 — six-beat curved basic string, one-handle scythe.
  * Mode-specific damage, types, and poses are resolved in Fighter.startAttack. */
 function gravityScythe(): Record<string, Attack> {
   return {
-    l1: a({ name: "Open Crescent", wind: 0.14, active: 0.08, recover: 0.19,
-      dmg: 56, guard: 14, reach: 2.40, lunge: 2.2, knock: 0.55, stun: 0.15,
+    l1: a({ name: "Open Crescent", wind: 0.105, active: 0.08, recover: 0.145,
+      dmg: 60, guard: 14, reach: 2.40, lunge: 2.2, knock: 0.38, stun: 0.15,
       style: "gravity_crescent", pose_w: "gr1_w", pose_s: "gr1_s", next: "l2" }),
-    l2: a({ name: "Reverse Veil", wind: 0.15, active: 0.08, recover: 0.20,
-      dmg: 60, guard: 15, reach: 2.42, lunge: 2.1, knock: 0.58, stun: 0.16,
+    l2: a({ name: "Reverse Veil", wind: 0.11, active: 0.08, recover: 0.15,
+      dmg: 64, guard: 15, reach: 2.42, lunge: 2.1, knock: 0.42, stun: 0.16,
       style: "gravity_crescent", pose_w: "gr2_w", pose_s: "gr2_s", next: "l3" }),
-    l3: a({ name: "Sky Hook", wind: 0.17, active: 0.08, recover: 0.21,
-      dmg: 68, guard: 17, reach: 2.48, lunge: 2.3, knock: 0.8, stun: 0.18,
+    l3: a({ name: "Sky Hook", wind: 0.115, active: 0.08, recover: 0.17,
+      dmg: 70, guard: 17, reach: 2.48, lunge: 2.3, knock: 0.55, stun: 0.18,
       style: "gravity_crescent", pose_w: "gr3_w", pose_s: "gr3_s", next: "l4" }),
-    l4: a({ name: "Orbit Bloom", wind: 0.21, active: 0.11, recover: 0.36,
-      dmg: 90, guard: 23, reach: 2.52, lunge: 2.4, knock: 2.5, stun: 0.32,
-      style: "gravity_bloom", pose_w: "gr4_w", pose_s: "gr4_s" }),
+    // Nythera V3: the original heavy fourth hit becomes a flowing setup,
+    // followed by a reverse hook and a committed crescent finisher.
+    l4: a({ name: "Orbit Bloom", wind: 0.125, active: 0.10, recover: 0.18,
+      dmg: 78, guard: 19, reach: 2.52, lunge: 2.4, knock: 0.58, stun: 0.19,
+      style: "gravity_bloom", pose_w: "gr4_w", pose_s: "gr4_s", next: "l5" }),
+    l5: a({ name: "Reversal Hook", wind: 0.13, active: 0.09, recover: 0.18,
+      dmg: 78, guard: 20, reach: 2.54, lunge: 2.25, knock: 0.55, stun: 0.18,
+      style: "gravity_crescent", pose_w: "gr5_w", pose_s: "gr5_s", next: "l6" }),
+    l6: a({ name: "Eclipse Reap", wind: 0.17, active: 0.11, recover: 0.29,
+      dmg: 108, guard: 28, reach: 2.56, lunge: 2.50, knock: 2.65, stun: 0.32,
+      style: "gravity_bloom", pose_w: "gr6_w", pose_s: "gr6_s" }),
     heavy: a({ name: "Grave Descent", wind: 0.25, active: 0.10, recover: 0.58,
       dmg: 148, guard: 42, reach: 2.53, lunge: 3.15, knock: 4.4, stun: 0.46, heavy: true,
       style: "gravity_grave", pose_w: "grh_w", pose_s: "grh_s" }),
     z: a({ name: "Crescent Snare", desc: "Moonfloat: a curving hook pulls on a confirmed hit and adds Orbit Mark. Dreadfall: a slower guard-crushing hook consumes marks.",
-      cd: 7.0, wind: 0.23, active: 0.10, recover: 0.38,
+      cd: 7.0, wind: 0.20, active: 0.10, recover: 0.34,
       dmg: 100, guard: 25, reach: 2.7, lunge: 2.5, knock: 0.85, stun: 0.24,
       style: "gravity_snare", pose_w: "grz_w", pose_s: "grz_s" }),
     x: a({ name: "Zero-G Ascension", desc: "Moonfloat: launch and pursue on a confirmed hit. Dreadfall: overhead scythe strike. Dreadfall X in midair is a landing crush.",
-      cd: 10.0, wind: 0.29, active: 0.11, recover: 0.46,
+      cd: 10.0, wind: 0.25, active: 0.11, recover: 0.42,
       dmg: 114, guard: 30, reach: 2.64, lunge: 2.9, knock: 1.4, stun: 0.32,
       style: "gravity_ascend", pose_w: "grx_w", pose_s: "grx_s" }),
     x_air: a({ name: "Mass Descent", desc: "Dreadfall only: descend toward the enemy with the scythe, then crash down in an avoidable circle.",
@@ -1229,6 +1237,11 @@ const GRAVITY_SCYTHE: Record<string, Pose> = {
   gr3_s: P([-0.23,0.31,0.05],[0.14,-0.10,0],[-2.53,0.30,-0.12],[0.18,0,0.12],[-2.28,0.27,0.11],[0.14,0,0.08],[-0.52,0,0.14],[0.36,0,-0.11],-0.12),
   gr4_w: P([0.08,-1.02,0],[0,0.58,0],[-1.04,-1.06,-0.16],[0.35,0,-0.24],[-1.17,-0.83,0.20],[0.28,0,-0.12],[-0.47,0,0.12],[0.46,0,-0.09],-0.16),
   gr4_s: P([0.18,1.08,0.06],[-0.09,-0.66,0],[-1.72,1.03,-0.04],[0.06,0,0.46],[-1.77,0.81,0.24],[0.07,0,0.29],[-0.68,0,0.13],[0.49,0,-0.11],-0.15),
+  // V3 reaper chain: reverse hooked cut across the body, then a wide final reaping lunge.
+  gr5_w: P([0.11,0.74,0.05],[-0.04,-0.43,0],[-1.36,0.91,0.12],[0.39,0,0.24],[-1.18,0.66,0.15],[0.27,0,-0.13],[-0.39,0,0.11],[0.41,0,-0.09],-0.12),
+  gr5_s: P([0.23,-0.76,-0.07],[-0.11,0.47,0],[-1.56,-0.95,-0.13],[0.10,0,-0.43],[-1.41,-0.70,0.20],[0.10,0,-0.28],[-0.52,0,0.12],[0.46,0,-0.08],-0.16),
+  gr6_w: P([-0.22,-0.90,0.04],[0.11,0.52,0],[-2.03,-1.05,-0.18],[0.46,0,-0.15],[-1.92,-0.81,0.16],[0.32,0,-0.11],[-0.62,0,0.15],[0.50,0,-0.11],-0.19),
+  gr6_s: P([0.41,1.08,0.08],[-0.18,-0.60,0],[-0.70,1.10,-0.14],[0.07,0,0.54],[-0.89,0.95,0.17],[0.06,0,0.36],[-0.83,0,0.16],[0.59,0,-0.10],-0.23),
   grh_w: P([-0.22,-0.48,-0.08],[0.14,0.31,0],[-2.60,-0.24,-0.17],[0.56,0,-0.06],[-2.47,-0.29,0.16],[0.43,0,0.06],[-0.55,0,0.16],[0.53,0,-0.12],-0.20),
   grh_s: P([0.51,0.34,0.10],[-0.24,-0.19,0],[-0.61,0.42,-0.29],[0.18,0,0.14],[-0.73,0.23,0.22],[0.13,0,-0.10],[-0.84,0,0.16],[0.62,0,-0.11],-0.26),
   grz_w: P([0.10,-0.77,-0.09],[-0.02,0.46,0],[-1.22,-1.06,-0.23],[0.55,0,-0.29],[-1.14,-0.68,0.15],[0.29,0,-0.19],[-0.43,0,0.12],[0.43,0,-0.10],-0.13),

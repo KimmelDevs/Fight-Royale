@@ -2316,6 +2316,8 @@ export class FighterModel extends THREE.Group {
         gr2_w: [1.13,0.68,0.35], gr2_s: [2.13,-0.84,-0.29],
         gr3_w: [2.13,-0.60,-0.43], gr3_s: [0.67,0.40,0.28],
         gr4_w: [1.86,-0.74,0.30], gr4_s: [1.16,0.86,-0.35],
+        gr5_w: [1.15,0.73,0.38], gr5_s: [2.18,-0.79,-0.35],
+        gr6_w: [2.12,-0.80,0.27], gr6_s: [0.72,0.95,-0.42],
         grh_w: [2.20,-0.32,0.20], grh_s: [0.74,0.53,-0.12],
         grz_w: [1.93,-0.69,-0.25], grz_s: [0.91,0.84,0.30],
         grx_w: [2.20,-0.63,-0.37], grx_s: [0.59,0.31,0.22],
@@ -2350,7 +2352,7 @@ export class FighterModel extends THREE.Group {
         // The weapon itself, not only the body, performs circular finishers.
         // Each spin ends at a whole revolution so pose changes have no pop.
         const combatTurns: Record<string,number> = {
-          gr4_s: 1, grz_s: 1, grc_s: 1,
+          gr4_s: 1, gr6_s: 1, grz_s: 1, grc_s: 1,
           grv_float: 2, grv_finish: 2,
         };
         const count = combatTurns[this.glaivePose] ?? 0;

@@ -790,6 +790,61 @@ export class Fx {
   }
 
   /** Quick crossing slash streaks (Thousand Cuts). */
+  /** NYTHERA_SIX_HIT_REAPER_TRAILS_V3_20261108 — sharp, flowing crescent ribbon.
+   * Purely visual; weapon collision remains the normal melee path.
+   * Beat controls alternating direction / rise; heavier Dreadfall has a deeper purple wake.
+   */
+  nytheraCrescent(center: THREE.Vector3, yaw: number, beat = 1, heavy = false) {
+    const duration = heavy ? 0.32 : 0.24;
+    const segments = 28;
+    const r = beat === 6 ? 1.13 : beat === 4 ? 0.95 : 0.82;
+    const reversed = beat % 2 === 0;
+    const yBias = beat === 3 ? 0.18 : beat === 5 ? -0.13 : 0;
+    const geo = new THREE.BufferGeometry();
+    const pos: number[] = [];
+    const colors: number[] = [];
+    const c1 = new THREE.Color(heavy ? "#793bd0" : "#a784ff");
+    const c2 = new THREE.Color(heavy ? "#d8a5ff" : "#dcf8ff");
+    for (let i = 0; i < segments; i++) {
+      const verts: {x:number,y:number,z:number,c:THREE.Color}[] = [];
+      for (let j=0; j<2; j++) {
+        const u = (i+j)/segments;
+        const theta = -1.35 + u*2.70;
+        const x = (reversed ? -1 : 1) * Math.sin(theta)*r;
+        const y = Math.cos(theta)*(r*0.58) + yBias + (beat === 2 ? u*0.35 : beat === 4 ? -u*0.22 : 0);
+        const zz = 0.36 + 0.20 * Math.cos(theta);
+        const width = 0.025 + 0.095 * Math.pow(Math.sin(Math.PI*u), 1.2);
+        verts.push({x,y,z:zz,c:c2});
+        verts.push({x,y:y-width,z:zz-0.025,c:c1});
+      }
+      const tri = [verts[0],verts[1],verts[2],verts[1],verts[3],verts[2]];
+      for(const p of tri) {
+        pos.push(p.x,p.y,p.z);
+        colors.push(p.c.r,p.c.g,p.c.b);
+      }
+    }
+    geo.setAttribute("position",new THREE.Float32BufferAttribute(pos,3));
+    geo.setAttribute("color",new THREE.Float32BufferAttribute(colors,3));
+    geo.computeVertexNormals();
+    const mat = new THREE.MeshBasicMaterial({ vertexColors:true, transparent:true,
+      opacity:heavy?0.86:0.78, blending:THREE.AdditiveBlending,
+      side:THREE.DoubleSide,depthWrite:false });
+    const mesh = new THREE.Mesh(geo,mat);
+    (mesh as any).ownsMat = true;
+    mesh.position.copy(center).add(new THREE.Vector3(0,0.02,0));
+    mesh.rotation.y = yaw;
+    mesh.frustumCulled = false;
+    let time = 0;
+    this.add(mesh,(dt)=>{
+      time += dt;
+      const u = Math.min(1,time/duration);
+      mat.opacity = (heavy ? 0.86 : 0.78)*Math.pow(1-u,1.5);
+      mesh.scale.setScalar(1 + 0.17*u);
+      if (time >= duration) geo.dispose();
+      return time < duration;
+    });
+  }
+
   slashes(pos: THREE.Vector3, color: string) {
     const g = new THREE.Group();
     g.position.set(pos.x, 1.0, pos.z);

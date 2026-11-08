@@ -574,8 +574,8 @@ export class Fighter implements Entity {
     this.model = new FighterModel(look);
     this.root.add(this.model);
     this.trail = new Trail(this.model.bladeBase, this.model.bladeTip,
-      this.kit === "hammer" ? "#ff53b9" : look.glow,
-      this.kit === "hammer" ? 0.25 : 0.16);
+      this.kit === "hammer" ? "#ff53b9" : this.kit === "scythe" ? "#b996ff" : look.glow,
+      this.kit === "hammer" ? 0.25 : this.kit === "scythe" ? 0.24 : 0.16);
   }
 
   // Use each kit's own windup and strike as a starting point, keeping weapon grip.
@@ -1553,8 +1553,9 @@ export class Fighter implements Entity {
     if (this.kit === "scythe" && this.atk) {
       const heavyGravity = this.gravityMode === "heavy";
       this.atk = { ...this.atk };
-      if (/^l[1-4]$/.test(id)) {
-        const speed = heavyGravity ? 1.13 : 0.89;
+      if (/^l[1-6]$/.test(id)) {
+        // NYTHERA_SIX_HIT_REAPER_TRAILS_V3_20261108: real attack timing, not pose-only speed.
+        const speed = heavyGravity ? 0.95 : 0.79;
         this.atk.wind *= speed; this.atk.recover *= speed;
         if (heavyGravity) {
           this.atk.dmg *= 1.14; this.atk.guard *= 1.30;
@@ -2542,10 +2543,10 @@ export class Fighter implements Entity {
             sp = elapsed < 0 ? 18 : elapsed < 0.50 ? 23 : 49;
           } else if (a.mode === "dive" && this.atkPhase === 1) {
             p = "grx_air_w"; sp = 17;
-          } else if (this.atkPhase === 0) { p = a.pose_w; sp = this.gravityMode === "heavy" ? 15 : 22; }
-          else if (this.atkPhase === 1) { p = a.pose_s; sp = this.gravityMode === "heavy" ? 39 : 55; }
-          else if (this.stateT < a.wind + a.active + a.recover * 0.64) { p = a.pose_s; sp = 18; }
-          else { p = "idle"; sp = 13; }
+          } else if (this.atkPhase === 0) { p = a.pose_w; sp = this.gravityMode === "heavy" ? 24 : 32; }
+          else if (this.atkPhase === 1) { p = a.pose_s; sp = this.gravityMode === "heavy" ? 64 : 85; }
+          else if (this.stateT < a.wind + a.active + a.recover * 0.72) { p = a.pose_s; sp = 30; }
+          else { p = "idle"; sp = 23; }
           break;
         }
         // ASTER_KNIGHT_COMBAT_ANIM_V2: visual anticipation, explosive contact, shield-first reset.

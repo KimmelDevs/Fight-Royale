@@ -1486,6 +1486,7 @@ export class Game implements MobHost {
       // Zenith V12: a clean, fading directional line for the two final rail spears.
       case "zenithRailGuide": fx.zenithRailGuide(v3(a[0]), v3(a[1]), a[2] ?? 0.26); break;
       case "zenithFang": fx.zenithFang(v3(a[0]), v3(a[1]), a[2] ?? 0); break;
+      case "nytheraCrescent": fx.nytheraCrescent(v3(a[0]), a[1] ?? 0, a[2] ?? 0, a[3] ?? false); break;
       case "motes": fx.motes(v3(a[0]), a[1], a[2]); break;
       case "sparks": fx.sparks(v3(a[0]), a[1], a[2], a[3], a[4] ? v3(a[4]) : null); break;
       case "splash": fx.splash(v3(a[0]), a[1], a[2], a[3]); break;
@@ -1832,9 +1833,17 @@ export class Game implements MobHost {
       });
       return true;
     }
+    // NYTHERA_SIX_HIT_REAPER_TRAILS_V3_20261108 — blade-following ribbon,
+    // clear side changes and deeper Dreadfall finishes. No expanded hitboxes.
+    const basic = /^l[1-6]$/.test(a.id);
+    if (basic || a.type === "melee") {
+      const beat = basic ? Math.min(6, Math.max(1, Number(a.id.substring(1)))) : 3;
+      this.fxp("nytheraCrescent", f.chest(), f.root.rotation.y, beat, !light);
+      if (basic) this.snd(beat === 6 ? "swing_heavy" : "swing2", light ? 0.40 : 0.53);
+    }
     this.fxp("slashes", tip, col);
-    this.fxp("flash", tip, light ? "#dbc7ff" : "#9d5cea", light ? 0.22 : 0.36, 0.12, 0.72);
-    if (a.heavy || a.id === "l4" || a.id === "x")
+    this.fxp("flash", tip, light ? "#dbc7ff" : "#9d5cea", light ? 0.25 : 0.37, 0.12, 0.75);
+    if (a.heavy || a.id === "l6" || a.id === "x")
       this.fxp("ring", tip, col, light ? 0.78 : 1.13, 0.23, 0.75);
     if (a.style === "gravity_meteor") {
       const origin = f.root.position.clone().setY(this.plat ? f.root.position.y : 0);
