@@ -238,6 +238,8 @@ export class Fighter implements Entity {
     if (this.look.name === "Vesper") return 1 + this.passiveGuard * 0.5 * 0.05;
     if (this.kit === "katana" || this.kit === "kicks") return 1 + this.passiveSwordCounter * 0.05;
     if (this.kit === "knuckles") return 1 + this.passiveRookBest * 0.01;
+    if (this.kit === "mage" && this.look.element === "fire")
+      return 1 + Math.min(5, this.passiveEmberPatches) * 0.05; // V28 each active flame +5% damage
     if (this.kit === "assassin") return 1; // C bonus applies only to ranged skills
     return 1;
   }
@@ -454,6 +456,21 @@ export class Fighter implements Entity {
   dragonRhythm = 0;
   dragonRhythmT = 0;
   private dragonRhythmSerial = -1;
+  // V28: one reward for each unique physical contact of a swing/pulse;
+  // a multi-target collision or duplicate resolver call cannot farm stacks.
+  private dragonRhythmContactSerial = -1;
+  private dragonRhythmContactKeys = new Set<string>();
+  earnDragonRhythmContact(serial: number, contact: string): boolean {
+    if (this.kit !== "tristaff" || this.isDown()) return false;
+    if (this.dragonRhythmContactSerial !== serial) {
+      this.dragonRhythmContactSerial = serial;
+      this.dragonRhythmContactKeys.clear();
+    }
+    if (this.dragonRhythmContactKeys.has(contact)) return false;
+    this.dragonRhythmContactKeys.add(contact);
+    this.earnDragonRhythm(); // always refresh the full 25-second countdown
+    return true;
+  }
   earnDragonRhythm(serial = -1) {
     if (this.kit !== "tristaff" || this.isDown()) return;
     // One stack per light attack even if it hits multiple fighters or mobs.
@@ -542,6 +559,8 @@ export class Fighter implements Entity {
   // Four separately defendable airborne scythe cuts, click-buffered like Kira's kicks.
   private nytheraAirSlices = 0;
   private nytheraAirBuffered = false;
+  private zarekAirStrikes = 0; // V28: two aerial glaive hits per jump
+  private zarekAirBuffered = false;
   // NYX_SHADOW_COMBAT_AIR_2_V1: two separate airborne dagger hits per jump.
   private nyxAirStrikes = 0;
   private nyxAirBuffered = false;
@@ -1046,18 +1065,23 @@ export class Fighter implements Entity {
     if (this.kit === "kicks") this.kiraAirKicks = Math.min(3, this.kiraAirKicks + 1);
     if (this.kit === "assassin") this.nyxAirStrikes = Math.min(2, this.nyxAirStrikes + 1);
     if (this.kit === "scythe") this.nytheraAirSlices = Math.min(NYTHERA_V26_TUNING.maxAirSlices, this.nytheraAirSlices + 1);
+    if (this.kit === "glaive" && this.look.name === "Zarek")
+      this.zarekAirStrikes = Math.min(2, this.zarekAirStrikes + 1);
     this.airSliceUsed = this.kit === "kicks" ? this.kiraAirKicks >= 3 :
       this.kit === "assassin" ? this.nyxAirStrikes >= 2 :
-      this.kit === "scythe" ? this.nytheraAirSlices >= NYTHERA_V26_TUNING.maxAirSlices : true;
+      this.kit === "scythe" ? this.nytheraAirSlices >= NYTHERA_V26_TUNING.maxAirSlices :
+      this.kit === "glaive" && this.look.name === "Zarek" ? this.zarekAirStrikes >= 2 : true;
     this.kiraAirBuffered = false;
     this.nyxAirBuffered = false;
     this.nytheraAirBuffered = false;
+    this.zarekAirBuffered = false;
     this.airSliceQueued = false;
     this.airSliceAngle = this.airAimAtOpponent();
     this.holding = false;
     this.startAttack(this.kit === "kicks" ? `air_l${this.kiraAirKicks}` :
       this.kit === "assassin" ? `air_l${this.nyxAirStrikes}` :
-      this.kit === "scythe" ? `air_l${this.nytheraAirSlices}` : "air_l1");
+      this.kit === "scythe" ? `air_l${this.nytheraAirSlices}` :
+      this.kit === "glaive" && this.look.name === "Zarek" ? `air_l${this.zarekAirStrikes}` : "air_l1");
   }
 
   isDown() { return this.state === S.KO; }
@@ -1594,6 +1618,9 @@ export class Fighter implements Entity {
       } else if (this.kit === "scythe" && this.state === S.ATTACK &&
           /^air_l[1-3]$/.test(this.atkId) && this.nytheraAirSlices < NYTHERA_V26_TUNING.maxAirSlices) {
         this.nytheraAirBuffered = true;
+      } else if (this.kit === "glaive" && this.look.name === "Zarek" &&
+          this.state === S.ATTACK && this.atkId === "air_l1" && this.zarekAirStrikes < 2) {
+        this.zarekAirBuffered = true;
       } else this.tryAirSlice();
       return;
     }
@@ -1620,7 +1647,7 @@ export class Fighter implements Entity {
     if (pressed && this.onGround && (this.state === S.IDLE || this.state === S.BLOCK)) {
       this.velY = this.jumpV;
       this.onGround = false;
-      this.airSliceUsed = false; this.kiraAirKicks = 0; this.kiraAirBuffered = false; this.nyxAirStrikes = 0; this.nyxAirBuffered = false; this.nytheraAirSlices = 0; this.nytheraAirBuffered = false;
+      this.airSliceUsed = false; this.kiraAirKicks = 0; this.kiraAirBuffered = false; this.nyxAirStrikes = 0; this.nyxAirBuffered = false; this.nytheraAirSlices = 0; this.nytheraAirBuffered = false; this.zarekAirStrikes = 0; this.zarekAirBuffered = false;
       if (this.state === S.BLOCK) this.setState(S.IDLE);
       // Space+Click on the same frame: jump, then swing (never anti-air launch).
       if (this.kit === "hammer" && this.nesaAirHolding) this.nesaAirChargeT = 0;
@@ -1768,6 +1795,7 @@ export class Fighter implements Entity {
       if(this.dragonModeCd<=0 && this.dragonSwitchT<=0 && safeAttack && !forbidden.includes(this.state) &&
           !this.chainBoundBy && !this.status.has("freeze")) {
         const oldMode=this.dragonMode;
+        // V28: F changes only mode. Rhythm and its 25s timer are never consumed here.
         this.dragonMode=(this.dragonMode+1)%4;
         this.dragonModeCd=DRAGON_MODE_TUNING[this.dragonMode].switchCooldown;
         this.dragonSwitchT=DRAGON_MODE_TUNING[this.dragonMode].switchFlourish;
@@ -2027,7 +2055,7 @@ export class Fighter implements Entity {
     }
     // ZEPHYR_DRAGON_DANCER_V1: spend earned rhythm on next committed finisher.
     if (this.kit === "tristaff" && this.atk && this.dragonRhythm >= 3 &&
-        ["l5", "heavy", "c", "v", "pc"].includes(id)) {
+        ["l5", "heavy", "c", "v"].includes(id)) { // V28: parry counter / mode changes never spend Rhythm
       this.atk = { ...this.atk, dmg: this.atk.dmg * 1.18, guard: this.atk.guard * 1.17 };
       this.dragonRhythm = 0;
       this.dragonRhythmT = 0;
@@ -2188,6 +2216,16 @@ export class Fighter implements Entity {
       return;
     }
 
+    if (this.kit === "glaive" && this.look.name === "Zarek" && this.zarekAirBuffered &&
+        !this.onGround && this.atkId === "air_l1" && this.zarekAirStrikes < 2 &&
+        this.stateT >= w + ac) {
+      this.zarekAirBuffered = false;
+      this.zarekAirStrikes = 2;
+      this.airSliceUsed = true;
+      this.airSliceAngle = this.airAimAtOpponent();
+      this.startAttack("air_l2"); // separate normal melee strike, no extra damage
+      return;
+    }
     if (this.kit === "assassin" && this.nyxAirBuffered && !this.onGround &&
         this.atkId === "air_l1" && this.nyxAirStrikes < 2 &&
         this.stateT >= w + ac) {
@@ -2290,7 +2328,7 @@ export class Fighter implements Entity {
       // ZEPHYR_MODE_BALANCE_V25: STAFF can raise guard nearly instantly.
       this.shieldRaise = this.kit==="tristaff" && this.dragonMode===0
         ? DRAGON_MODE_TUNING[0].staffShieldRaise
-        : (this.nextShieldFast ? 0.01 : 0.10);
+        : (this.nextShieldFast ? 0.01 : (this.look.name === "Aster" ? 0.05 : 0.10)); // V28 shield 50% faster
       this.nextShieldFast = false;
     }
     this.state = s; this.stateT = 0; this.poseOverride = "";
@@ -2446,7 +2484,7 @@ export class Fighter implements Entity {
       this.root.position.y = 0;
       this.velY = 0;
       this.onGround = true;
-      this.airSliceUsed = false; this.kiraAirKicks = 0; this.kiraAirBuffered = false; this.nyxAirStrikes = 0; this.nyxAirBuffered = false; this.nytheraAirSlices = 0; this.nytheraAirBuffered = false;
+      this.airSliceUsed = false; this.kiraAirKicks = 0; this.kiraAirBuffered = false; this.nyxAirStrikes = 0; this.nyxAirBuffered = false; this.nytheraAirSlices = 0; this.nytheraAirBuffered = false; this.zarekAirStrikes = 0; this.zarekAirBuffered = false;
       this.airSliceQueued = false;
       this.airJump = 0;
       this.airRecoverUsed = false;
@@ -2527,7 +2565,10 @@ export class Fighter implements Entity {
       this.model.recoil = 0.4;
       return "warded"; // zero HP AND guard damage, exactly one crystal spent per hit
     }
-    if (this.wardT > 0) { this.model.recoil = 0.4; return "warded"; }
+    // V28: Marina's eight-second Water Ward absorbs 80% rather than all
+    // incoming HP damage. Other wards retain their previous full protection.
+    const marinaPartialWard = this.wardT > 0 && this.look.name === "Marina";
+    if (this.wardT > 0 && !marinaPartialWard) { this.model.recoil = 0.4; return "warded"; }
     if (this.counterT > 0 && !a.no_parry) {
       this.counterT = 0;
       if (this.kit === "katana" || this.kit === "kicks") this.passiveSwordCounter = Math.min(4, this.passiveSwordCounter + 1);
@@ -2556,7 +2597,15 @@ export class Fighter implements Entity {
     // avoids negative damage even though his stack count has no cap.
     if (this.kit === "knight" && this.look.element === "light") {
       dmg *= 0.90;
-      dmg /= 1 + this.passiveGuard * 0.5 * 0.05;
+      dmg /= 1 + this.passiveGuard * 0.5 * 0.025; // V28: Aster 2.5% defense per stack
+    }
+    if (marinaPartialWard) {
+      this.lastDamage = Math.max(0, dmg * 0.20);
+      this.lastCrit = false;
+      this.hp = Math.max(0, this.hp - this.lastDamage);
+      this.model.recoil = 0.32;
+      if (this.hp <= 0) { this.ko(); return "ko"; }
+      return "warded"; // no stun or guard loss; duration stays unchanged
     }
     this.knockFrom = attacker ? attacker.root.position.x : this.root.position.x - this.facing;
     // Veyr's Blood Festival forbids the perfect-parry outcome against his melee swings.
@@ -2770,7 +2819,7 @@ export class Fighter implements Entity {
     if (this.chainBoundBy) this.chainBoundBy.releaseChainBind();
     this.chainBoundBy = null;
     this.airChaseT = 0; this.airChaseMoveT = 0; this.airRecoverUsed = false;
-    this.airSliceUsed = false; this.kiraAirKicks = 0; this.kiraAirBuffered = false; this.nyxAirStrikes = 0; this.nyxAirBuffered = false; this.nytheraAirSlices = 0; this.nytheraAirBuffered = false; this.airSliceQueued = false;
+    this.airSliceUsed = false; this.kiraAirKicks = 0; this.kiraAirBuffered = false; this.nyxAirStrikes = 0; this.nyxAirBuffered = false; this.nytheraAirSlices = 0; this.nytheraAirBuffered = false; this.zarekAirStrikes = 0; this.zarekAirBuffered = false; this.airSliceQueued = false;
     this.nesaAirHolding = false; this.nesaAirChargeT = 0; this.nesaSpinYaw = 0;
     this.nesaCCharges = 3; this.nesaCRechargeT = 0; this.nesaCArmed = true;
     this.model.nesaSpinHorizontal = 0;
@@ -2816,7 +2865,7 @@ export class Fighter implements Entity {
     if (this.chainBoundBy) this.chainBoundBy.releaseChainBind();
     this.chainBoundBy = null;
     this.airChaseT = 0; this.airChaseMoveT = 0;
-    this.airSliceUsed = false; this.kiraAirKicks = 0; this.kiraAirBuffered = false; this.nyxAirStrikes = 0; this.nyxAirBuffered = false; this.nytheraAirSlices = 0; this.nytheraAirBuffered = false; this.airSliceQueued = false;
+    this.airSliceUsed = false; this.kiraAirKicks = 0; this.kiraAirBuffered = false; this.nyxAirStrikes = 0; this.nyxAirBuffered = false; this.nytheraAirSlices = 0; this.nytheraAirBuffered = false; this.zarekAirStrikes = 0; this.zarekAirBuffered = false; this.airSliceQueued = false;
     this.nesaAirHolding = false; this.nesaAirChargeT = 0; this.nesaSpinYaw = 0;
     this.nesaCCharges = 3; this.nesaCRechargeT = 0; this.nesaCArmed = true;
     this.model.nesaSpinHorizontal = 0;
@@ -2996,7 +3045,7 @@ export class Fighter implements Entity {
         pos.y = p.y;
         this.velY = 0;
         this.onGround = true;
-        this.airSliceUsed = false; this.kiraAirKicks = 0; this.kiraAirBuffered = false; this.nyxAirStrikes = 0; this.nyxAirBuffered = false; this.nytheraAirSlices = 0; this.nytheraAirBuffered = false;
+        this.airSliceUsed = false; this.kiraAirKicks = 0; this.kiraAirBuffered = false; this.nyxAirStrikes = 0; this.nyxAirBuffered = false; this.nytheraAirSlices = 0; this.nytheraAirBuffered = false; this.zarekAirStrikes = 0; this.zarekAirBuffered = false;
         this.airSliceQueued = false;
         this.ground = p;
         this.airJumps = 1;

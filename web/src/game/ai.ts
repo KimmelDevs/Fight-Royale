@@ -1,3 +1,4 @@
+// FIGHT_ROYALE_V28_ROXY_AI_BALANCE
 // PASSIVE_ROSTER_V10 — roster-wide passives, readable HUD and CPU visibility.
 // AI_CHARACTER_FIGHTING_STYLES_V1_20261108
 // AI_ADVANCED_FOOTWORK_V1_20261108
@@ -1760,6 +1761,38 @@ export class AiBrain implements Brain {
     return true;
   }
 
+  // ROXY_FROST_AEGIS_AI_V28 — don't turtle with regular block while Z is ready.
+  // Cast only with real anticipation, never through an imminent hit.
+  private roxyAegisPriority(f: Fighter, o: Fighter): boolean {
+    if (f.look.element !== "frost" || f.kit !== "mage" || f.isDown() || o.isDown() ||
+        !f.onGround || f.status.has("freeze") || f.chainBoundBy || f.chainBindT > 0 ||
+        (f.cooldowns.z ?? 1) > 0 || f.attacks.z?.mode !== "frost_aegis" ||
+        (f.frostShieldCharges > 0 && f.frostShieldT > 0) ||
+        (f.state !== S.IDLE && f.state !== S.BLOCK)) return false;
+    const now = this.threats.now();
+    if (now < this.roxyShieldNextAt) return false;
+    const gap = f.root.position.clone().setY(0).distanceTo(o.root.position.clone().setY(0));
+    const preparingAttack = o.state === S.ATTACK && o.atkPhase === 0;
+    const activeThreat = o.state === S.ATTACK && o.atkPhase === 1 &&
+      !!o.atk && (o.atk.type !== "melee" || gap < o.atk.reach + 1.0);
+    const incomingShot = this.threats.projectiles().some(p =>
+      p.team !== f.team && (p.target === f || p.target?.id === f.id) &&
+      p.pos.distanceToSquared(f.chest()) < 85);
+    // Don't try to wind up Z with a blade or projectile already about to land.
+    if (activeThreat && gap < 3.6 || (incomingShot && gap < 3.2)) return false;
+    if (!preparingAttack && !incomingShot &&
+        !(gap < 6.5 && f.hp < f.maxHp * 0.88) && !(gap < 4.5 && o.state === S.IDLE))
+      return false;
+    this.roxyShieldNextAt = now + 0.38;
+    this.blockHold = 0; this.blockWait = -1;
+    this.queue = []; this.hold = 0;
+    f.intent.attack = false;
+    f.intent.block = false;
+    f.intent.skill = "z"; // standard cast, ordinary cooldown and vulnerability
+    return true;
+  }
+  private roxyShieldNextAt = -1;
+
   private roxySkillOpportunity(f: Fighter, o: Fighter, dt: number): boolean {
     if (f.look.element !== "frost" || f.kit !== "mage" || f.isDown() || o.isDown()) return false;
     if (!f.attacks.z || f.attacks.z.mode !== "frost_aegis") return false;
@@ -2685,6 +2718,7 @@ export class AiBrain implements Brain {
     if (this.zephyrSplitPlan(f,o)) return;
     if (this.antiZenithDuel(f, o)) return;
     if (this.zephyrModePlan(f,o)) return;
+    if (this.roxyAegisPriority(f, o)) return; // V28: real Z shield before generic turtling
 
     if (this.spinCounterResponse(f, o, dt)) return;
     if (this.counterThreatDefense(f, o, dt)) return;
@@ -2751,15 +2785,16 @@ export class AiBrain implements Brain {
         (f.state === S.IDLE || (f.state === S.ATTACK &&
           (f.kit === "kicks" ? /^air_l[1-3]$/.test(f.atkId) :
             f.kit === "scythe" ? /^air_l[1-3]$/.test(f.atkId) :
-            f.kit === "assassin" && f.atkId === "air_l1"))) &&
+            f.kit === "assassin" ? f.atkId === "air_l1" :
+            f.kit === "glaive" && f.look.name === "Zarek" && f.atkId === "air_l1"))) &&
         !f.airSliceUsed &&
         flatGap < f.attacks.air_l1.reach + 0.20 &&
         Math.abs(o.chest().y - f.chest().y) < 2.1 && this.airSliceCd <= 0 &&
-        (f.kit === "scythe" ?
+        (f.kit === "scythe" || (f.kit === "glaive" && f.look.name === "Zarek") ?
           Math.random() < [0.20, 0.55, 0.82, 0.96][this.iqLevel] :
           this.aerialAirStrikeChance(o, dt))) {
       this.aiAirTap = true;
-      this.airSliceCd = f.kit === "scythe" ? rand(0.085, 0.115) :
+      this.airSliceCd = f.kit === "scythe" || (f.kit === "glaive" && f.look.name === "Zarek") ? rand(0.085, 0.115) :
         f.kit === "kicks" || f.kit === "assassin" ? rand(0.17, 0.24) :
         rand(0.55, 0.85);
       this.queue = [];

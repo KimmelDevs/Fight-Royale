@@ -146,7 +146,7 @@ function PassiveHUD({ list, right = false }: { list?: PassiveReadout[]; right?: 
   return <div className="fr-passive-readouts" style={{ textAlign: right ? "right" : "left" }}
     aria-label="Live passive stacks and effects">
     {list.map((p, idx) => <div key={`${p.label}-${idx}`} className="fr-passive-row" title={p.desc || p.label}>
-      {p.icon && <Icon src={p.icon} alt={`${p.label} passive`} size={27} />}
+      {p.icon && <Icon src={p.icon} alt={`${p.label} passive`} size={27} fallback={p.label === "GUARD FATIGUE" ? <span role="img" aria-label="Shield fatigue">🛡️</span> : undefined} />}
       <div className="fr-passive-content">
         <strong>{p.label}</strong><b>{p.value}</b>
       </div>
@@ -177,7 +177,7 @@ function CpuSpectatorSkills({ data, side }: {
       <div className="cpu-spectator-heading passive">PASSIVE</div>
       {data.passives.length ? data.passives.map((p, idx) => (
         <div className="cpu-spectator-passive" key={`${p.label}-${idx}`} title={p.desc || p.label}>
-          <span>{p.label}</span><b>{p.value}</b>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>{p.icon && <Icon src={p.icon} alt="Fatigue icon" size={18} fallback={<span>🛡️</span>} />}{p.label}</span><b>{p.value}</b>
         </div>
       )) : <div className="cpu-spectator-empty">No active stacks</div>}
     </section>

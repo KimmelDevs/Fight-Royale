@@ -4440,26 +4440,19 @@ export class Game implements MobHost {
     if (attacker instanceof Fighter && d instanceof Fighter &&
         (result === "blocked" || result === "parry" || result === "guard_break"))
       attacker.applyGuardFatigue();
-    // ZEPHYR_DRAGON_DANCER_V1: count actual impacts, not misses / block spam.
+    // ZEPHYR_RHYTHM_CONTACTS_V28: any REAL contact earns one Rhythm stack:
+    // hit, blocked, parried, guard-broken or countered, once per attack pulse.
+    // Clash is awarded separately by the real clash resolver. Misses do nothing.
     if (attacker instanceof Fighter && attacker.kit === "tristaff" &&
-        ["hit", "crit", "ko"].includes(result) &&
-        (attacker.atkId === "l2" || attacker.atkId === "l3" || attacker.atkId === "l5" || attacker.atkId === "pc")) {
-      attacker.earnDragonRhythm(attacker.swingSerial);
-      this.fxp("num", attacker.chest().add(new THREE.Vector3(0, 0.87, 0)),
-        `RHYTHM ${attacker.dragonRhythm}/3`, "#b7ffe3", 0.61);
-    }
-    // ZEPHYR_DRAGON_VARIANTS_V19: award only on real HP damage, once per swing serial.
-    if(attacker instanceof Fighter && attacker.kit==="tristaff" && a.dragonRhythmOnHit &&
-       (result==="hit"||result==="crit"||result==="ko")) {
-      attacker.earnDragonRhythm(a.id.startsWith("dragon_switch_")
-        ? 1000000+attacker.dragonSwitchSerial : attacker.swingSerial);
-      if(a.id.startsWith("dragon_switch_")) {
-        // ZEPHYR_V23_ICONS_FX_REPAIR: F-switch colored ring removed.
-        this.add_trauma(Math.min(.19,.025+a.dmg*.006));
+        ["hit", "crit", "ko", "blocked", "parry", "guard_break", "counter"].includes(result)) {
+      const switchHit = a.id.startsWith("dragon_switch_");
+      const serial = switchHit ? 1000000 + attacker.dragonSwitchSerial : attacker.swingSerial;
+      if (attacker.earnDragonRhythmContact(serial, `${a.id}:${d.id}`)) {
+        this.fxp("num", attacker.chest().add(new THREE.Vector3(0, .83, 0)),
+          `RHYTHM ${attacker.dragonRhythm}/3 · ${attacker.dragonRhythmT.toFixed(0)}s`,
+          switchHit ? "#ffffff" : "#b7ffe3", .58);
+        if (switchHit) this.add_trauma(Math.min(.19, .025 + a.dmg * .006));
       }
-      this.fxp("num",attacker.chest().add(new THREE.Vector3(0,.83,0)),
-        `HIDDEN RHYTHM ${attacker.dragonRhythm}/3`,
-        a.style === "zephyr_switch" ? "#ffffff" : "#b7ffe3",.72);
     }
     if(attacker instanceof Fighter && attacker.kit==="tristaff" &&
        d instanceof Fighter && result==="blocked" && a.dragonPull) {
@@ -5480,8 +5473,9 @@ export class Game implements MobHost {
           ? `${rival.orbitDisplayStacks}/5 · ${rival.orbitDisplayT.toFixed(1)}s` : "0/5" });
         passives.push({ label: "DREADFALL SPEED", value: `${f.nytheraAttackSpeed().toFixed(2)}× · ${f.nytheraDreadfallHits}/14 (round)` });
       }
-      if (f.guardFatigueStacks > 0)
-        passives.push({ label: "GUARD FATIGUE",
+      // GUARD_FATIGUE_HUD_V28: always show zero/active stacks, both sides.
+      if (f.guardFatigueStacks >= 0)
+        passives.push({ label: "GUARD FATIGUE", icon: "/icons/emblems/tank.webp",
           value: `${f.guardFatigueStacks} stacks · ${f.guardFatigueSpeed().toFixed(2)}× · ${f.guardFatigueDecayT.toFixed(1)}s`,
           desc: "Every blocked or parried hit (including guard break) slows the attacker by 2%. No stack cap; 1 stack fades every 3s without another defended hit. Attack and skill animation speed only; cooldowns unchanged." });
       if (f.kit === "tristaff") passives.push({ label: "RHYTHM", value: `${f.dragonRhythm}/3 · ${f.dragonRhythmT.toFixed(1)}s · ${["STAFF","SPLIT","WHIP","FOLDED"][f.dragonMode]}` });
@@ -5512,9 +5506,9 @@ export class Game implements MobHost {
       if (displayId === "kaede" || displayId === "kira") add("COUNTER BLOOM", `${f.passiveSwordCounter}/4 · ${f.passiveDamageMult().toFixed(2)}× DMG`,
         "Successful Z counter attacks build up to 4 stacks, each adding +5% damage. All baseline attacks start 20% weaker. Resets each round.");
       if (displayId === "ember") add("SCORCHING GROUND", `${f.passiveEmberPatches}/5 patches · ${f.passiveEmberGroundHits} hits`,
-        "Existing passive fire patches: tracks active burning ground and successful ground-fire hits. Resets each round.");
+        "Each active flame patch boosts Ember's outgoing damage by 5% (up to five patches, +25%). Resets each round.");
       if (displayId === "marina") add("WATER HEALER", `${f.passiveWaterHealer}/10 · +${f.passiveWaterHealer * 2}% duration/heal`,
-        "Each successful shield or healing cast adds one stack (max 10). +2% shield/field duration and +2% healing per stack. Resets each round.");
+        "Each shield/heal cast adds one Water Healer stack (max 10); +2% ward duration and healing per stack. Water Ward absorbs 80% of incoming damage. Resets each round.");
       if (displayId === "nyx") add("AMBUSH", `${f.passiveNyxAmbush} stacks · ${(1 + f.passiveNyxAmbush * 0.02).toFixed(2)}× ranged`,
         "Each C hit adds +2% damage to ranged skills for the remainder of the round.");
       if (displayId === "rook") add("COMBO CHAMPION", `${f.passiveRookBest} best · +${f.passiveRookBest}% DMG`,
