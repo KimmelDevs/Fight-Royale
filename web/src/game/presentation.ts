@@ -160,9 +160,38 @@ function nytheraPresentation(seconds:number,base:Pose,mode:"select"|"victory"):P
   return pose;
 }
 
+// ZEPHYR_DRAGON_DANCER_V1 · SANJIEKUN_VISUAL_V17 — 9-second playful linked-rod show.
+function zephyrPresentation(seconds: number, base: Pose, mode: "select" | "victory"): Pose {
+  const t=mode==="select"?((seconds%9)+9)%9:Math.min(seconds,8.85);
+  const beats: Array<[number,Beat]> = [
+    [0, {torso:[.08,-.35,.08],head:[-.07,.22,.05],arm_r:[-.88,.25,-.32],arm_l:[-.75,-.31,.38],leg_l:[-.22,0,.13],leg_r:[.26,0,-.14],hips_y:-.09}],
+    [.50,{torso:[.10,-.57,.13],head:[-.03,.30,-.04],arm_r:[-1.45,.53,-.26],arm_l:[-.78,-.25,.48],hips_y:-.13}],
+    [1.16,{torso:[-.07,.51,-.13],head:[-.16,-.12,.06],arm_r:[-1.75,-.22,-.18],arm_l:[-1.36,.42,.33],leg_l:[-.37,0,.13],leg_r:[.33,0,-.18],hips_y:-.05}],
+    [1.58,{torso:[.12,-.42,.11],head:[-.01,.24,-.07],arm_r:[-.68,.33,-.5],arm_l:[-1.84,-.32,.20],hips_y:-.11}],
+    [2.18,{torso:[.08,.53,-.08],head:[-.14,-.27,.06],arm_r:[-1.04,.21,-.3],arm_l:[-2.2,.35,.39],leg_l:[-.40,0,.18],leg_r:[.36,0,-.13],hips_y:-.07}],
+    [2.63,{torso:[.12,-.58,.12],head:[-.05,.36,-.02],arm_r:[-1.76,-.65,-.38],arm_l:[-1.1,-.31,.50],hips_y:-.12}],
+    [3.2,{torso:[-.10,.60,-.06],head:[-.12,-.24,.02],arm_r:[-2.07,.62,-.20],arm_l:[-.68,.23,.43],leg_l:[-.37,0,.15],leg_r:[.35,0,-.17],hips_y:-.07}],
+    [3.75,{torso:[.20,-.38,.09],head:[-.02,.3,.02],arm_r:[-1.65,.41,-.33],arm_l:[-2.28,-.29,.36],hips_y:-.12}],
+    [4.45,{torso:[-.19,-.28,0],head:[-.05,.17,0],arm_r:[-2.38,.16,-.15],arm_l:[-.55,-.46,.49],hips_y:-.07}],
+    [4.70,{torso:[-.16,-.32,.03],head:[-.22,.11,.04],arm_r:[-2.42,.14,-.19],arm_l:[-.74,-.33,.48],hips_y:-.06}],
+    [5.30,{torso:[.16,.46,.06],head:[.08,-.10,.01],arm_r:[-.62,.46,-.29],arm_l:[-1.12,-.19,.29],leg_l:[-.55,0,.08],leg_r:[-.85,0,-.09],hips_y:.05}],
+    [6.18,{torso:[.11,.19,-.06],head:[-.16,.15,.02],arm_r:[-2.37,.25,-.29],arm_l:[-1.48,-.24,.37],hips_y:-.08}],
+    [6.53,{torso:[.12,-.48,.09],head:[-.02,.30,0],arm_r:[-1.34,.35,-.35],arm_l:[-1.14,-.34,.36],hips_y:-.12}],
+    [7.08,{torso:[-.04,.52,-.13],head:[-.13,-.25,.04],arm_r:[-2.03,.36,-.39],arm_l:[-.95,.13,.41],leg_l:[-.31,0,.2],leg_r:[.33,0,-.12],hips_y:-.07}],
+    [7.63,{torso:[.39,.17,.07],head:[-.16,-.05,.02],arm_r:[-.84,.19,-.48],arm_l:[-1.56,-.14,.36],leg_l:[-.49,0,.18],leg_r:[.34,0,-.15],hips_y:-.18,knee:[.45,.38]}],
+    [8.38,{torso:[.12,-.26,.05],head:[-.08,.15,.01],arm_r:[-.91,.32,-.34],arm_l:[-1.02,-.24,.38],hips_y:-.11}],
+    [9, {torso:[.08,-.35,.08],head:[-.07,.22,.05],arm_r:[-.88,.25,-.32],arm_l:[-.75,-.31,.38],leg_l:[-.22,0,.13],leg_r:[.26,0,-.14],hips_y:-.09}],
+  ];
+  let i=0; while(i<beats.length-2 && t>beats[i+1][0])i++;
+  const lo=beats[i],hi=beats[i+1];
+  const u=Math.max(0,Math.min(1,(t-lo[0])/Math.max(.001,hi[0]-lo[0])));
+  return between(filled(base,lo[1]),filled(base,hi[1]),u);
+}
+
 /** Entirely cosmetic; all poses use the same normalized VRM/procedural joints as combat. */
 export function presentationPose(name: string, seconds: number, base: Pose, mode: "select" | "victory" = "select"): Pose {
   if (name.toLowerCase() === "nythera") return nytheraPresentation(seconds,base,mode);
+  if (name.toLowerCase() === "zephyr") return zephyrPresentation(seconds,base,mode);
   const entry = C[name.toLowerCase()];
   if (!entry) { // Future roster entries still receive a respectful, animated salute.
     const p = filled(base,{ torso:[.07,.07*Math.sin(seconds),0], arm_r:[-1.6-.25*Math.sin(seconds*1.5),.1,-.2],arm_l:[-.9,0,.3] });

@@ -156,6 +156,8 @@ const FIGHT_STYLES: Readonly<Record<string, FightStyle>> = {
   ash: { range: 6.20, heavy: 0.50, combo: 0.40, bait: 0.44, pressure: 0.19, skillBias: [1.5, 1.0, 1.4] },
   veyr: { range: 1.59, heavy: 0.15, combo: 0.98, bait: 0.68, pressure: 0.94, skillBias: [1.0, 1.35, 1.5] },
   zarek: { range: 2.10, heavy: 0.30, combo: 0.91, bait: 0.35, pressure: 0.86, skillBias: [1.3, 1.2, 1.45] },
+  // ZEPHYR_DRAGON_DANCER_V1: aggressive counter-based three-section staff duelist.
+  zephyr: { range: 2.15, heavy: 0.20, combo: 0.96, bait: 0.58, pressure: 0.78, skillBias: [1.35, 1.75, 1.1] },
   kaizen: { range: 2.65, heavy: 0.33, combo: 0.78, bait: 0.51, pressure: 0.71, skillBias: [1.2, 1.45, 1.15] },
   nesa: { range: 2.38, heavy: 0.43, combo: 0.64, bait: 0.62, pressure: 0.52, skillBias: [1.05, 1.15, 1.2] },
   roxy: { range: 5.45, heavy: 0.36, combo: 0.52, bait: 0.24, pressure: 0.32, skillBias: [1.45, 1.60, 1.20] },
@@ -211,6 +213,8 @@ const CHARACTER_IQ = [
 ] as const;
 
 export class AiBrain implements Brain {
+  // ZEPHYR_DRAGON_MODE_V18: mode changes spaced out, no flicker.
+  private zephyrModeCooldown=0;
   private p = PRESETS[1];
   private queue: [number, number][] = [];
   private hold = 0;
@@ -1152,10 +1156,70 @@ export class AiBrain implements Brain {
     if (a.mode === "blood_feint" || a.mode === "counter") {
       if (o.state !== S.ATTACK || o.atkPhase !== 0) return false;
     }
-    if (a.mode === "blood_festival" && gap > 3.4) return false;
+    if (a.mode === "blood_festival") return false; // VEYR_SAFE_FESTIVAL_V16
     f.intent.skill = key;
     this.skillCd = rand(this.p.skill[0], this.p.skill[1]);
     finish();
+    return true;
+  }
+
+  // VEYR_SAFE_FESTIVAL_V16: stage, cooldown and targeting stay in the real engine.
+  // The CPU uses only observed opponent state and normal move/dash/skill inputs.
+  private veyrFestivalSetupStart = -1;
+  private veyrFestivalRetryAt = 0;
+  private veyrFestivalSafeCast(f: Fighter, o: Fighter): boolean {
+    if (f.kit !== "sickle" || f.isDown() || o.isDown() || f.bloodFestivalT > 0 ||
+        f.attacks.c?.mode !== "blood_festival" || (f.cooldowns.c ?? 1) > 0) {
+      this.veyrFestivalSetupStart = -1;
+      return false;
+    }
+    const now = this.threats.now();
+    if (now < this.veyrFestivalRetryAt || !f.onGround ||
+        (f.state !== S.IDLE && f.state !== S.BLOCK) ||
+        f.atkLock > 0 || f.chainBoundBy || f.chainBindT > 0 || f.intent.skill) return false;
+    if (this.veyrFestivalSetupStart < 0) this.veyrFestivalSetupStart = now;
+    const gap = f.root.position.clone().setY(0).distanceTo(o.root.position.clone().setY(0));
+    const enemyCasting = o.state === S.ATTACK && o.atkPhase <= 1;
+    const nearbyShot = this.threats.projectiles().some(p =>
+      p.team !== f.team && (p.target === f || p.target?.id === f.id) &&
+      p.pos.distanceToSquared(f.chest()) < 35);
+    // Outside normal melee reach and without a visibly active hitbox is the safest
+    // available *legal* windup. Festival itself teleports to the target on commit.
+    const safe = gap >= (o.atk?.type === "melee" ? Math.max(3.45, o.atk.reach + 1.1) : 3.7) &&
+      gap < 7.6 && !enemyCasting && !nearbyShot;
+    if (safe) {
+      this.queue = []; this.hold = 0;
+      this.blockWait = -1; this.blockDur = 0; this.blockHold = 0;
+      this.comboParryTarget = -1; this.theaterT = 0;
+      this.theaterFollow = ""; this.theaterMode = "none";
+      f.intent.attack = false; f.intent.block = false;
+      f.intent.move.set(0, 0, 0); f.intent.dash.set(0, 0, 0);
+      f.intent.skill = "c"; // real cooldown + 0.26s cancelable windup
+      this.skillCd = Math.max(this.skillCd, 0.38);
+      this.veyrFestivalSetupStart = -1;
+      this.veyrFestivalRetryAt = now + 1.15;
+      return true;
+    }
+    // No perpetual runaway AI: after 2.6s resume normal combat and try again
+    // a little later. At the wall, escape finds an inward or lateral route.
+    if (now - this.veyrFestivalSetupStart > 2.6) {
+      this.veyrFestivalSetupStart = -1;
+      this.veyrFestivalRetryAt = now + 2.1;
+      return false;
+    }
+    const escape = this.nesaSafeEscape(f, o, false, true);
+    const dir = escape.dir;
+    if (f.stage) dir.set(Math.sign(dir.x) || (f.id % 2 ? 1 : -1), 0, 0);
+    // Preserve a legal parry/dodge decision if one was already committed.
+    if (f.intent.dash.lengthSq() < 0.001 && !f.intent.block) {
+      f.intent.move.copy(dir);
+      if (f.dashCd <= 0 && gap < 2.9 && escape.gain > 0.12)
+        f.intent.dash.copy(dir);
+    }
+    f.intent.attack = false;
+    f.intent.skill = "";
+    this.queue = []; this.hold = 0;
+    this.blockWait = -1; this.blockHold = 0;
     return true;
   }
 
@@ -2472,7 +2536,20 @@ export class AiBrain implements Brain {
     return true;
   }
 
+  private zephyrModePlan(f:Fighter,o:Fighter):boolean {
+    if(f.kit!=="tristaff"||this.zephyrModeCooldown>0||f.dragonModeCd>0||
+       f.state!==S.IDLE||f.intent.skill||f.intent.block||f.intent.attack)return false;
+    const gap=f.root.position.distanceTo(o.root.position);
+    // Opponent telegraphs a close attack: fold for the strongest counter.
+    const danger=gap<1.45 && o.state===S.ATTACK && o.atkPhase===0;
+    const desired=gap>3.0?2:gap>1.75?0:danger?3:1;
+    if(desired===f.dragonMode)return false;
+    f.intent.skill="f"; // same input as a human, real 0.6s Fighter cooldown.
+    this.zephyrModeCooldown=1.10;
+    return true;
+  }
   think(f: Fighter, dt: number) {
+    this.zephyrModeCooldown=Math.max(0,this.zephyrModeCooldown-dt);
     // KAIZEN_SPIN_HIT_RELIABILITY_V9: unlike LocalBrain, AiBrain does not
     // receive a held Z key. Keep it virtually held for the full active spin.
     // This does not bypass cooldowns, change the skill duration, or affect players.
@@ -2499,6 +2576,7 @@ export class AiBrain implements Brain {
     if (this.dodgeUnsafeContinuous(f, o, dt)) return;
     if (this.evadeUnsafeHeavy(f, o, dt)) return;
     if (this.antiZenithDuel(f, o)) return;
+    if (this.zephyrModePlan(f,o)) return;
 
     if (this.spinCounterResponse(f, o, dt)) return;
     if (this.counterThreatDefense(f, o, dt)) return;
@@ -2508,6 +2586,7 @@ export class AiBrain implements Brain {
     if (this.nesaTimedVParry(f, o)) return;
     // During Blood Festival Veyr chases with basics rather than blocking.
     if (this.veyrFestivalPressure(f, o, dt)) return;
+    if (this.veyrFestivalSafeCast(f, o)) return;
     if (f.stage) { if (this.platform(f, o, dt)) return; }
     this.react(f, o);
     this.defendLongCombo(f, o);
@@ -4298,6 +4377,7 @@ private personalizedSkill(f: Fighter, o: Fighter, distance: number): string | nu
   for (const key of ["z", "x", "c", ...(f.bonusSkillUnlocked ? ["v"] : [])]) {
     const a = f.attacks[key];
     if (!a || (f.cooldowns[key] ?? 1) > 0) continue;
+    if (f.kit === "sickle" && a.mode === "blood_festival") continue;
     // Nesa's 3 charges follow the Pink Heart Smash skill on any equipped key.
     if (id === "nesa" && a.style === "nesa_heart_slam" && f.nesaCCharges <= 0) continue;
     let viable = true;
@@ -4482,6 +4562,7 @@ private personalizedSkill(f: Fighter, o: Fighter, distance: number): string | nu
 
   private trySkill(f: Fighter, key: string, force = false) {
     if (f.cooldowns[key] > 0) return false;
+    if (f.kit === "sickle" && f.attacks[key]?.mode === "blood_festival") return false;
     if (!force && Math.random() > 0.5) return false;
     f.intent.skill = key;
     return true;

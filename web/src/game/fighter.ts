@@ -51,6 +51,88 @@ export const CONTINUOUS_STYLES = new Set([
   "cyclone_kick_v2", "iron_tempest", "phantom_rush",
 ]);
 
+// ZEPHYR_DRAGON_MODE_V18 — all combat-mode numbers in one editable table.
+// Mode order: STAFF, SPLIT, WHIP, FOLDED. Set every entry to 1 to disable bonuses.
+export const DRAGON_MODE_TUNING = [
+  { reach: 1.00, wind: 1.00, recover: 1.00, guard: 1.00, block: 1.15, parry: 1.15, counter: 1.00 }, // STAFF
+  { reach: 0.88, wind: 0.85, recover: 0.88, guard: 1.00, block: 1.00, parry: 1.00, counter: 1.00 }, // SPLIT
+  { reach: 1.18, wind: 1.08, recover: 1.00, guard: 1.00, block: 0.80, parry: 0.90, counter: 1.00 }, // WHIP
+  { reach: 0.80, wind: 0.82, recover: 0.80, guard: 1.00, block: 1.00, parry: 1.00, counter: 1.25 }, // FOLDED
+] as const;
+
+// ZEPHYR_DRAGON_VARIANTS_V19 — editable per-mode attacks.
+// Values are PRE mode multipliers. The already-existing DRAGON_MODE_TUNING
+// applies afterward (e.g. final SPLIT reach = variant.reach * 0.88).
+// Same slot cooldowns (heavy, z, x, c) are never changed.
+// Each row reuses V18 poses; weighted GRIP_TIMELINE[move][mode] remains active.
+type DragonVariantKey = "heavy" | "z" | "x" | "c";
+export const DRAGON_VARIANTS: Record<number, Record<DragonVariantKey, Partial<Attack>>> = {
+  0: { // STAFF — baseline, maximal guard pressure
+    heavy: { name:"Dragon Tail Break", reach:2.52, wind:.29, active:.13, recover:.53, dmg:166, guard:52, knock:5.1, stun:.51,
+      hits:1, style:"zephyr_finisher", pose_w:"zdh_w", pose_s:"zdh_s" },
+    z: { name:"Serpent Wheel", hits:3, reach:2.35, wind:.19, active:.59, recover:.41, dmg:51, guard:17, knock:.75, stun:.17,
+      dragonEvenDmg:.80, dragonOddDmg:.94, dragonLastDmg:1.75, dragonLastGuard:1.70, dragonLastKnock:4.2, dragonLastStun:.39,
+      style:"zephyr_serpent", pose_w:"zdz_w", pose_s:"zdz_s" },
+    x: { name:"Dragon Reversal", duration:.34, wind:.04, recover:.53, dragonCounterDamage:180,
+      style:"zephyr_reversal", pose_w:"zdx_w", pose_s:"zdx_s" },
+    c: { name:"Heavenly Cyclone", hits:5, reach:2.42, wind:.29, active:1.18, recover:.57, dmg:49, guard:16, knock:.7, stun:.16, lunge:1.8,
+      dragonEvenDmg:.80, dragonOddDmg:.94, dragonLastDmg:1.75, dragonLastGuard:1.70, dragonLastKnock:4.2, dragonLastStun:.39,
+      style:"zephyr_cyclone", pose_w:"zdc_w", pose_s:"zdc_s" },
+  },
+  1: { // SPLIT — two independently resolved heavy hits, fast crossing Z
+    heavy: { name:"Twin Fang", hits:2, reach:2.20, wind:.23, active:.26, recover:.40, dmg:73, guard:29, knock:.65, stun:.20,
+      dragonEvenDmg:1.00, dragonOddDmg:1.00, dragonLastDmg:1.10, dragonLastGuard:1.15, dragonLastKnock:1.25, dragonLastStun:.24,
+      style:"zephyr_twin_fang", pose_w:"zdh_w", pose_s:"zdh_s" },
+    z: { name:"Crossing Serpents", hits:5, reach:2.17, wind:.15, active:.66, recover:.34, dmg:36, guard:14, knock:.6, stun:.12,
+      dragonEvenDmg:.90, dragonOddDmg:1.00, dragonLastDmg:1.25, dragonLastGuard:1.20, dragonLastKnock:1.75, dragonLastStun:.21,
+      style:"zephyr_serpent", pose_w:"zdz_w", pose_s:"zdz_s" },
+    x: { name:"Sidewind Reversal", duration:.30, wind:.04, recover:.47, dragonSidestep:.42, dragonCounterDamage:172,
+      style:"zephyr_reversal", pose_w:"zdx_w", pose_s:"zdx_s" },
+    c: { name:"Double Orbit", hits:5, reach:2.15, wind:.23, active:.92, recover:.48, dmg:43, guard:15, knock:.5, stun:.13, lunge:0,
+      dragonEvenDmg:.85, dragonOddDmg:.94, dragonLastDmg:1.30, dragonLastGuard:1.35, dragonLastKnock:1.25, dragonLastStun:.22,
+      style:"zephyr_cyclone", pose_w:"zdc_w", pose_s:"zdc_s" },
+  },
+  2: { // WHIP — arcs, reach, counter snare; pulls are deliberately modest
+    heavy: { name:"Serpent Lash", hits:1, reach:2.77, wind:.41, active:.17, recover:.64, dmg:138, guard:44, knock:3.3, stun:.38,
+      dragonPull:.32, dragonArcCos:-.25, style:"zephyr_lash", pose_w:"zdh_w", pose_s:"zdh_s" },
+    z: { name:"Wide Serpent Wheel", hits:3, reach:2.64, wind:.24, active:.66, recover:.45, dmg:47, guard:15, knock:.8, stun:.15,
+      dragonArcCos:-.45, dragonEvenDmg:.80, dragonOddDmg:.94, dragonLastDmg:1.60, dragonLastGuard:1.40, dragonLastKnock:2.5, dragonLastStun:.32,
+      style:"zephyr_serpent", pose_w:"zdz_w", pose_s:"zdz_s" },
+    x: { name:"Coiling Reversal", duration:.34, wind:.05, recover:.56, dragonCounterPull:.37, dragonCounterDamage:174,
+      style:"zephyr_reversal", pose_w:"zdx_w", pose_s:"zdx_s" },
+    c: { name:"Encircling Heaven", hits:5, reach:2.72, wind:.33, active:1.25, recover:.63, dmg:41, guard:14, knock:.68, stun:.15, lunge:1.1,
+      dragonBehind:true, dragonArcCos:-1, dragonEvenDmg:.83, dragonOddDmg:.93, dragonLastDmg:1.55, dragonLastGuard:1.45, dragonLastKnock:2.5, dragonLastStun:.30,
+      style:"zephyr_cyclone", pose_w:"zdc_w", pose_s:"zdc_s" },
+  },
+  3: { // FOLDED — short armored charge, quick 2-hit launcher, strong counter
+    heavy: { name:"Hidden Fang", hits:1, reach:1.94, wind:.13, active:.085, recover:.29, dmg:107, guard:31, knock:1.0, stun:.24,
+      dragonArmor:true, dragonRhythmOnHit:true, style:"zephyr_hidden_fang", pose_w:"zdh_w", pose_s:"zdh_s" },
+    z: { name:"Hidden Serpent", hits:2, reach:2.01, wind:.13, active:.34, recover:.27, dmg:57, guard:20, knock:.65, stun:.15,
+      dragonStep:.42, dragonEvenDmg:1.0, dragonOddDmg:1.0, dragonLastDmg:1.35, dragonLastGuard:1.15, dragonLastKnock:1.65, dragonLastStun:.26,
+      style:"zephyr_serpent", pose_w:"zdz_w", pose_s:"zdz_s" },
+    x: { name:"Dragon's Last Word", duration:.40, wind:.035, recover:.39, dragonCounterDamage:226,
+      style:"zephyr_reversal", pose_w:"zdx_w", pose_s:"zdx_s" },
+    c: { name:"Rising Fang", hits:2, reach:1.99, wind:.18, active:.45, recover:.31, dmg:60, guard:19, knock:.7, stun:.16, lunge:.85,
+      dragonLaunch:5.8, dragonEvenDmg:1.0, dragonOddDmg:1.0, dragonLastDmg:1.30, dragonLastGuard:1.20, dragonLastKnock:.90, dragonLastStun:.25,
+      style:"zephyr_cyclone", pose_w:"zdc_w", pose_s:"zdc_s" },
+  },
+};
+
+function applyDragonMode(attack: Attack, mode: number, fixedSkill: boolean): Attack {
+  const safeMode=Math.max(0,Math.min(3,mode));
+  const m=DRAGON_MODE_TUNING[safeMode];
+  const key=attack.id as DragonVariantKey;
+  // Attack data is cloned when committed; mode changes during recovery cannot alter it.
+  const variant=(key==="heavy"||key==="z"||key==="x"||key==="c")
+    ? DRAGON_VARIANTS[safeMode][key] : undefined;
+  const selected: Attack={...attack,...variant, cd:attack.cd, id:attack.id};
+  const result={...selected, reach:selected.reach*m.reach, guard:selected.guard*m.guard};
+  // Z/X/C/V keep their original pulse counts and temporal hit schedule.
+  if (!fixedSkill) { result.wind*=m.wind; result.recover*=m.recover; }
+  if (result.style==="zephyr_reversal") result.duration*=m.counter;
+  return result;
+}
+
 export enum S { IDLE, ATTACK, CHARGE, BLOCK, HITSTUN, STAGGER, KO, WIN, KNOCKDOWN, WAKEUP }
 
 export const HOLD_T = 0.22;
@@ -271,6 +353,21 @@ export class Fighter implements Entity {
     return Math.min(1.50, 0.80 + stacks * 0.05);
   }
   onGravityShift: (f: Fighter) => void = () => {};
+  // ZEPHYR_DRAGON_DANCER_V1 — stacks earned only on confirmed hits, parries, and clashes.
+  // ZEPHYR_DRAGON_MODE_V18: host-owned stance shared via F and snapshots.
+  dragonMode = 0; // 0 STAFF, 1 SPLIT, 2 WHIP, 3 FOLDED
+  dragonModeCd = 0;
+  dragonRhythm = 0;
+  dragonRhythmT = 0;
+  private dragonRhythmSerial = -1;
+  earnDragonRhythm(serial = -1) {
+    if (this.kit !== "tristaff" || this.isDown()) return;
+    // One stack per light attack even if it hits multiple fighters or mobs.
+    if (serial >= 0 && this.dragonRhythmSerial === serial) return;
+    if (serial >= 0) this.dragonRhythmSerial = serial;
+    this.dragonRhythm = Math.min(3, this.dragonRhythm + 1);
+    this.dragonRhythmT = 7;
+  }
   onSwing: (f: Fighter) => void = () => {};
   // ZENITH_IRON_SOVEREIGN_V1_20261108 — pure game-side spear state.
   zenithSpearOut = false;
@@ -984,6 +1081,10 @@ export class Fighter implements Entity {
     this.perfectDodgeT = Math.max(0, this.perfectDodgeT - dt);
     this.perfectDodgeCounterT = Math.max(0, this.perfectDodgeCounterT - dt);
     this.nyxShadowBoostT = Math.max(0, this.nyxShadowBoostT - dt);
+    // ZEPHYR_DRAGON_DANCER_V1
+    this.dragonModeCd = Math.max(0,this.dragonModeCd-dt);
+    this.dragonRhythmT = Math.max(0, this.dragonRhythmT - dt);
+    if (this.dragonRhythmT <= 0) this.dragonRhythm = 0;
     this.parryCounterT = Math.max(0, this.parryCounterT - dt);
     this.parryRecoilT = Math.max(0, this.parryRecoilT - dt);
     if (this.parryRecoilT > 0) this.model.recoil = Math.max(this.model.recoil, 0.23 + 0.35 * this.parryRecoilT);
@@ -1208,6 +1309,10 @@ export class Fighter implements Entity {
       ["cbz_w", "cbz_s", "cbx_w", "cbx1_s", "cbx2_s", "cbx3_s", "cbh_w", "cbh_s", "cbv_w", "cbv_s"].includes(this.poseName));
     this.model.presentationT = this.stateT;
     this.model.presentationMode = "victory";
+    this.model.dragonMode=this.dragonMode;
+    this.model.dragonPose = this.kit === "tristaff" ? (this.state === S.WIN ? "show_tristaff" : this.poseName) : "idle";
+    this.model.dragonProgress = this.state === S.ATTACK && this.atk ?
+      Math.max(0, Math.min(1, this.stateT / Math.max(0.01, this.atk.wind + this.atk.active))) : 0;
     this.model.glaivePose = this.kit === "scythe" ? this.poseName : this.kit === "glaive" ? (this.state === S.WIN ? "show_baton" : this.poseName) : "idle";
     this.updateKiraCastVisual();
     this.updateKaedeSheathVisual();
@@ -1531,6 +1636,21 @@ export class Fighter implements Entity {
   private readSkill() {
     if (this.isKaedeThousandCutsCasting() || this.isKiraHundredKicksCasting()) return;
     const k = this.intent.skill;
+    // ZEPHYR_DRAGON_MODE_V18: F shares the current Nythera input; no key remap.
+    if (k === "f" && this.kit === "tristaff") {
+      const forbidden=[S.HITSTUN,S.STAGGER,S.KO,S.WIN,S.KNOCKDOWN,S.WAKEUP];
+      const safeAttack=this.state!==S.ATTACK || this.atkPhase===2;
+      if(this.dragonModeCd<=0 && safeAttack && !forbidden.includes(this.state) &&
+          !this.chainBoundBy && !this.status.has("freeze")) {
+        this.dragonMode=(this.dragonMode+1)%4;
+        this.dragonModeCd=.6;
+        this.model.dragonMode=this.dragonMode;
+        this.model.dragonModeBlend=0;
+        this.model.flash(["#bcf4dc","#f4b3ac","#ffcc77","#a3c9ff"][this.dragonMode],.25);
+        // No setState(): light-attack recoveries keep their combo buffers intact.
+      }
+      return;
+    }
     // NYTHERA_GRAVITY_REAPER_INSTALL_V1 — same F input for local, host and AI.
     if (k === "f" && this.kit === "scythe") {
       if (this.gravitySwitchCd <= 0 && ![S.HITSTUN, S.STAGGER, S.KO, S.WIN, S.KNOCKDOWN].includes(this.state) &&
@@ -1748,6 +1868,17 @@ export class Fighter implements Entity {
         this.atk = { ...this.atk, name: "Event Collapse", mode: "gravity_collapse",
           style: "gravity_collapse", wind: 0.34, recover: 0.58 };
       }
+    }
+    // ZEPHYR_DRAGON_VARIANTS_V19: pick the variant first, then apply earned Rhythm.
+    if(this.kit==="tristaff" && this.atk)
+      this.atk=applyDragonMode(this.atk,this.dragonMode,["z","x","c","v"].includes(id));
+    // ZEPHYR_DRAGON_DANCER_V1: spend earned rhythm on next committed finisher.
+    if (this.kit === "tristaff" && this.atk && this.dragonRhythm >= 3 &&
+        ["l5", "heavy", "c", "v", "pc"].includes(id)) {
+      this.atk = { ...this.atk, dmg: this.atk.dmg * 1.18, guard: this.atk.guard * 1.17 };
+      this.dragonRhythm = 0;
+      this.dragonRhythmT = 0;
+      this.model.flash("#9fffe1", 0.28);
     }
     if (this.kit === "hammer" && this.atk?.style === "nesa_high_striker") this.nesaHighStrikerParried = false;
     if (this.kit === "katana" && this.atk?.name === "Thousand Cuts" && this.atk.style === "slashes") {
@@ -2270,7 +2401,8 @@ export class Fighter implements Entity {
       }
     }
     if (this.state === S.BLOCK && this.stateT >= this.shieldRaise) {
-      if (this.stateT - this.shieldRaise <= this.parryWindow &&
+      if (this.stateT - this.shieldRaise <= this.parryWindow *
+          (this.kit==="tristaff"?DRAGON_MODE_TUNING[this.dragonMode].parry:1) &&
           (!a.no_parry || parryableContinuous) && !festivalUnparryable) {
         this.guard = Math.min(this.guard + 20, this.maxGuard);
         this.model.flash("#99e6ff", 0.15);
@@ -2286,7 +2418,8 @@ export class Fighter implements Entity {
       const festivalGuardTriple = attacker instanceof Fighter && attacker.kit === "sickle" &&
         attacker.bloodFestivalT > 0 && a.type === "melee" && /^l\d+$/.test(attacker.atkId);
       this.guard -= a.guard * power * (festivalGuardTriple ? 2 / 1.35 : 1) *
-        (this.judgmentT > 0 ? 1.5 : 1); // Aster Judgment weakens defense; Veyr nerf unchanged
+        (this.judgmentT > 0 ? 1.5 : 1) *
+        (this.kit==="tristaff"?1/DRAGON_MODE_TUNING[this.dragonMode].block:1); // Aster Judgment weakens defense; Veyr nerf unchanged
       this.guardDelay = GUARD_REGEN_DAMAGE_DELAY;
       if (this.guard <= 0) {
         this.guard = 0;
@@ -2306,12 +2439,12 @@ export class Fighter implements Entity {
         this.model.flash("#ffd966", 0.18);
         return "guard_break";
       }
-      // KAIZEN_GUARD_CLASH_V8: the spinning chain catches incoming melee weapons.
-      // Parry (above) and guard break (above) retain priority; projectiles still block.
+      // KAIZEN_BLOCK_NO_RECOIL_V17: clean block, no special clash or charge interruption.
+      // Normal guard damage and guard breaks still happen above.
       if (this.kit === "chainblade" && attacker instanceof Fighter && a.type === "melee") {
-        this.knock = Math.min(a.knock * 0.12, 0.5);
-        this.model.recoil = 0.85;
-        return "kaizen_guard_clash";
+        this.knock = 0;
+        this.model.recoil = 0.12; // small defensive animation only
+        return "blocked";
       }
       // NESA_WEIGHT_PASSIVE_V1: late hammer swings crush block into chip damage.
       const hammerCrushBlock = attacker instanceof Fighter && attacker.hammerWeightArmor &&
@@ -2363,6 +2496,13 @@ export class Fighter implements Entity {
       this.knock = 0;
       this.model.recoil = Math.max(this.model.recoil, 0.18);
       return this.lastCrit ? "crit" : "hit";
+    }
+    // ZEPHYR_DRAGON_VARIANTS_V19: Hidden Fang resists stun, not damage or blocking.
+    if(this.kit==="tristaff" && this.state===S.ATTACK && this.atk?.dragonArmor &&
+       this.stateT <= this.atk.wind + this.atk.active) {
+      this.knock=Math.min(this.knock,0.9);
+      this.model.recoil=Math.max(this.model.recoil,0.23);
+      return this.lastCrit?"crit":"hit";
     }
     if (this.hammerWeightArmor) {
       // NESA_WEIGHT_PASSIVE_V1: once her swing is committed, Nesa still takes damage,
@@ -2941,7 +3081,7 @@ export class Fighter implements Entity {
       this.passiveGaleSmashes, this.passiveBobMines, this.passiveBobBarrels,
       this.passiveAshHits, this.passiveAshProcs, this.passiveNesaHits,
       this.passiveKaizenWeaken, this.passiveEmberGroundHits,
-      this.passiveEmberPatches]; // PASSIVE_ROSTER_V10: optional appended snapshot fields
+      this.passiveEmberPatches, this.dragonRhythm, +this.dragonRhythmT.toFixed(2), this.dragonMode]; // PASSIVE_ROSTER_V10: optional appended snapshot fields
   }
 
   applySnapshot(s: any[]) {
@@ -2984,6 +3124,10 @@ export class Fighter implements Entity {
     this.passiveAshProcs = s[78] ?? 0; this.passiveNesaHits = s[79] ?? 0;
     this.passiveKaizenWeaken = s[80] ?? 0; this.passiveEmberGroundHits = s[81] ?? 0;
     this.passiveEmberPatches = s[82] ?? 0;
+    this.dragonRhythm = s.length > 83 ? s[83] : 0;
+    this.dragonRhythmT = s.length > 84 ? s[84] : 0;
+    this.dragonMode = s.length > 85 ? Math.max(0,Math.min(3,s[85])) : 0;
+    this.model.dragonMode=this.dragonMode;
     this.model.gravityHeavy = this.kit === "scythe" && this.gravityMode === "heavy";
     if (this.look.element === "metal" && s.length > 58) {
       const isOut = s[56] === 1;
@@ -3056,6 +3200,10 @@ export class Fighter implements Entity {
       ["cbz_w", "cbz_s", "cbx_w", "cbx1_s", "cbx2_s", "cbx3_s", "cbh_w", "cbh_s", "cbv_w", "cbv_s"].includes(this.poseName));
     this.model.presentationT = this.stateT;
     this.model.presentationMode = "victory";
+    this.model.dragonMode=this.dragonMode;
+    this.model.dragonPose = this.kit === "tristaff" ? (this.state === S.WIN ? "show_tristaff" : this.poseName) : "idle";
+    this.model.dragonProgress = this.state === S.ATTACK && this.atk ?
+      Math.max(0, Math.min(1, this.stateT / Math.max(0.01, this.atk.wind + this.atk.active))) : 0;
     this.model.glaivePose = this.kit === "scythe" ? this.poseName : this.kit === "glaive" ? (this.state === S.WIN ? "show_baton" : this.poseName) : "idle";
     this.updateKiraCastVisual();
     this.updateKaedeSheathVisual();

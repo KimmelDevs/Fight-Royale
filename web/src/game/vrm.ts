@@ -143,6 +143,19 @@ export class VrmRig {
   shield = false;
   /** Two-handed weapon grip point for the left hand (greatsword, katana). */
   gripL: THREE.Object3D | null = null;
+  /** SANJIEKUN_VISUAL_V17: generic right-hand grip, mirroring gripL. */
+  gripR: THREE.Object3D | null = null;
+  /** Enables two-rod socket IK only for Zephyr; does not alter other kits. */
+  tristaff = false;
+  tristaffAnchor: "left" | "right" | null = "right";
+  // ZEPHYR_DRAGON_MODE_V18: smooth open/curl and per-arm IK influence.
+  tristaffGripWeight = {left:0,right:1};
+  private tristaffGripQ = new THREE.Quaternion();
+  private tristaffGripBaseQ = new THREE.Quaternion();
+  private tristaffWristParentQ = new THREE.Quaternion();
+  private tristaffWristLocalQ = new THREE.Quaternion();
+  private tristaffWristEuler = new THREE.Euler(0,0,0,"YXZ");
+
   // ZENITH_FORWARD_SPEAR_IK_V7_20261108 — physical rear grip for the right hand.
   spearGripR: THREE.Object3D | null = null;
   /** Rest the blade on the shoulder when not fighting (greatsword). */
@@ -377,14 +390,14 @@ export class VrmRig {
         hk.joint.updateMatrixWorld(true);
       }
       // Fingers: a closed grip around a weapon, a soft natural curl on a free hand.
-      const g = this.grip[side];
+      const g = this.tristaff ? this.tristaffGripWeight[side] : (this.grip[side] ? 1 : 0);
       FINGERS.forEach((f, fi) => SEGS.forEach((seg, si) => {
-        const base = g ? [D(72), D(85), D(55)][si] : [D(18), D(30), D(22)][si];
-        const fan = g ? 0 : fi * D(4) + Math.sin(t * 1.3 + fi) * D(2);
+        const base = [D(18),D(30),D(22)][si]*(1-g)+[D(72),D(85),D(55)][si]*g;
+        const fan = (1-g)*(fi*D(4)+Math.sin(t*1.3+fi)*D(2));
         setLocal(B(`${side}${f}${seg}` as VRMHumanBoneName), 0, 0, -sgn * (base + fan));
       }));
-      setLocal(B(`${side}ThumbProximal` as VRMHumanBoneName), 0, sgn * (g ? D(35) : D(15)), -sgn * (g ? D(25) : D(8)));
-      setLocal(B(`${side}ThumbDistal` as VRMHumanBoneName), 0, sgn * (g ? D(30) : D(10)), 0);
+      setLocal(B(`${side}ThumbProximal` as VRMHumanBoneName),0,sgn*(D(15)+g*D(20)),-sgn*(D(8)+g*D(17)));
+      setLocal(B(`${side}ThumbDistal` as VRMHumanBoneName),0,sgn*(D(10)+g*D(20)),0);
     }
 
     // Legs: rig rotation, soft knees that flex through the walk cycle and when crouching,
@@ -423,7 +436,8 @@ export class VrmRig {
       ease(b, parentQ.multiply(target), 120);
     };
     this.hurtW += ((m.hurt ? 1 : 0) - this.hurtW) * (1 - Math.exp(-(m.hurt ? 18 : 6) * dt));
-    if (this.style === "magnetic" && this.spearGripR) this.zenithSpearHands(setNow);
+    if (this.tristaff) this.tristaffHands(setNow);
+    else if (this.style === "magnetic" && this.spearGripR) this.zenithSpearHands(setNow);
     else if (this.gripL || this.restSword) this.heavyBlade(dt, !!m.combat, set, setNow);
     else if (this.hurtW > 0.02) this.handsForward(set);
     if (this.blade) this.edgeAlign(dt);
@@ -549,6 +563,36 @@ export class VrmRig {
    * Unlike glaive mode, neither wrist is allowed to steer the whole weapon.
    * This runs after natural body motion so the target points are up to date.
    */
+  // ZEPHYR_DRAGON_MODE_V18: both arms follow independent sockets using the
+  // same two-bone IK. IK weight blends against the already posed arm, not a hard snap.
+  private tristaffHands(setNow: (b: THREE.Object3D | null, q: THREE.Quaternion) => void) {
+    const root=this.j.root;
+    root.updateMatrixWorld(true);
+    const drive=(side:"left"|"right",grip:THREE.Object3D|null)=>{
+      const w=THREE.MathUtils.clamp(this.tristaffGripWeight[side],0,1);
+      if(!grip||w<.01)return;
+      const goal=root.worldToLocal(grip.getWorldPosition(_v));
+      const pole=side==="left"?_v2.set(.78,-.62,-.30):_v2.set(-.78,-.62,-.30);
+      this.solveArm(side,goal,pole,(bone,quat)=>{
+        if(!bone)return;
+        this.tristaffGripQ.copy(quatIn(root,bone,this.tristaffGripBaseQ)).slerp(quat,w);
+        // Never exceed ~100 degrees of local wrist twist relative to the forearm.
+        if(this.nameOf.get(bone)?.endsWith("Hand") && bone.parent){
+          const parentQ=quatIn(root,bone.parent,this.tristaffWristParentQ);
+          const local=this.tristaffWristLocalQ.copy(parentQ).invert().multiply(this.tristaffGripQ);
+          const e=this.tristaffWristEuler.setFromQuaternion(local,"YXZ");
+          e.x=THREE.MathUtils.clamp(e.x,-1.745,1.745);
+          e.y=THREE.MathUtils.clamp(e.y,-1.745,1.745);
+          e.z=THREE.MathUtils.clamp(e.z,-1.745,1.745);
+          this.tristaffGripQ.copy(parentQ).multiply(local.setFromEuler(e));
+        }
+        setNow(bone,this.tristaffGripQ);
+      });
+    };
+    drive("left",this.gripL);
+    drive("right",this.gripR);
+  }
+
   private zenithSpearHands(setNow: (b: THREE.Object3D | null, q: THREE.Quaternion) => void) {
     const root = this.j.root;
     if (!this.spearGripR) return;

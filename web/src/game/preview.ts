@@ -95,17 +95,19 @@ export class Preview {
       // Distinct showcase timing, independent of live combat/skill logic.
       const who = this.lookName.toLowerCase();
       const phase = this.mode === "victory" ? this.poseT :
-        this.poseT % (who === "nythera" ? 10.2 : 6.2);
+        this.poseT % (who === "nythera" ? 10.2 : who === "zephyr" ? 9 : 6.2);
       this.model.presentationT = phase;
       this.model.presentationMode = this.mode;
       this.model.glaivePose = who === "nythera" ? "nythera_show" : who === "zarek" ? "show_baton" : "idle";
+      this.model.dragonMode = who === "zephyr" ? Math.min(3,Math.floor((this.poseT%9)/2.25)) : 0;
+      this.model.dragonPose = who === "zephyr" ? "show_tristaff" : "idle";
       // Kaizen: a controlled chain orbit, not an unrelated giant VFX circle.
       this.model.chainPose = who === "kaizen" && phase >= 0.55 && phase <= 2.30 ? "cbz_w" : "idle";
       // Ash: nock and pull a real bow string, then release at the flourish.
       this.model.draw = who === "ash" && phase >= 0.55 && phase < 1.35
         ? Math.min(1, (phase - 0.55) / 0.32) : 0;
       this.model.blend(presentationPose(this.lookName, this.poseT, this.poses.idle, this.mode), dt,
-        who === "nythera" ? 20 : 11);
+        who === "nythera" ? 20 : who === "zephyr" ? 19 : 11);
       if (who === "nythera") {
         // Two distinct pirouettes support the shaft spins, but the throw/catch is weapon-only.
         const ease = (a:number,b:number) => THREE.MathUtils.smoothstep(phase,a,b);

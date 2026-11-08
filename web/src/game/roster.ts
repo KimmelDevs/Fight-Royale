@@ -170,6 +170,14 @@ export const CHARACTERS: Character[] = [
       hair: "#cbbce5", hair_shade: "#53466b", iris_top: "#763cd3", iris_bottom: "#d9bbff", eye_dark: "#1b1233",
       tunic: "#21192e", band: "#5f3996", pants: "#171324", boots: "#191628", metal: "#c6c3da", trim: "#b899ed",
       cape: "#2a2140", cape_bottom: "#7853a8", glow: "#a977f4", shield: "#242037", emblem: "#dac1ff" } },
+  // ZEPHYR_DRAGON_DANCER_V1 — Garrick VRM temporary; replace with your own zephyr.vrm later.
+  { id: "zephyr", title: "Dragon Dancer", role: "Martial Artist - Three-Section Staff",
+    desc: "Technical staff master. Master five flowing grips, counter with Dragon Reversal and earn Rhythm through real catches, parries and clashes.",
+    stats: { power: 4, speed: 4, range: 3, defense: 3 },
+    look: { name: "Zephyr", body: "m", vrm: "garrick", kit: "tristaff", element: "dragon", outfit: "martial", style: "short", hat: "none",
+      hair: "#263f45", hair_shade: "#76939a", iris_top: "#1e8c7e", iris_bottom: "#b6ffe2", eye_dark: "#113034",
+      tunic: "#203a43", band: "#85bba5", pants: "#19242e", boots: "#202936", metal: "#e0e8df", trim: "#d5be82",
+      cape: "#274a53", cape_bottom: "#84c7ae", glow: "#78eed0", shield: "#243e48", emblem: "#e8d9a0" } },
 
 ];
 

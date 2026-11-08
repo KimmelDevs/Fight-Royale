@@ -43,7 +43,7 @@
 import * as THREE from "three";
 import * as M from "./mat";
 import { Fx } from "./fx";
-import { Fighter, S, STOCKS, RANGED_COMBO_REST, DASH_CD, type Entity, type Brain, type Stage } from "./fighter";
+import { Fighter, S, STOCKS, RANGED_COMBO_REST, DASH_CD, DRAGON_VARIANTS, type Entity, type Brain, type Stage } from "./fighter";
 import { Mob, waveRoster, MOB_TYPES, type MobHost } from "./mobs";
 import { AiBrain, LEVELS, type Threats } from "./ai";
 import { CHARACTERS } from "./roster";
@@ -1924,8 +1924,21 @@ export class Game implements MobHost {
         this.zenithPhantomFang(f, za); return;
       }
     }
+    // ZEPHYR_DRAGON_DANCER_V1: each swing has a real combat hitbox.
     const a = f.atk!;
     this.swingSound(f, a);
+    if (f.kit === "tristaff") {
+      const p = f.model.bladeTip.getWorldPosition(new THREE.Vector3());
+      this.fxp("slashes", p, "#76eed1");
+      this.fxp("sparks", p, "#b9ffe8", 12, 4.1);
+      if (["zephyr_serpent", "zephyr_cyclone", "zephyr_ninefold", "zephyr_twin_fang"].includes(a.style)) {
+        // Folded Z takes a short, interruptible step before the first hit.
+        if (a.dragonStep) this.zephyrReposition(f, a.dragonStep, 0);
+        this.zephyrComboSwing(f, a); return;
+      }
+      if (a.type === "melee") { this.melee(f, a); return; }
+    }
+
     if (this.nytheraSwing(f, a)) return;
     if (f.look.element === "metal" && a.id === "pc") {
       this.snd("metallic_impact_with_whip", 0.56);
@@ -2359,6 +2372,69 @@ export class Game implements MobHost {
     });
   }
 
+  // ZEPHYR_DRAGON_DANCER_V1 — single contact for each weapon pass, with a serial-bound
+  // timer to stop post-interrupt phantom damage. Normal melee() resolves parries and blocks.
+  // ZEPHYR_DRAGON_VARIANTS_V19: tiny in-arena combat step, never grants invulnerability.
+  private zephyrReposition(f:Fighter, forward:number, sideways:number) {
+    const yaw=f.root.rotation.y;
+    const face=new THREE.Vector3(Math.sin(yaw),0,Math.cos(yaw));
+    const side=new THREE.Vector3(face.z,0,-face.x);
+    const pos=f.root.position.clone().addScaledVector(face,forward).addScaledVector(side,sideways);
+    if(f.stage) {
+      f.root.position.x=THREE.MathUtils.clamp(pos.x,f.stage.blast.l+1.5,f.stage.blast.r-1.5);
+    } else {
+      const length=Math.hypot(pos.x,pos.z);
+      const bound=Math.max(0.5,f.arenaRadius-0.5);
+      if(length>bound)pos.multiplyScalar(bound/length);
+      f.root.position.x=pos.x;f.root.position.z=pos.z;
+    }
+  }
+
+  // Modest hooked pull: only after a real BLOCK or successful counter.
+  // No extra damage, no new network state, no invulnerability.
+  private zephyrPull(victim: Fighter, towards: Fighter, strength: number) {
+    const vec=towards.root.position.clone().sub(victim.root.position).setY(0);
+    const dist=vec.length();
+    const step=Math.min(Math.max(0,strength),Math.max(0,dist-1.05));
+    if(step<=0||dist<0.01)return;
+    const pos=victim.root.position.clone().addScaledVector(vec,step/dist);
+    if(victim.stage) {
+      pos.x=THREE.MathUtils.clamp(pos.x,victim.stage.blast.l+1.5,victim.stage.blast.r-1.5);
+      pos.z=victim.root.position.z;
+    } else {
+      const r=Math.max(.5,victim.arenaRadius-.5),len=Math.hypot(pos.x,pos.z);
+      if(len>r){pos.x*=r/len;pos.z*=r/len;}
+    }
+    victim.root.position.copy(pos);
+    this.fxp("sparks",victim.chest(),"#f3b5a8",9,2.1);
+  }
+
+  private zephyrComboSwing(f: Fighter, a: Attack) {
+    const count = Math.max(1,Math.min(12,a.hits ?? (a.style === "zephyr_serpent" ? 3 : a.style === "zephyr_cyclone" ? 5 : a.style === "zephyr_twin_fang" ? 2 : 9)));
+    const tick = a.active / count;
+    const round = this.round, serial = f.swingSerial;
+    for (let i = 0; i < count; i++) this.laterCombo(f, i * tick, () => {
+      if (round !== this.round || f.isDown() || f.swingSerial !== serial ||
+          f.state !== S.ATTACK || f.atk?.style !== a.style) return;
+      const last = i === count - 1;
+      const hit: Attack = { ...a, id: `${a.id}_${i+1}`,
+        dmg: a.dmg * (last ? (a.dragonLastDmg ?? 1.75) : (i%2===0 ? (a.dragonEvenDmg ?? .80) : (a.dragonOddDmg ?? .94))),
+        guard: a.guard * (last ? (a.dragonLastGuard ?? 1.7) : 1),
+        knock: last ? (a.dragonLastKnock ?? 4.2) : a.knock,
+        stun: last ? (a.dragonLastStun ?? .39) : a.stun,
+        // Every pulse is a separate, normally parryable/clashable hit.
+        heavy: false, reach: a.reach + (last ? 0.12 : 0),
+        dragonLaunch: last ? a.dragonLaunch : undefined,
+      };
+      f.model.dragonProgress = (i + 1) / count;
+      const tip = f.model.bladeTip.getWorldPosition(new THREE.Vector3());
+      this.fxp("slashes", tip, i % 2 ? "#aafbe8" : "#5ed9bd");
+      this.fxp("sparks", tip, "#dcffec", last ? 25 : 10, last ? 6 : 3);
+      if (last) this.fxp("ring", tip, "#8cf2d3", 0.9, 0.19, 0.72);
+      this.melee(f, hit);
+    });
+  }
+
   private melee(f: Fighter, a: Attack): boolean {
     if (f.look.element === "metal" && f.zenithSpearOut && /^l[1-5]$/.test(a.id))
       a = { ...a, reach: Math.min(a.reach, 1.58) };
@@ -2413,11 +2489,16 @@ export class Game implements MobHost {
       } else if (dist - d.radius + 0.35 > a.reach ||
           dy > (aerialPredatorHook ? 3.15 : antiAir ? 3.25 : airCombo ? 1.8 : 1.3) ||
           (aerialPredatorHook && Math.hypot(Math.max(0, dist - d.radius * 0.4), dy * 0.72) > a.reach + 0.2) ||
-          (dist > 0.6 && dir.dot(fwd) < (antiAir ? -0.08 : 0.15))) continue;
+          (dist > 0.6 && dir.dot(fwd) < (a.dragonBehind ? -1 : (a.dragonArcCos ?? (antiAir ? -0.08 : 0.15))))) continue;
       const hitPos = d.chest().addScaledVector(dir, -0.15);
       const result = this.applyHit(f, d, a, f.atkPower, hitPos, dir, false);
       if (result === "hit" || result === "crit" || result === "ko") {
         connected = true;
+        if (a.dragonLaunch && d instanceof Fighter && !d.isDown()) {
+          d.velY=Math.max(d.velY,a.dragonLaunch);
+          d.onGround=false;
+          this.fxp("ring",d.chest(),"#9cf5df",.65,.15,.5);
+        }
         if (a.style === "glaive_crescent_launch" && d instanceof Fighter) {
           d.velY = Math.max(d.velY, d.stage ? 6.2 : 5.1);
           d.onGround = false;
@@ -4023,6 +4104,9 @@ export class Game implements MobHost {
       this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.8, 0)), "DEATH FEINT", "#ffb6c6", 0.7);
     } else if (a.mode === "counter") {
       f.counterT = a.duration;
+      // A sideways read while setting the SPLIT counter, with no new i-frames.
+      if(f.kit==="tristaff" && a.dragonSidestep)
+        this.zephyrReposition(f,0,a.dragonSidestep);
       this.fxp("flash", f.chest(), f.look.glow, 0.5, 0.2, 0.6);
       this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.9, 0)), "COUNTER STANCE", "#ffd1da", 0.7);
     }
@@ -4310,6 +4394,25 @@ export class Game implements MobHost {
       ? { ...zenithAttack, dmg: zenithAttack.dmg * (nytheraBasic ? 0.90 : 0.80) }
       : zenithAttack;
     const result = d.receiveHit(attacker, balancedAttack, (riposte ? power * 1.15 : power) * sentenceMult);
+    // ZEPHYR_DRAGON_DANCER_V1: count actual impacts, not misses / block spam.
+    if (attacker instanceof Fighter && attacker.kit === "tristaff" &&
+        ["hit", "crit", "ko"].includes(result) &&
+        (attacker.atkId === "l2" || attacker.atkId === "l3" || attacker.atkId === "l5" || attacker.atkId === "pc")) {
+      attacker.earnDragonRhythm(attacker.swingSerial);
+      this.fxp("num", attacker.chest().add(new THREE.Vector3(0, 0.87, 0)),
+        `RHYTHM ${attacker.dragonRhythm}/3`, "#b7ffe3", 0.61);
+    }
+    // ZEPHYR_DRAGON_VARIANTS_V19: award only on real HP damage, once per swing serial.
+    if(attacker instanceof Fighter && attacker.kit==="tristaff" && a.dragonRhythmOnHit &&
+       (result==="hit"||result==="crit"||result==="ko")) {
+      attacker.earnDragonRhythm(attacker.swingSerial);
+      this.fxp("num",attacker.chest().add(new THREE.Vector3(0,.83,0)),
+        `HIDDEN RHYTHM ${attacker.dragonRhythm}/3`,"#b7ffe3",.72);
+    }
+    if(attacker instanceof Fighter && attacker.kit==="tristaff" &&
+       d instanceof Fighter && result==="blocked" && a.dragonPull) {
+      this.zephyrPull(d,attacker,a.dragonPull);
+    }
     // PASSIVES_V10: only actual resolved outcomes count; this runs on the host.
     if (d instanceof Fighter) d.passiveOnDefense(result);
     if (attacker instanceof Fighter) {
@@ -4438,10 +4541,8 @@ export class Game implements MobHost {
         // KAIZEN_GUARD_CLASH_V8: successful spinning-block contact clashes with a
         // melee attack. The attacker recoils; Kaizen remains guarding. Guard was
         // already drained in receiveHit(), so enough pressure can still break it.
-        if (attacker instanceof Fighter) {
-          // Weapon-on-weapon clashes never award projectile-destruction Momentum.
-          attacker.clashRecoil();
-        }
+        // KAIZEN_BLOCK_NO_RECOIL_V17: legacy clash visual must never cancel
+        // an attacking fighter's charged move if an older path reaches here.
         this.snd("clash", 0.9);
         this.fxp("clashBurst", shieldPos, "#ffe7a6", 1.3);
         this.fxp("sparks", shieldPos, "#fff0c2", 38, 8);
@@ -4525,12 +4626,18 @@ export class Game implements MobHost {
         this.fxp("sparks", shieldPos, "#ffd27a", 16, 5, dir.clone().negate().add(new THREE.Vector3(0, 0.3, 0)));
         this.fxp("flash", shieldPos, "#ffd980", 0.35, 0.1, 0.6);
         this.fxp("num", shieldPos.clone().add(new THREE.Vector3(0, 0.4, 0)), (attacker instanceof Fighter && attacker.kit === "hammer" && a.id === "z" ? "CRUSH BLOCK!" : "BLOCK"), "#c9d3e6", 0.7); // NESA_CRUSH_BLOCK_V2
-        if (!ranged && attacker instanceof Fighter) attacker.model.recoil = 0.6;
+        if (!ranged && attacker instanceof Fighter && attacker.kit !== "chainblade" &&
+            !(d instanceof Fighter && d.kit === "chainblade")) attacker.model.recoil = 0.6;
         this.add_trauma(0.14);
         this.hitStop(0.04);
         break;
       case "parry": {
         const df = d as Fighter;
+        if (df.kit === "tristaff") {
+          df.earnDragonRhythm();
+          this.fxp("num", df.chest().add(new THREE.Vector3(0, 0.82, 0)),
+            `DRAGON RHYTHM ${df.dragonRhythm}/3`, "#98f3d5", 0.7);
+        }
         // NESA_FORWARD_HEART_PARRY_V_20261108: a V parry stuns the attacker,
         // but the giant hammer still obeys the normal finisher timeline.
         if (df.kit === "hammer" && df.atk?.style === "nesa_high_striker" && df.nesaHighStrikerParried) {
@@ -4576,6 +4683,12 @@ export class Game implements MobHost {
       }
       case "counter": {
         const df = d as Fighter;
+        if (df.kit === "tristaff") {
+          df.earnDragonRhythm();
+          this.fxp("ring", df.chest(), "#76eed1", 0.74, 0.18, 0.71);
+          this.fxp("num", df.chest().add(new THREE.Vector3(0, .85, 0)),
+            `DRAGON COUNTER ${df.dragonRhythm}/3`, "#c7ffeb", .8);
+        }
         this.fxp("num", df.chest().add(new THREE.Vector3(0, 0.6, 0)), "COUNTER!", "#ff9aa8", 1.4);
         this.fxp("slashes", (attacker ?? df).root.position.clone(), df.look.glow);
         if (attacker) {
@@ -4590,8 +4703,15 @@ export class Game implements MobHost {
             const counter = { ...df.attacks.heavy, dmg: 95, heavy: true, stun: 0.36, no_parry: true, effect: "", knock: 2.5 } as Attack;
             this.applyHit(df, attacker, counter, df.dmgMult, attacker.chest(), d.clone().negate(), false);
           } else {
-            const counter = { ...df.attacks.heavy, dmg: 180, heavy: true, stun: 0.8 } as Attack;
-            this.applyHit(df, attacker, counter, df.dmgMult, attacker.chest(), dir.clone().negate(), false);
+            // Zephyr X keeps its own shared cooldown; counter strength is locked in at cast.
+            const counter = { ...df.attacks.heavy,
+              dmg: df.kit==="tristaff" ? (df.atk?.dragonCounterDamage ?? 180) : 180,
+              heavy: true, stun: 0.8 } as Attack;
+            const outcome=this.applyHit(df, attacker, counter, df.dmgMult, attacker.chest(), dir.clone().negate(), false);
+            // Coiling Reversal's snare triggers on a successful counter only.
+            if(df.kit==="tristaff" && df.atk?.dragonCounterPull &&
+               ["hit","crit","ko"].includes(outcome) && attacker instanceof Fighter)
+              this.zephyrPull(attacker,df,df.atk.dragonCounterPull);
           }
         }
         break;
@@ -4669,6 +4789,7 @@ export class Game implements MobHost {
     // not passive blocks, parries, shield hits or projectile defenses.
     for (const fighter of [a, b]) {
       this.awardZarekClash(fighter);
+      if (fighter.kit === "tristaff") fighter.earnDragonRhythm();
       if (fighter.kit === "hammer" && /^l\d+$/.test(fighter.atkId))
         fighter.passiveNesaHits++; // Nesa gains speed on real basic clashes
     }
@@ -5262,8 +5383,11 @@ export class Game implements MobHost {
           else cd = Math.max(cd, f.chainBindT);
         }
         if (f.bloodFestivalT > 0) cd = Math.max(cd, f.bloodFestivalT);
-        return { key, icon: a.id, name: a.name,
-          desc: a.desc || `${a.type === "buff" ? "Support" : "Combat"} · ${Math.round(a.dmg)} damage · ${a.cd.toFixed(1)}s base CD`,
+        const variant = f.kit === "tristaff" && (key === "z" || key === "x" || key === "c")
+          ? DRAGON_VARIANTS[f.dragonMode][key] : undefined;
+        return { key, icon: a.id, name: variant?.name ?? a.name,
+          desc: variant ? `${variant.name} · ${variant.hits ?? 1} contact(s) · ${Math.round(variant.dmg ?? a.dmg)} base damage per hit · ${a.cd.toFixed(1)}s CD`
+            : a.desc || `${a.type === "buff" ? "Support" : "Combat"} · ${Math.round(a.dmg)} damage · ${a.cd.toFixed(1)}s base CD`,
           cd, max };
       });
       const passives: Array<{ label: string; value: string; desc?: string; icon?: string }> = [];
@@ -5291,6 +5415,7 @@ export class Game implements MobHost {
           ? `${rival.orbitDisplayStacks}/5 · ${rival.orbitDisplayT.toFixed(1)}s` : "0/5" });
         passives.push({ label: "DREADFALL SPEED", value: `${f.nytheraAttackSpeed().toFixed(2)}× · ${f.nytheraDreadfallHits}/14 (round)` });
       }
+      if (f.kit === "tristaff") passives.push({ label: "RHYTHM", value: `${f.dragonRhythm}/3 · ${f.dragonRhythmT.toFixed(1)}s · ${["STAFF","SPLIT","WHIP","FOLDED"][f.dragonMode]}` });
       if (f.kit === "hammer") passives.push({ label: "HEARTS", value: `${f.nesaCCharges}/3` });
       if (f.kit === "bomb") passives.push({ label: "MINES", value: `${f.bobMineCharges}/4` });
       if (f.look.name === "Aster" && rival && rival.status.stacks("weaken") > 0)
@@ -5350,7 +5475,7 @@ export class Game implements MobHost {
     };
     const info = (f: Fighter) => ({ id: CHARACTERS[f.charIndex].id, name: f.look.name + (isCpu(f.owner) && f.owner !== "cpu" ? " (CPU)" : ""), hp: f.hp, maxHp: f.maxHp, guard: f.guard, maxGuard: f.maxGuard, down: f.isDown(), glow: f.look.glow,
       pct: f.pct, stocks: f.stocks, out: f.out, team: f.team, status: f.status.kinds(), bloodlust: f.bloodlust, bloodFrenzyT: f.bloodFrenzyT, bloodFestivalT: f.bloodFestivalT, clashMomentum: f.clashMomentum, chainBindT: f.chainBindT,
-      chainBindKind: f.chainBindKind, gravityMode: f.gravityMode, gravitySwitchCd: f.gravitySwitchCd,
+      chainBindKind: f.chainBindKind, dragonRhythm: f.dragonRhythm, dragonRhythmT: f.dragonRhythmT, gravityMode: f.gravityMode, gravitySwitchCd: f.gravitySwitchCd,
       orbitDisplayStacks: f.orbitDisplayStacks, orbitDisplayT: f.orbitDisplayT,
       nytheraDreadfallHits: f.nytheraDreadfallHits,
       passives: spectatorDetail(f, this.fighters.find(foe => foe !== f && foe.team !== f.team) ?? null)?.passives ?? [],

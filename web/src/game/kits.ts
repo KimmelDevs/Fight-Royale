@@ -55,6 +55,13 @@ export interface Attack {
   no_parry: boolean;
   /** If this attack is parried, the attacker is stunned this many seconds (a weakness). */
   parry_stun: number;
+  // ZEPHYR_DRAGON_VARIANTS_V19: only populated for Zephyr's resolved attacks.
+  hits?: number;
+  dragonPull?: number; dragonCounterPull?: number; dragonSidestep?: number;
+  dragonCounterDamage?: number; dragonArmor?: boolean; dragonBehind?: boolean; dragonArcCos?: number;
+  dragonRhythmOnHit?: boolean; dragonStep?: number; dragonLaunch?: number;
+  dragonEvenDmg?: number; dragonOddDmg?: number; dragonLastDmg?: number;
+  dragonLastGuard?: number; dragonLastKnock?: number; dragonLastStun?: number;
 }
 
 export const STATS: Record<string, { hp: number; guard: number; move: number; walk: number; parry: number; jump: number }> = {
@@ -69,6 +76,8 @@ export const STATS: Record<string, { hp: number; guard: number; move: number; wa
   wind: { hp: 2200, guard: 80, move: 4.1, walk: 3.3, parry: 0.2, jump: 8.4 },
   sickle: { hp: 1950, guard: 62, move: 4.5, walk: 3.55, parry: 0.20, jump: 8.2 },
   glaive: { hp: 2250, guard: 88, move: 4.0, walk: 3.15, parry: 0.19, jump: 7.7 },
+  // ZEPHYR_DRAGON_DANCER_V1
+  tristaff: { hp: 2225, guard: 82, move: 3.90, walk: 3.05, parry: 0.205, jump: 7.9 },
   bomb: { hp: 2100, guard: 70, move: 3.5, walk: 2.8, parry: 0.16, jump: 7.0 },
   chainblade: { hp: 2450, guard: 100, move: 3.55, walk: 2.75, parry: 0.16, jump: 7.0 },
   hammer: { hp: 2650, guard: 110, move: 3.05, walk: 2.45, parry: 0.15, jump: 7.0 },
@@ -106,6 +115,7 @@ function parryCounterAttack(kit: string, element: string, base: Record<string, A
     sickle: [heavy.pose_w, heavy.pose_s],
     chainblade: [heavy.pose_w, heavy.pose_s],
     glaive: [heavy.pose_w, heavy.pose_s],
+    tristaff: [heavy.pose_w, heavy.pose_s],
     scythe: [heavy.pose_w, heavy.pose_s],
     bomb: [base.z?.pose_w ?? light.pose_w, base.z?.pose_s ?? light.pose_s],
     assassin: [base.l2?.pose_w ?? light.pose_w, base.l2?.pose_s ?? light.pose_s],
@@ -123,6 +133,7 @@ function parryCounterAttack(kit: string, element: string, base: Record<string, A
     sickle: "Reaper's Waltz",
     chainblade: "Chain Cyclone",
     glaive: "Thunderwheel",
+    tristaff: "Dragon's Answer",
     scythe: "Eclipse Reversal",
     bomb: "Firecracker Spin",
     assassin: "Shadow Carousel",
@@ -130,19 +141,19 @@ function parryCounterAttack(kit: string, element: string, base: Record<string, A
   const reach: Record<string, number> = {
     knight: 1.95, greatsword: 2.20, hammer: 2.35, katana: 2.00,
     bow: 1.90, mage: 2.00, knuckles: 1.60, kicks: 1.85,
-    wind: 2.00, sickle: 1.95, chainblade: 2.35, glaive: 2.40, scythe: 2.45,
+    wind: 2.00, sickle: 1.95, chainblade: 2.35, glaive: 2.40, tristaff: 2.25, scythe: 2.45,
     bomb: 1.85, assassin: 1.85,
   };
   const lunge: Record<string, number> = {
     knight: 1.5, greatsword: 1.25, hammer: 1.35, katana: 1.8,
     bow: 1.2, mage: 1.15, knuckles: 1.65, kicks: 1.95,
-    wind: 1.85, sickle: 1.9, chainblade: 1.55, glaive: 1.8, scythe: 1.8,
+    wind: 1.85, sickle: 1.9, chainblade: 1.55, glaive: 1.8, tristaff: 2.0, scythe: 1.8,
     bomb: 1.25, assassin: 2.2,
   };
   const knock: Record<string, number> = {
     knight: 4.2, greatsword: 4.9, hammer: 5.1, katana: 4.1,
     bow: 3.6, mage: 3.8, knuckles: 3.8, kicks: 4.0,
-    wind: 4.2, sickle: 4.0, chainblade: 4.5, glaive: 4.8, scythe: 4.3,
+    wind: 4.2, sickle: 4.0, chainblade: 4.5, glaive: 4.8, tristaff: 4.3, scythe: 4.3,
     bomb: 3.8, assassin: 4.1,
   };
   const pose = poses[kit] ?? [light.pose_w, light.pose_s];
@@ -184,6 +195,7 @@ export function attacks(kit: string, element: string): Record<string, Attack> {
     sickle: sickle,
     chainblade: chainblade,
     glaive: glaive,
+    tristaff: dragonStaff,
     scythe: gravityScythe,
     bomb: bomb,
     kicks: kicks,
@@ -414,6 +426,12 @@ function bonusSkill(kit: string, element: string): Attack {
         cd: 43, type: "melee", wind: 0.36, active: 1.04, recover: 0.53,
         dmg: 40, guard: 15, reach: 2.90, knock: 1, stun: 0.18, style: "gravity_requiem",
         pose_w: "grv_w", pose_s: "grv_float", heavy: false });
+    // ZEPHYR_DRAGON_DANCER_V1 — nine distinct real melee contacts, not one unblockable animation.
+    case "tristaff":
+      return a({ name: "Ninefold Dragon", desc: "Nine independently timed three-section staff hits, alternating grips and an aerial finish. Each can be dodged, blocked, parried and clashed.",
+        cd: 42, type: "melee", wind: 0.40, active: 1.90, recover: 0.75,
+        dmg: 33, guard: 11, reach: 2.36, lunge: 1.8, knock: 0.65, stun: 0.13,
+        style: "zephyr_ninefold", pose_w: "zdv_w", pose_s: "zdv_s" });
     case "glaive":
       return a({ name: "Arc Flash", desc: "A lightning-fast straight-line glaive draw dash, inspired by an anime thunder swordsman. Travels during the active window and cuts at the end; can be blocked, parried or clashed.", cd: 12,
         type: "melee", wind: 0.13, active: 0.21, recover: 0.48, dmg: 190, guard: 49, reach: 2.35, lunge: 38,
@@ -625,6 +643,41 @@ function glaive(): Record<string, Attack> {
   };
 }
 
+/** ZEPHYR_DRAGON_DANCER_V1 — realistic folded, extended and spinning staff actions. */
+function dragonStaff(): Record<string, Attack> {
+  return {
+    l1: a({ name: "Dragon Entry", wind: 0.13, active: 0.075, recover: 0.18,
+      dmg: 48, guard: 14, reach: 2.09, lunge: 2.35, knock: 0.50, stun: 0.17,
+      style: "zephyr_staff", pose_w: "zd1_w", pose_s: "zd1_s", next: "l2" }),
+    l2: a({ name: "Backwind Catch", wind: 0.15, active: 0.08, recover: 0.19,
+      dmg: 55, guard: 15, reach: 2.10, lunge: 2.0, knock: 0.58, stun: 0.18,
+      style: "zephyr_staff", pose_w: "zd2_w", pose_s: "zd2_s", next: "l3" }),
+    l3: a({ name: "Underarm Eight", wind: 0.15, active: 0.085, recover: 0.20,
+      dmg: 61, guard: 17, reach: 2.16, lunge: 2.15, knock: 0.68, stun: 0.21,
+      style: "zephyr_staff", pose_w: "zd3_w", pose_s: "zd3_s", next: "l4" }),
+    l4: a({ name: "Orbit Wheel", wind: 0.19, active: 0.12, recover: 0.24,
+      dmg: 71, guard: 20, reach: 2.26, lunge: 2.25, knock: 1.4, stun: 0.25,
+      style: "zephyr_staff", pose_w: "zd4_w", pose_s: "zd4_s", next: "l5" }),
+    l5: a({ name: "Twin-End Verdict", wind: 0.23, active: 0.10, recover: 0.43,
+      dmg: 105, guard: 32, reach: 2.28, lunge: 2.15, knock: 4.0, stun: 0.40,
+      style: "zephyr_finisher", pose_w: "zd5_w", pose_s: "zd5_s" }),
+    heavy: a({ name: "Dragon Tail Break", wind: 0.29, active: 0.13, recover: 0.53,
+      dmg: 166, guard: 52, reach: 2.52, lunge: 2.25, knock: 5.1, stun: 0.51, heavy: true,
+      style: "zephyr_finisher", pose_w: "zdh_w", pose_s: "zdh_s" }),
+    z: a({ name: "Serpent Wheel", desc: "Two overhead revolutions and a sweeping third strike; three independently defendable hits.",
+      cd: 8, wind: 0.19, active: 0.59, recover: 0.41,
+      dmg: 51, guard: 17, reach: 2.35, lunge: 2.6, knock: 0.75, stun: 0.17,
+      style: "zephyr_serpent", pose_w: "zdz_w", pose_s: "zdz_s" }),
+    x: a({ name: "Dragon Reversal", desc: "Fold the staff and brace for a 0.34s automatic counter. If hit by a parryable attack, neutralize it and counterattack. Failed reads leave recovery.",
+      cd: 10, type: "buff", mode: "counter", duration: 0.34, wind: 0.04, active: 0.04, recover: 0.53,
+      style: "zephyr_reversal", pose_w: "zdx_w", pose_s: "zdx_s" }),
+    c: a({ name: "Heavenly Cyclone", desc: "Five transitioning staff grips: waist, shoulder, overhead, reverse and advancing finisher. Each contact remains blockable, parryable and clashable.",
+      cd: 17, type: "melee", wind: 0.29, active: 1.18, recover: 0.57,
+      dmg: 49, guard: 16, reach: 2.42, lunge: 1.8, knock: 0.7, stun: 0.16,
+      style: "zephyr_cyclone", pose_w: "zdc_w", pose_s: "zdc_s" }),
+  };
+}
+
 function sickle(): Record<string, Attack> {
   return {
     // Basic attacks are deliberately stronger than the original 29/31/37/48.
@@ -636,7 +689,7 @@ function sickle(): Record<string, Attack> {
     // BLOOD_FESTIVAL_V3 — Crimson Execution replaces the former Blood Sickle skill.
     z: a({ name: "Crimson Execution", desc: "Three curved blood blades; the final blade consumes poison for +15 damage per stack.", cd: 12, type: "projectile", wind: 0.30, recover: 0.54, dmg: 45, guard: 14, knock: 1.8, stun: 0.22, speed: 14, count: 3, spread: 0.58, size: 1.2, style: "bloodcrescent", pose_w: "vrc_w", pose_s: "vrc_s" }),
     x: a({ name: "Death Feint", desc: "A 0.30s counter window. If struck, slip past the attacker and counter-cut. A failed feint leaves you open.", cd: 10, type: "buff", mode: "blood_feint", duration: 0.30, wind: 0.08, active: 0.04, recover: 0.55, pose_w: "vrx_w", pose_s: "vrx_s" }),
-    c: a({ name: "Blood Festival", desc: "Teleport beside a target and surround enemies with orbiting blood scythes for 6 seconds. The rim pushes enemies inward. Veyr ignores stuns but can still take damage or be blocked/clashed; his special skills are locked. Light attacks deal +35% damage and 3x normal guard damage. Bloodlust fills only from landed attacks; no free Blood Frenzy on cast.", cd: 22, type: "buff", mode: "blood_festival", duration: 6, radius: 3.5, wind: 0.26, active: 0.05, recover: 0.24, pose_w: "vrc_w", pose_s: "vrc_s" }),
+    c: a({ name: "Blood Festival", desc: "Teleport beside a target and surround enemies with orbiting blood scythes for 8 seconds. The rim pushes enemies inward. Veyr ignores stuns but can still take damage or be blocked/clashed; his special skills are locked. Light attacks deal +35% damage and 3x normal guard damage. Bloodlust fills only from landed attacks; no free Blood Frenzy on cast.", cd: 29, type: "buff", mode: "blood_festival", duration: 8, radius: 3.5, wind: 0.26, active: 0.05, recover: 0.24, pose_w: "vrc_w", pose_s: "vrc_s" }),
   };
 }
 
@@ -1257,6 +1310,40 @@ const GRAVITY_SCYTHE: Record<string, Pose> = {
   grv_finish: P([0.59,0.54,0.08],[-0.27,-0.32,0],[-0.55,0.74,-0.29],[0.12,0,0.30],[-0.77,0.51,0.13],[0.08,0,0.12],[-0.91,0,0.15],[0.68,0,-0.09],-0.28),
 };
 
+// ZEPHYR_DRAGON_DANCER_V1: stance -> cross-body -> figure-eight -> back catch -> pole vault finish.
+const DRAGON_STAFF: Record<string, Pose> = {
+  ...GLAIVE,
+  idle: P([.07,-.27,.02],[-.05,.20,0],[-.87,.33,-.31],[.2,.04,-.13],[-1.03,-.20,.28],[.22,-.02,.10],[-.23,0,.20],[.28,0,-.17],-.10),
+  block: P([.19,-.07,0],[-.02,.08,0],[-1.35,.22,-.24],[.38,0,-.12],[-1.43,-.27,.24],[.34,0,.12],[-.49,0,.17],[.47,0,-.15],-.17),
+  charge: P([.21,-.44,.03],[.04,.28,0],[-1.29,.55,-.31],[.32,0,-.18],[-1.09,-.26,.37],[.22,0,.06],[-.44,0,.16],[.50,0,-.16],-.14),
+  zd1_w: P([.13,-.60,.05],[0,.37,0],[-.95,-.64,-.20],[.3,0,-.24],[-1.04,-.45,.24],[.32,0,.06],[-.39,0,.18],[.37,0,-.13],-.12),
+  zd1_s: P([.21,.49,-.04],[-.04,-.24,0],[-1.54,.38,-.27],[.12,0,.26],[-1.37,.30,.18],[.16,0,.1],[-.48,0,.14],[.39,0,-.15],-.13),
+  zd2_w: P([.13,.55,.02],[-.05,-.28,0],[-1.18,.72,-.42],[.25,0,-.19],[-.91,.23,.32],[.20,0,.12],[-.24,0,.12],[.4,0,-.15],-.11),
+  zd2_s: P([.19,-.60,-.03],[-.04,.38,0],[-1.62,-.62,-.24],[.16,0,.24],[-1.19,-.42,.28],[.19,0,-.07],[-.45,0,.14],[.43,0,-.1],-.14),
+  zd3_w: P([.24,-.52,-.10],[-.06,.33,0],[-1.29,-.33,-.59],[.57,0,-.19],[-.89,-.28,.44],[.21,0,.04],[-.45,0,.17],[.37,0,-.12],-.17),
+  zd3_s: P([.03,.62,.1],[-.02,-.28,0],[-2.00,.45,-.18],[.12,0,.39],[-1.40,.18,.31],[.12,0,.06],[-.50,0,.15],[.46,0,-.11],-.11),
+  zd4_w: P([.12,-.92,0],[0,.40,0],[-1.10,-.71,-.36],[.56,0,-.19],[-1.04,-.63,.40],[.26,0,-.12],[-.51,0,.13],[.43,0,-.12],-.15),
+  zd4_s: P([.08,1.02,.02],[0,-.55,0],[-1.93,.83,-.23],[.17,0,.44],[-1.57,.66,.29],[.10,0,.31],[-.62,0,.15],[.47,0,-.14],-.13),
+  zd5_w: P([-.22,-.39,.04],[.13,.17,0],[-2.57,-.2,-.23],[.42,0,-.04],[-2.19,-.09,.17],[.3,0,.06],[-.73,0,.10],[.27,0,-.10],-.10),
+  zd5_s: P([.43,.36,0],[-.23,-.11,0],[-.72,.37,-.37],[.13,0,.18],[-.92,.24,.24],[.13,0,.06],[-.77,0,.14],[.65,0,-.16],-.23),
+  zdh_w: P([-.17,-.47,.02],[.13,.24,0],[-2.20,-.36,-.29],[.4,0,-.13],[-1.86,-.24,.23],[.34,0,.08],[-.65,0,.14],[.41,0,-.15],-.17),
+  zdh_s: P([.45,.44,.05],[-.21,-.19,0],[-.79,.44,-.43],[.15,0,.28],[-1.14,.34,.31],[.16,0,.12],[-.80,0,.15],[.59,0,-.15],-.21),
+  zdz_w: P([.07,-.56,0],[0,.37,0],[-1.67,-.38,-.22],[.50,0,-.26],[-1.57,-.22,.37],[.38,0,.07],[-.46,0,.14],[.44,0,-.13],-.12),
+  zdz_s: P([.10,.69,0],[-.1,-.29,0],[-1.87,.72,-.25],[.2,0,.35],[-1.62,.44,.29],[.22,0,.17],[-.51,0,.14],[.45,0,-.16],-.14),
+  zdx_w: P([.29,-.16,0],[-.06,.08,0],[-1.40,.35,-.35],[.34,0,-.22],[-1.47,-.36,.34],[.31,0,.15],[-.69,0,.14],[.61,0,-.16],-.20),
+  zdx_s: P([.09,.27,0],[-.11,-.03,0],[-1.34,-.48,-.25],[.27,0,.09],[-1.59,.37,.38],[.2,0,.1],[-.49,0,.13],[.55,0,-.18],-.17),
+  zdc_w: P([.1,-.75,0],[0,.25,0],[-1.49,-.55,-.38],[.40,0,-.16],[-1.33,-.47,.43],[.24,0,.12],[-.45,0,.16],[.43,0,-.15],-.13),
+  zdc_s: P([.12,.72,0],[-.08,-.26,0],[-1.67,.61,-.36],[.25,0,.40],[-1.59,.38,.31],[.17,0,.14],[-.61,0,.14],[.52,0,-.15],-.15),
+  zdv_w: P([-.12,-.48,0],[.07,.18,0],[-2.37,-.3,-.31],[.36,0,-.13],[-2.11,-.14,.28],[.24,0,.13],[-.56,0,.14],[.45,0,-.15],-.14),
+  zdv_s: P([.20,.53,0],[-.14,-.16,0],[-1.95,.53,-.32],[.29,0,.30],[-1.71,.46,.28],[.19,0,.20],[-.67,0,.15],[.59,0,-.16],-.18),
+  zdv_finish: P([.52,.30,0],[-.19,-.08,0],[-.55,.47,-.25],[.11,0,.16],[-.84,.31,.28],[.10,0,.10],[-.83,0,.13],[.59,0,-.13],-.22),
+  // SANJIEKUN_VISUAL_V17: presentation-only poses; damage and hitboxes untouched.
+  zd_fold: P([.12,-.17,.07],[-.08,.15,.04],[-1.36,.30,-.4],[.22,0,-.08],[-.68,-.30,.52],[0,0,.05],[-.33,0,.16],[.38,0,-.12],-.12),
+  zd_catch: P([.20,.25,-.08],[-.12,-.05,.08],[-1.7,.38,-.25],[.19,0,.12],[-1.42,-.10,.31],[.21,0,.07],[-.42,0,.15],[.44,0,-.15],-.13),
+  zd_handpass: P([-.07,.55,.13],[-.13,-.20,.06],[-1.13,-.22,-.32],[.18,0,.19],[-2.1,.43,.41],[.13,0,.13],[-.51,0,.19],[.34,0,-.12],-.10),
+  zd_sway: P([.09,-.31,-.11],[-.07,.18,.08],[-.9,.31,-.43],[.15,0,.13],[-1.14,-.31,.39],[.24,0,.1],[-.17,0,.17],[.31,0,-.19],-.09),
+};
+
 const CHAINBLADE: Record<string, Pose> = {
   ...twoHanded(KNIGHT),
   idle: P([0.06, -0.12, 0], [-0.03, 0.1, 0], [-0.86, 0.17, -0.16], [0.25, 0, -0.2], [-0.48, -0.3, 0.40], [0.17, 0, 0.08], [-0.19, 0, 0.06], [0.19, 0, -0.06], -0.055),
@@ -1313,6 +1400,7 @@ const TABLES: Record<string, Record<string, Pose>> = {
   mage: MAGE,
   sickle: SICKLE,
   glaive: GLAIVE,
+  tristaff: DRAGON_STAFF,
   assassin: ASSASSIN,
   greatsword: { ...twoHanded(KNIGHT), ...GARRICK_SWINGS },
   hammer: { ...twoHanded(KNIGHT), ...NESA_SWINGS },
