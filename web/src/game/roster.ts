@@ -172,7 +172,7 @@ export const CHARACTERS: Character[] = [
       cape: "#2a2140", cape_bottom: "#7853a8", glow: "#a977f4", shield: "#242037", emblem: "#dac1ff" } },
   // ZEPHYR_DRAGON_DANCER_V1 — Garrick VRM temporary; replace with your own zephyr.vrm later.
   { id: "zephyr", title: "Dragon Dancer", role: "Martial Artist - Three-Section Staff",
-    desc: "Dragon Rhythm: successful catches, parries, clashes and special strikes earn up to 3 stacks for 25 seconds (refreshed on gain). A lifetime of controlling a rebounding three-section staff—even being struck by his own weapon—gives Zephyr +20% HP and 20% less incoming damage. SPLIT gives up normal guard and takes slightly more damage. Each active Rhythm stack grants +20% attack speed (maximum +60%). Rhythm strengthens his next finisher.",
+    desc: "Dragon Rhythm: successful catches, parries, clashes and special strikes earn up to 3 stacks for 25 seconds (refreshed on gain). A lifetime of controlling a rebounding three-section staff—even being struck by his own weapon—gives Zephyr +20% HP and 10% less incoming damage. SPLIT gives up normal guard and takes slightly more damage. Each active Rhythm stack grants +20% attack speed (maximum +60%). Rhythm strengthens his next finisher.",
     stats: { power: 4, speed: 4, range: 3, defense: 4 },
     look: { name: "Zephyr", body: "m", vrm: "garrick", kit: "tristaff", element: "dragon", outfit: "martial", style: "short", hat: "none",
       hair: "#263f45", hair_shade: "#76939a", iris_top: "#1e8c7e", iris_bottom: "#b6ffe2", eye_dark: "#113034",

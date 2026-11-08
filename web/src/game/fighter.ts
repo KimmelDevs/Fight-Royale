@@ -77,7 +77,7 @@ export const DRAGON_MODE_TUNING = [
 export const ZEPHYR_PASSIVE_TUNING = {
   rhythmSeconds: 25,
   attackSpeedPerStack: 0.20, // V26: +20% attack speed per active Rhythm stack, max 3.
-  damageTakenMult: 0.80, // 20% less incoming HP damage
+  damageTakenMult: 0.90, // 10% less incoming HP damage — FIGHT_ROYALE_V30_ZEPHYR_RESILIENCE_ICON
 } as const;
 
 // ZEPHYR_DRAGON_VARIANTS_V19 — editable per-mode attacks.
@@ -2596,7 +2596,7 @@ export class Fighter implements Entity {
     }
     let dmg = a.dmg * power;
     // Sanjiekun resilience: the fighter has learned to absorb the three rods'
-    // rebounds. SPLIT's +10% exposure is still applied on top (0.8 * 1.1).
+    // rebounds. SPLIT's +10% exposure is still applied on top (0.9 * 1.1).
     if(this.kit==="tristaff") dmg*=ZEPHYR_PASSIVE_TUNING.damageTakenMult;
     if(this.kit==="tristaff"&&this.dragonMode===1)
       dmg*=DRAGON_MODE_TUNING[1].splitDamageTakenMult;
