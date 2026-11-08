@@ -53,13 +53,15 @@ export const CONTINUOUS_STYLES = new Set([
 ]);
 
 // NYTHERA_AIR_SPEED_BALANCE_V26: only Nythera; Kira and Nyx are unchanged.
-const NYTHERA_V26_TUNING = { maxAirSlices: 3, speedCap: 1.48 } as const;
+// FIGHT_ROYALE_V29_PARRY_ORBIT_GUARD: 6 Orbit Marks, 1-per-hit spending, unchanged Dreadfall cap.
+const NYTHERA_V26_TUNING = { maxAirSlices: 3, speedCap: 1.48, orbitCap: 6 } as const;
 // GUARD_FATIGUE_V26 — affects the attacker on REAL block/parry contacts.
-// Unlimited stacks; effective speed has a safety floor to avoid zero timelines.
+// Max 10 stacks; applied AFTER all attack/passive speed bonuses, multiplicatively.
 export const GUARD_FATIGUE_TUNING = {
   speedLostPerStack: 0.02,
+  maxStacks: 10,
   decaySecondsPerStack: 3.0,
-  minSpeed: 0.20,
+  minSpeed: 0.80,
 } as const;
 // ZEPHYR_DRAGON_MODE_V18 — all combat-mode numbers in one editable table.
 // Mode order: STAFF, SPLIT, WHIP, FOLDED. Set every entry to 1 to disable bonuses.
@@ -436,10 +438,17 @@ export class Fighter implements Entity {
   }
   applyGuardFatigue() {
     if (this.isDown()) return;
-    this.guardFatigueStacks += 1; // intentionally unlimited
+    this.guardFatigueStacks = Math.min(GUARD_FATIGUE_TUNING.maxStacks, this.guardFatigueStacks + 1);
     this.guardFatigueDecayT = GUARD_FATIGUE_TUNING.decaySecondsPerStack;
   }
+  /** A true parry relieves one fatigue stack and restores 10% max guard. */
+  recoverFromParry() {
+    this.guard = Math.min(this.maxGuard, this.guard + this.maxGuard * 0.10);
+    this.guardFatigueStacks = Math.max(0, this.guardFatigueStacks - 1);
+    if (!this.guardFatigueStacks) this.guardFatigueDecayT = GUARD_FATIGUE_TUNING.decaySecondsPerStack;
+  }
   private tickGuardFatigue(dt: number) {
+    this.guardFatigueStacks = Math.min(GUARD_FATIGUE_TUNING.maxStacks, this.guardFatigueStacks);
     if (this.guardFatigueStacks <= 0) {
       this.guardFatigueStacks = 0;
       this.guardFatigueDecayT = GUARD_FATIGUE_TUNING.decaySecondsPerStack;
@@ -649,6 +658,13 @@ export class Fighter implements Entity {
   /** Successful parry makes the NEXT shield raise 90% faster (0.10s to 0.01s). */
   shieldRaise = 0.10;
   nextShieldFast = false;
+  /** All heroes raise shields 30% sooner; existing Aster/Staff benefits remain. */
+  guardStartupSeconds(): number {
+    const special = this.kit === "tristaff" && this.dragonMode === 0
+      ? DRAGON_MODE_TUNING[0].staffShieldRaise
+      : this.nextShieldFast ? 0.01 : this.look.name === "Aster" ? 0.05 : 0.10;
+    return special * 0.70;
+  }
   /** Only ongoing multi-hit specials accumulate these parry/clash penalties. */
   comboDamageMult = 1;
   comboPauseT = 0;
@@ -2163,15 +2179,21 @@ export class Fighter implements Entity {
         effect: "weaken", effect_t: 50, effect_p: 0.8,
       };
     }
-    // GUARD_FATIGUE_V26: finalized, kit-specific attack. Applies to both
-    // basics and Z/X/C/V wind/active/recovery, but NEVER to cooldown duration.
-    // 0.20x speed is a technical floor; stacks themselves remain uncapped.
+    // FIGHT_ROYALE_V29_PARRY_ORBIT_GUARD: multiply fully boosted attack speed by (1-0.02*stacks).
+    // After all passives, modes, and kit modifiers; never alter cooldowns.
     if (this.atk && this.guardFatigueStacks > 0) {
       const speed = this.guardFatigueSpeed();
       this.atk = { ...this.atk,
         wind: this.atk.wind / speed,
         active: this.atk.active / speed,
         recover: this.atk.recover / speed };
+    }
+    // Standardize the parry counter windup from the already-scaled timing.
+    // Only windup is clamped; parry timing, damage, active and recovery remain unchanged.
+    if (id === "pc" && this.atk) {
+      this.atk.wind = Math.max(0.24, Math.min(0.45, this.atk.wind));
+      this.atk.active = this.attacks.pc.active;
+      this.atk.recover = this.attacks.pc.recover;
     }
     this.atkPhase = 0;
     this.buffered = false;
@@ -2326,9 +2348,7 @@ export class Fighter implements Entity {
   private setState(s: S) {
     if (s === S.BLOCK && this.state !== S.BLOCK) {
       // ZEPHYR_MODE_BALANCE_V25: STAFF can raise guard nearly instantly.
-      this.shieldRaise = this.kit==="tristaff" && this.dragonMode===0
-        ? DRAGON_MODE_TUNING[0].staffShieldRaise
-        : (this.nextShieldFast ? 0.01 : (this.look.name === "Aster" ? 0.05 : 0.10)); // V28 shield 50% faster
+      this.shieldRaise = this.guardStartupSeconds(); // FIGHT_ROYALE_V29_PARRY_ORBIT_GUARD: 30% quicker for everyone
       this.nextShieldFast = false;
     }
     this.state = s; this.stateT = 0; this.poseOverride = "";
@@ -2629,7 +2649,6 @@ export class Fighter implements Entity {
       if (incoming.lengthSq() < 0.15 || incoming.normalize().dot(face) > 0.0) {
         this.nesaHighStrikerParried = true;
         this.model.flash("#ffb7e3", 0.20);
-        this.guard = Math.min(this.maxGuard, this.guard + 15);
         return "parry";
       }
     }
@@ -2637,7 +2656,6 @@ export class Fighter implements Entity {
       if (this.stateT - this.shieldRaise <= this.parryWindow *
           (this.kit==="tristaff"?DRAGON_MODE_TUNING[this.dragonMode].parry:1) &&
           (!a.no_parry || parryableContinuous) && !festivalUnparryable) {
-        this.guard = Math.min(this.guard + 20, this.maxGuard);
         this.model.flash("#99e6ff", 0.15);
         // Reward applies to the NEXT shield raise, once only; never stack it.
         this.nextShieldFast = true;
@@ -3363,7 +3381,7 @@ export class Fighter implements Entity {
     this.dragonRhythm = s.length > 83 ? s[83] : 0;
     this.dragonRhythmT = s.length > 84 ? s[84] : 0;
     this.dragonMode = s.length > 85 ? Math.max(0,Math.min(3,s[85])) : 0;
-    this.guardFatigueStacks = s.length > 86 ? Math.max(0, s[86]) : 0;
+    this.guardFatigueStacks = s.length > 86 ? Math.min(GUARD_FATIGUE_TUNING.maxStacks, Math.max(0, s[86])) : 0;
     this.guardFatigueDecayT = s.length > 87 ? s[87] : GUARD_FATIGUE_TUNING.decaySecondsPerStack;
     this.model.dragonMode=this.dragonMode;
     this.model.gravityHeavy = this.kit === "scythe" && this.gravityMode === "heavy";

@@ -4426,7 +4426,8 @@ export class Game implements MobHost {
     const heavySentence = !!gravityOwner && gravityOwner.gravityMode === "heavy" &&
       a.dmg > 0 && a.style !== "gravity_well" && a.style !== "gravity_requiem";
     // NYTHERA_BALANCE_CPU_COMPACT_V12: Dreadfall consumes marks for +5% each (max +25%).
-    const sentenceMult = heavySentence ? 1 + marks * 0.05 : 1;
+    // FIGHT_ROYALE_V29_PARRY_ORBIT_GUARD: a Dreadfall damaging hit spends only ONE stored mark.
+    const sentenceMult = heavySentence && marks > 0 ? 1.05 : 1;
     // Match all Nythera attacks, including scheduled Z/X/V beats.
     // The original attack data and visual contact events remain untouched.
     const nytheraBasic = /^l[1-6]$/.test(a.id) || /^air_l[1-3]$/.test(a.id) || a.id === "heavy";
@@ -4495,37 +4496,34 @@ export class Game implements MobHost {
     // NYTHERA_ELEGANT_REAPER_V4: 25 seconds. Guarded scythe contact counts,
     // but a successful parry is a clean denial. No combo beat depends on a hit.
     const gravityDamage = result === "hit" || result === "crit" || result === "ko";
-    const gravityContact = gravityDamage || result === "blocked";
-    if (gravityOwner && gravityDamage && gravityOwner.gravityMode === "heavy" && a.dmg > 0) {
-      gravityOwner.nytheraDreadfallHits = Math.min(14, gravityOwner.nytheraDreadfallHits + 1);
-      const speed = gravityOwner.nytheraAttackSpeed();
-      // Only real HP damage earns speed. Block, parry, clash, and DOT do not.
-      if (gravityOwner.nytheraDreadfallHits === 1 ||
-          gravityOwner.nytheraDreadfallHits % 3 === 0 || gravityOwner.nytheraDreadfallHits === 14) {
-        this.fxp("num", gravityOwner.chest().add(new THREE.Vector3(0,0.80,0)),
-          `DREADFALL ${speed.toFixed(1)}×`, "#d9b0ff", 0.56);
-        this.fxp("motes", gravityOwner.chest(), "#a06df0", 8);
+    // FIGHT_ROYALE_V29_PARRY_ORBIT_GUARD: Moonfloat = build, Dreadfall = spend.
+    // No speed on unmarked targets, miss, parry, clash or block.
+    if (gravityOwner && gravityDamage && a.dmg > 0) {
+      if (gravityOwner.gravityMode === "light") {
+        const n = Math.min(6, marks + 1);
+        this.gravityMarks.set(markKey, { stacks: n, expires: this.time + 25 });
+        if (d instanceof Fighter) { d.orbitDisplayStacks = n; d.orbitDisplayT = 25; }
+        this.fxp("ring", d.chest(), "#b68ef7", 0.41 + n * 0.14, 0.18, 0.58);
+        this.fxp("num", d.chest().add(new THREE.Vector3(0, 0.72, 0)),
+          `◈ ORBIT ${n}/6`, "#ddc0ff", 0.59);
+        this.fxp("motes", d.chest(), "#dbb7ff", 7 + n * 3);
+      } else if (marks > 0) {
+        const remaining = marks - 1;
+        if (remaining) this.gravityMarks.set(markKey, { stacks: remaining, expires: mark!.expires });
+        else this.gravityMarks.delete(markKey);
+        if (d instanceof Fighter) {
+          d.orbitDisplayStacks = remaining;
+          d.orbitDisplayT = remaining ? Math.max(0, mark!.expires - this.time) : 0;
+        }
+        gravityOwner.nytheraDreadfallHits = Math.min(14, gravityOwner.nytheraDreadfallHits + 1);
+        const speed = gravityOwner.nytheraAttackSpeed();
+        this.fxp("num", gravityOwner.chest().add(new THREE.Vector3(0, 0.80, 0)),
+          `DREADFALL ${gravityOwner.nytheraDreadfallHits}/14 · ${speed.toFixed(2)}×`, "#d9b0ff", 0.56);
+        this.fxp("num", d.chest().add(new THREE.Vector3(0, 0.73, 0)),
+          `ORBIT ${remaining}/6`, "#ddb5ff", 0.56);
       }
     }
-    if (gravityOwner && gravityContact && a.dmg > 0) {
-      if (heavySentence && gravityDamage) {
-        this.gravityMarks.delete(markKey);
-        if (d instanceof Fighter) { d.orbitDisplayStacks = 0; d.orbitDisplayT = 0; }
-        if (marks > 0) {
-          this.fxp("ring", d.chest(), "#8250d9", 0.72 + marks * 0.24, 0.25, 0.76);
-          this.fxp("num", d.chest().add(new THREE.Vector3(0,0.73,0)),
-            `ORBIT BURST ×${marks}`, "#ddb5ff", 0.70);
-          this.fxp("sparks", d.chest(), "#c899ff", 10 + marks*8, 5);
-        }
-      } else if (gravityOwner.gravityMode === "light" && !heavySentence) {
-        const n = Math.min(5, marks + 1);
-        this.gravityMarks.set(markKey, { stacks:n, expires:this.time + 25 });
-        if (d instanceof Fighter) { d.orbitDisplayStacks = n; d.orbitDisplayT = 25; }
-        this.fxp("ring", d.chest(), "#b68ef7", 0.41 + n*0.14, 0.18, 0.58);
-        this.fxp("num", d.chest().add(new THREE.Vector3(0,0.72,0)),
-          `◈ ORBIT ${n}/5`, "#ddc0ff", 0.59);
-        this.fxp("motes", d.chest(), "#dbb7ff", 7 + n*3);
-      }
+    if (gravityOwner && gravityDamage && a.dmg > 0) {
       if (gravityDamage && d instanceof Fighter && !d.stage && !d.isDown()) {
         if (a.style === "gravity_ascend" ||
             (a.style === "gravity_snare" && marks >= 2)) {
@@ -4687,6 +4685,7 @@ export class Game implements MobHost {
         break;
       case "parry": {
         const df = d as Fighter;
+        df.recoverFromParry(); // FIGHT_ROYALE_V29_PARRY_ORBIT_GUARD: +10% max guard, -1 fatigue
         if (df.kit === "tristaff") {
           df.earnDragonRhythm();
           this.fxp("num", df.chest().add(new THREE.Vector3(0, 0.82, 0)),
@@ -5470,19 +5469,19 @@ export class Game implements MobHost {
       if (f.kit === "scythe") {
         passives.push({ label: "GRAVITY", value: f.gravityMode === "light" ? "MOONFLOAT" : "DREADFALL" });
         passives.push({ label: "ORBIT ON FOE", value: rival && rival.orbitDisplayT > 0
-          ? `${rival.orbitDisplayStacks}/5 · ${rival.orbitDisplayT.toFixed(1)}s` : "0/5" });
+          ? `${rival.orbitDisplayStacks}/6 · ${rival.orbitDisplayT.toFixed(1)}s` : "0/6" });
         passives.push({ label: "DREADFALL SPEED", value: `${f.nytheraAttackSpeed().toFixed(2)}× · ${f.nytheraDreadfallHits}/14 (round)` });
       }
       // GUARD_FATIGUE_HUD_V28: always show zero/active stacks, both sides.
       if (f.guardFatigueStacks >= 0)
         passives.push({ label: "GUARD FATIGUE", icon: "/icons/emblems/tank.webp",
-          value: `${f.guardFatigueStacks} stacks · ${f.guardFatigueSpeed().toFixed(2)}× · ${f.guardFatigueDecayT.toFixed(1)}s`,
-          desc: "Every blocked or parried hit (including guard break) slows the attacker by 2%. No stack cap; 1 stack fades every 3s without another defended hit. Attack and skill animation speed only; cooldowns unchanged." });
+          value: `${f.guardFatigueStacks}/10`,
+          desc: "Each defended hit adds 1 fatigue (max 10), slowing total boosted attack speed by 2% per stack. Successful parries remove 1 stack and recover 10% maximum guard. Decays by 1 every 3 seconds without another defended hit." });
       if (f.kit === "tristaff") passives.push({ label: "RHYTHM", value: `${f.dragonRhythm}/3 · ${f.dragonRhythmT.toFixed(1)}s · ${["STAFF","SPLIT","WHIP","FOLDED"][f.dragonMode]}` });
       if (f.kit === "hammer") passives.push({ label: "HEARTS", value: `${f.nesaCCharges}/3` });
       if (f.kit === "bomb") passives.push({ label: "MINES", value: `${f.bobMineCharges}/4` });
       if (f.look.name === "Aster" && rival && rival.status.stacks("weaken") > 0)
-        passives.push({ label: "WEAKEN", value: `×${rival.status.stacks("weaken")}/5` });
+        passives.push({ label: "WEAKEN", value: `×${rival.status.stacks("weaken")}/3` });
       if (f.kit === "chainblade" && f.chainBindT > 0)
         passives.push({ label: "BIND", value: `${f.chainBindT.toFixed(1)}s` });
       if (f.perfectDodgeCounterT > 0)
@@ -5496,12 +5495,12 @@ export class Game implements MobHost {
       const displayId = CHARACTERS[f.charIndex]?.id ?? "";
       const add = (label: string, value: string, desc: string) => passives.push({ label, value, desc });
       if (f.orbitDisplayT > 0) passives.push({ label: "ORBIT MARKED",
-        value: `${f.orbitDisplayStacks}/5 · ${f.orbitDisplayT.toFixed(1)}s`,
-        desc: "Nythera's Orbit Marks on this fighter. Each Moonfloat contact builds a mark (max 5); 25s duration.",
+        value: `${f.orbitDisplayStacks}/6 · ${f.orbitDisplayT.toFixed(1)}s`,
+        desc: "Moonfloat damaging hits build up to six Orbit Marks (25s). Each damaging Dreadfall hit consumes one mark to earn one speed stack.",
         icon: "/icons/passives/nythera.webp" });
-      if (displayId === "aster") add("SHIELD RESOLVE", `${(f.passiveGuard * 0.5).toFixed(1)} stacks · +${Math.round(f.passiveGuard * 0.5 * 5)}% DEF · +${Math.round((f.passiveKnightSpeed() - 1) * 100)}% Judgment SPD`,
-        "Parry +1 stack; block +0.5. Each stack boosts defense 5%; shield skills and Judgment gain 1% speed per stack. No stack cap; lasts the whole match.");
-      if (displayId === "vesper") add("DUELIST RESOLVE", `${(f.passiveGuard * 0.5).toFixed(1)} stacks · ${f.passiveDamageMult().toFixed(2)}× DMG`,
+      if (displayId === "aster") add("SHIELD RESOLVE", `${(f.passiveGuard * 0.5).toFixed(1)}`,
+        "Parry +1 stack; block +0.5. Each stack boosts defense 2.5%; shield skills and Judgment gain speed. No cap; persists for the whole match.");
+      if (displayId === "vesper") add("DUELIST RESOLVE", `${(f.passiveGuard * 0.5).toFixed(1)}`,
         "Parry +1 stack; block +0.5. Each stack boosts outgoing damage 5%. No cap; lasts the entire match.");
       if (displayId === "kaede" || displayId === "kira") add("COUNTER BLOOM", `${f.passiveSwordCounter}/4 · ${f.passiveDamageMult().toFixed(2)}× DMG`,
         "Successful Z counter attacks build up to 4 stacks, each adding +5% damage. All baseline attacks start 20% weaker. Resets each round.");
@@ -5530,7 +5529,7 @@ export class Game implements MobHost {
       if (displayId === "zarek") passives.push({ label: "CLASH INFO", value: `${f.clashMomentum}`, desc: "Real weapon clashes build Momentum and improve basic-attack speed." });
       if (displayId === "roxy") passives.push({ label: "FROSTBITE INFO", value: `${f.frostShardStacks}/4`, desc: "Real frost shard hits build Frostbite toward the next freeze attempt." });
       if (displayId === "zenith") passives.push({ label: "BLADE TEMPO INFO", value: `${f.zenithTempoStacks}/14 · ${f.zenithMagneticChargeT.toFixed(1)}s`, desc: "Each successful hit grants +0.01× attack speed for 5 seconds; at most 14 stacks. Twin-blade stance has its own base speed." });
-      if (displayId === "nythera") passives.push({ label: "REAPER INFO", value: `${f.nytheraDreadfallHits}/14 · ${rival?.orbitDisplayStacks ?? 0}/5 Orbit`, desc: "Orbit Marks last 25s; Dreadfall starts at 0.80× and gains +0.05× per damaging hit, max 1.48× for this round. Three air slices per jump. Base scythe attacks: −10% damage; skills: −20%." });
+      if (displayId === "nythera") passives.push({ label: "REAPER INFO", value: `${f.nytheraDreadfallHits}/14 · ${rival?.orbitDisplayStacks ?? 0}/6 Orbit`, desc: "Moonfloat damaging hits build up to 6 Orbit Marks lasting 25s. Each damaging Dreadfall hit consumes 1 mark for +0.05× speed (up to 1.48×). Without marks, no speed is gained. Three aerial slices. Base attacks: −10% damage; skills: −20%." });
       return { slots, passives: passives.map(p => ({ ...p,
         icon: p.icon ?? `/icons/passives/${displayId}.webp`,
         desc: p.desc || `Current ${p.label.toLowerCase()} status for ${f.look.name}.` })),

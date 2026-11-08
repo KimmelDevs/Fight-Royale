@@ -18,13 +18,13 @@ export const STATUS: Record<StatusKind, { label: string; color: string; bit: num
   paralyze: { label: "PARALYZED", color: "#ffe066", bit: 8, text: (t) => `Paralyze: ${t}s (22% slowed, jolted every 1.6s; 4s immunity after recovery)` },
   slow: { label: "SLOWED", color: "#7fc8ff", bit: 16, text: (t, p) => `Slow: -${Math.round((1 - p) * 100)}% movement, attack and cast speed for ${t}s` },
   freeze: { label: "FROZEN", color: "#c5f7ff", bit: 64, text: (t) => `Freeze: immobilized and unable to attack for ${t}s` },
-  weaken: { label: "WEAKENED", color: "#fff2b0", bit: 32, text: (t, p) => `Weaken: -${Math.round((1 - p) * 100)}% outgoing damage per stack (multiplicative); up to 5 stacks (${Math.round((1 - Math.pow(p, 5)) * 100)}% max). Lasts ${t}s; each hit adds a stack and refreshes the timer.` },
+  weaken: { label: "WEAKENED", color: "#fff2b0", bit: 32, text: (t, p) => `Weaken: -${Math.round((1 - p) * 100)}% outgoing damage per stack (multiplicative); up to 3 stacks (${Math.round((1 - Math.pow(p, 3)) * 100)}% max). Lasts ${t}s; each hit adds a stack and refreshes the timer.` },
 };
 
 const DOT_TICK = 0.5;
 const POISON_STACKS = 3;
 const ZENITH_BLEED_MAX_STACKS = 2; // ZENITH_BLEED_SKILL_ONLY_AI_V15
-const WEAKEN_STACKS = 5;
+const WEAKEN_STACKS = 3; // FIGHT_ROYALE_V29_PARRY_ORBIT_GUARD
 const JOLT_EVERY = 1.6; // V10: softened jolt frequency
 const PARALYZE_SPEED = 0.78; // V10: 22% slow instead of 40%
 

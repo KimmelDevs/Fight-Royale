@@ -95,18 +95,18 @@ function ZenithTempoMeter({ stacks, seconds, blades, right = false }: {
 }
 
 function OrbitMeter({ stacks, seconds, right = false }: { stacks: number; seconds: number; right?: boolean }) {
-  const n = seconds > 0 ? Math.max(0, Math.min(5, Math.floor(stacks))) : 0;
-  return <div aria-label={`Orbit Marks ${n} of 5; ${seconds.toFixed(1)} seconds remaining`}
+  const n = seconds > 0 ? Math.max(0, Math.min(6, Math.floor(stacks))) : 0;
+  return <div aria-label={`Orbit Marks ${n} of 6; ${seconds.toFixed(1)} seconds remaining`}
     title="Nythera Orbit Marks: 25s on contact, consumed by Dreadfall's successful scythe strikes"
     style={{ marginTop: 5, display: "flex", alignItems: "center",
       justifyContent: right ? "flex-end" : "flex-start", gap: 5,
       color: "#e1baff", textShadow: "0 1px 4px #3f1768", fontSize: 11, fontWeight: 800 }}>
     <span>ORBIT</span>
-    {Array.from({ length: 5 }, (_, i) => <span key={i} style={{ fontSize: 17,
+    {Array.from({ length: 6 }, (_, i) => <span key={i} style={{ fontSize: 17,
       color: i < n ? "#e1aeff" : "#59466e", opacity: i < n ? 1 : 0.48,
       textShadow: i < n ? "0 0 7px #ad70f6" : "none" }}>◈</span>)}
     <span style={{ fontVariantNumeric: "tabular-nums", minWidth: 32 }}>
-      {n > 0 ? `${seconds.toFixed(1)}s` : "0/5"}
+      {n > 0 ? `${seconds.toFixed(1)}s` : "0/6"}
     </span>
   </div>;
 }
@@ -115,7 +115,7 @@ function OrbitMeter({ stacks, seconds, right = false }: { stacks: number; second
 // This meter is shown to both fighters; it lasts until the round ends.
 function DreadfallTempoMeter({ hits, right = false }: { hits: number; right?: boolean }) {
   const stacks = Math.max(0, Math.min(14, Math.floor(hits)));
-  const speed = Math.min(1.50, 0.80 + stacks * 0.05); // NYTHERA_ZENITH_LOWER_CAPS_V14
+  const speed = Math.min(1.48, 0.80 + stacks * 0.05); // V29 current Dreadfall cap
   return <div title="Dreadfall Tempo: starts at 0.80x attack speed; 14 real damaging Dreadfall hits raise it to 1.48x. Persists through stance switches, resets next round. Block/parry/clash deny stacks."
     aria-label={`Nythera Dreadfall Tempo: ${stacks} of 14 stacks, ${speed.toFixed(2)}x attack speed, until end of round`}
     style={{ marginTop: 5, padding: "4px 7px", borderRadius: 7,
@@ -141,6 +141,13 @@ function Bar({ v, color, right }: { v: number; color: string; right?: boolean })
 
 // V10: all passives use the same opaque, readable black counter panel.
 type PassiveReadout = { label: string; value: string; desc?: string; icon?: string };
+function compactPassiveCount(label: string, value: string): string {
+  // V29: show only stack/counter values in combat panels, not damage/speed math.
+  // Keep non-numeric stance names (MOONFLOAT, STAFF, etc.) visible.
+  if (label === "GRAVITY") return value;
+  const first = value.match(/^\s*[×+]?\d+(?:\.\d+)?(?:\s*\/\s*\d+)?/);
+  return first ? first[0].trim() : value.split(" · ")[0];
+}
 function PassiveHUD({ list, right = false }: { list?: PassiveReadout[]; right?: boolean }) {
   if (!list?.length) return null;
   return <div className="fr-passive-readouts" style={{ textAlign: right ? "right" : "left" }}
@@ -148,7 +155,7 @@ function PassiveHUD({ list, right = false }: { list?: PassiveReadout[]; right?: 
     {list.map((p, idx) => <div key={`${p.label}-${idx}`} className="fr-passive-row" title={p.desc || p.label}>
       {p.icon && <Icon src={p.icon} alt={`${p.label} passive`} size={27} fallback={p.label === "GUARD FATIGUE" ? <span role="img" aria-label="Shield fatigue">🛡️</span> : undefined} />}
       <div className="fr-passive-content">
-        <strong>{p.label}</strong><b>{p.value}</b>
+        <strong>{p.label}</strong><b>{compactPassiveCount(p.label, p.value)}</b>
       </div>
     </div>)}
   </div>;
@@ -177,7 +184,7 @@ function CpuSpectatorSkills({ data, side }: {
       <div className="cpu-spectator-heading passive">PASSIVE</div>
       {data.passives.length ? data.passives.map((p, idx) => (
         <div className="cpu-spectator-passive" key={`${p.label}-${idx}`} title={p.desc || p.label}>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>{p.icon && <Icon src={p.icon} alt="Fatigue icon" size={18} fallback={<span>🛡️</span>} />}{p.label}</span><b>{p.value}</b>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>{p.icon && <Icon src={p.icon} alt="Passive icon" size={18} fallback={<span>🛡️</span>} />}{p.label}</span><b>{compactPassiveCount(p.label, p.value)}</b>
         </div>
       )) : <div className="cpu-spectator-empty">No active stacks</div>}
     </section>

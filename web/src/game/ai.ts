@@ -1616,12 +1616,12 @@ export class AiBrain implements Brain {
     }
     const canShift = f.gravitySwitchCd <= 0 && now - this.nytheraLastStanceAt > 2.3;
     // Light gravity gathers marks; heavy gravity converts them to damage/tempo.
-    if (canShift && f.gravityMode === "light" && gap < 3.10 &&
-        (this.nytheraRecentContacts >= 2 ||
-         (this.nytheraRecentContacts >= 1 && punish) ||
-         (now - this.nytheraLastStanceAt > 8 && gap < 2.05))) return act("f");
-    // Dreadfall already earns round-long speed, so do not switch away every
-    // time the enemy briefly retreats; close in with the weapon instead.
+    // V29: only switch to Dreadfall if the target already carries Moonfloat marks.
+    // Do not camp Dreadfall when the target has nothing left to consume.
+    const orbit = o.orbitDisplayT > 0 ? o.orbitDisplayStacks : 0;
+    if (canShift && f.gravityMode === "light" && orbit >= (punish ? 1 : 2) &&
+        gap < 3.10) return act("f");
+    if (canShift && f.gravityMode === "heavy" && orbit <= 0) return act("f");
     if (canShift && f.gravityMode === "heavy" && gap > 4.15 &&
         now - this.nytheraLastContactAt > 3.5) return act("f");
     const guarding = o.state === S.BLOCK;
@@ -2156,8 +2156,7 @@ export class AiBrain implements Brain {
 
     const shieldReady = f.state === S.BLOCK && f.stateT >= f.shieldRaise;
     const shieldCanRaise = [S.IDLE, S.BLOCK].includes(f.state) &&
-      eta >= (f.kit==="tristaff" && f.dragonMode===0 ? DRAGON_MODE_TUNING[0].staffShieldRaise :
-          (f.nextShieldFast ? 0.01 : 0.10)) + 0.035;
+      eta >= (f.guardStartupSeconds()) + 0.035;
     const guardNeed = Math.max(12, atk.guard * (atk.heavy ? 1.25 : 1.05));
     const canAffordBlock = f.guard > guardNeed && (shieldReady || shieldCanRaise);
     const myLight = f.attacks.l1;
@@ -2260,7 +2259,7 @@ export class AiBrain implements Brain {
       const approaching = shot.pos.clone().sub(f.chest()).dot(shot.vel) < 0;
       const eta = f.chest().distanceTo(shot.pos) /
         Math.max(1.0, shot.vel.length());
-      if (!approaching || eta < (f.nextShieldFast ? 0.05 : 0.14) ||
+      if (!approaching || eta < (f.guardStartupSeconds() + 0.04) ||
           eta > 0.64 || f.guard <= f.maxGuard * 0.37) continue;
       this.zarekGuardSeenShots.add(shot.id);
       if (this.zarekGuardSeenShots.size > 150) this.zarekGuardSeenShots.clear();
@@ -2305,8 +2304,7 @@ export class AiBrain implements Brain {
     const remain = a.wind + a.active - o.stateT;
     if (remain < -0.15 && !o.isContinuousComboActive()) return false;
     const shieldReady = f.state === S.BLOCK && f.stateT >= f.shieldRaise;
-    const raise = f.kit==="tristaff" && f.dragonMode===0 ?
-      DRAGON_MODE_TUNING[0].staffShieldRaise : (f.nextShieldFast ? 0.01 : 0.10);
+    const raise = f.guardStartupSeconds();
     if (!shieldReady && eta + (o.isContinuousComboActive() ? 0.22 : 0.035) < raise) return false;
 
     this.zarekGuardWants = false;
@@ -2361,7 +2359,7 @@ export class AiBrain implements Brain {
 
     const shieldUp = f.state === S.BLOCK && f.stateT >= f.shieldRaise;
     const canRaise = (f.state === S.IDLE || f.state === S.BLOCK) &&
-      eta >= (f.nextShieldFast ? 0.01 : 0.10) + 0.045;
+      eta >= f.guardStartupSeconds() + 0.045;
     const shieldCost = Math.max(a.guard * (a.heavy ? 1.28 : 1.10), 18);
     const wouldCrushShield = o.kit === "hammer" && a.heavy;
     const canBlock = (shieldUp || canRaise) && f.guard > shieldCost && !wouldCrushShield;
@@ -3415,8 +3413,7 @@ export class AiBrain implements Brain {
         return;
       }
       // Shield must finish rising before contact; successful parry makes the next 90% faster.
-      const raise = f.kit==="tristaff" && f.dragonMode===0 ?
-      DRAGON_MODE_TUNING[0].staffShieldRaise : (f.nextShieldFast ? 0.01 : 0.10);
+      const raise = f.guardStartupSeconds();
       if (r < this.p.parry) this.schedule(Math.max(tth - raise - 0.03, 0),
         o.isContinuousComboActive() ? Math.max(0.35, o.atk.wind + o.atk.active + o.atk.recover) : 0.3);
       else if (r < this.p.parry + bc) this.schedule(rand(this.p.react[0], this.p.react[1]) * 0.45,
@@ -3473,8 +3470,7 @@ export class AiBrain implements Brain {
       this.comboParryTarget = -1;
       this.comboParryReleased = false;
     }
-    const raise = f.kit==="tristaff" && f.dragonMode===0 ?
-      DRAGON_MODE_TUNING[0].staffShieldRaise : (f.nextShieldFast ? 0.01 : 0.10);
+    const raise = f.guardStartupSeconds();
     if (this.comboParryTarget < 0) {
       // Give Hard/Master a meaningful chance on *every new hit beat*.
       // Easy still blocks; Normal tries occasionally without perfect reaction.
@@ -3720,8 +3716,7 @@ export class AiBrain implements Brain {
     if (f.state !== S.IDLE || !f.onGround || f.guard < f.maxGuard * 0.26 ||
         this.blockHold > 0 || this.blockWait >= 0 || this.projectileSwordCommit > 0) return false;
     const eta = this.projectileTimeToContact(f, pr);
-    const raise = f.kit==="tristaff" && f.dragonMode===0 ?
-      DRAGON_MODE_TUNING[0].staffShieldRaise : (f.nextShieldFast ? 0.01 : 0.10);
+    const raise = f.guardStartupSeconds();
     if (eta < raise + 0.035 || eta > raise + Math.min(f.parryWindow * 0.9, 0.22)) return false;
     if (Math.random() > this.p.parry * 2.0 + (f.look.name === "Garrick" ? 0.15 : 0.08)) return false;
     this.blockWait = 0;

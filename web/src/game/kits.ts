@@ -283,6 +283,9 @@ export function attacks(kit: string, element: string): Record<string, Attack> {
       id: "pc", type: "melee", style: "zenith_basic", wind: 0.12, active: 0.08, recover: 0.29,
       dmg: 70, guard: 20, knock: 1.4, stun: 0.28, next: "", pose_w: "zn2_w", pose_s: "zn2_s" };
   }
+  // FIGHT_ROYALE_V29_PARRY_ORBIT_GUARD: parry riposte windup 0.40s for all kits before speed bonuses.
+  // Actual attack windup becomes 0.24–0.45s after passive/fatigue modifiers.
+  if (t.pc) t.pc.wind = 0.40;
   // BULLET_SWORDPLAY_V1: Aster's X now sweeps forward instead of jumping.
   // Keep its existing name, damage and cooldown; each Weaken stack reduces outgoing damage 20% multiplicatively for 50s, up to x5.
   if (kit === "knight" && element === "light" && t.x?.name === "Rising Slash") {
