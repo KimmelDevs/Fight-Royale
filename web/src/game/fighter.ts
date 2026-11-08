@@ -54,6 +54,11 @@ export const CONTINUOUS_STYLES = new Set([
 
 // NYTHERA_AIR_SPEED_BALANCE_V26: only Nythera; Kira and Nyx are unchanged.
 // FIGHT_ROYALE_V29_PARRY_ORBIT_GUARD: 6 Orbit Marks, 1-per-hit spending, unchanged Dreadfall cap.
+// FIGHT_ROYALE_V31_MOONFLOAT_ORBIT_PARRY: each visible Moonfloat mark lowers target attack and guard-raise speed by 5%.
+export const NYTHERA_ORBIT_SLOW_TUNING = {
+  perMark: 0.05,
+  maxMarks: 6,
+} as const;
 const NYTHERA_V26_TUNING = { maxAirSlices: 3, speedCap: 1.48, orbitCap: 6 } as const;
 // GUARD_FATIGUE_V26 — affects the attacker on REAL block/parry contacts.
 // Max 10 stacks; applied AFTER all attack/passive speed bonuses, multiplicatively.
@@ -390,6 +395,12 @@ export class Fighter implements Entity {
   // NYTHERA_ELEGANT_REAPER_V4: passive readout on both clients, tied to the afflicted fighter.
   orbitDisplayStacks = 0;
   orbitDisplayT = 0;
+  /** Live opponent debuff. Computed from the existing synced Orbit count; no new snapshot data. */
+  orbitSlowMultiplier(): number {
+    const marks = this.orbitDisplayT > 0
+      ? Math.max(0, Math.min(NYTHERA_ORBIT_SLOW_TUNING.maxMarks, this.orbitDisplayStacks)) : 0;
+    return 1 - NYTHERA_ORBIT_SLOW_TUNING.perMark * marks;
+  }
   // NYTHERA_AERIAL_DREADFALL_V9: V12 balance: +0.05x each real Dreadfall hit, capped at 1.70x for this round.
   nytheraDreadfallHits = 0;
   // NYTHERA_AIR_SPEED_BALANCE_V26: starts 0.80x, earns +0.05x per hit, caps at 1.48x.
@@ -441,9 +452,9 @@ export class Fighter implements Entity {
     this.guardFatigueStacks = Math.min(GUARD_FATIGUE_TUNING.maxStacks, this.guardFatigueStacks + 1);
     this.guardFatigueDecayT = GUARD_FATIGUE_TUNING.decaySecondsPerStack;
   }
-  /** A true parry relieves one fatigue stack and restores 10% max guard. */
+  /** A true parry relieves one fatigue stack and restores 20% max guard (once). */
   recoverFromParry() {
-    this.guard = Math.min(this.maxGuard, this.guard + this.maxGuard * 0.10);
+    this.guard = Math.min(this.maxGuard, this.guard + this.maxGuard * 0.20);
     this.guardFatigueStacks = Math.max(0, this.guardFatigueStacks - 1);
     if (!this.guardFatigueStacks) this.guardFatigueDecayT = GUARD_FATIGUE_TUNING.decaySecondsPerStack;
   }
@@ -663,7 +674,9 @@ export class Fighter implements Entity {
     const special = this.kit === "tristaff" && this.dragonMode === 0
       ? DRAGON_MODE_TUNING[0].staffShieldRaise
       : this.nextShieldFast ? 0.01 : this.look.name === "Aster" ? 0.05 : 0.10;
-    return special * 0.70;
+    // Orbit Marks slow the defender's ability to raise the shield.
+    // 6 marks => 0.70x guard-raise speed => ~1.43x startup duration.
+    return special * 0.70 / this.orbitSlowMultiplier();
   }
   /** Only ongoing multi-hit specials accumulate these parry/clash penalties. */
   comboDamageMult = 1;
@@ -2187,6 +2200,15 @@ export class Fighter implements Entity {
         wind: this.atk.wind / speed,
         active: this.atk.active / speed,
         recover: this.atk.recover / speed };
+    }
+    // FIGHT_ROYALE_V31_MOONFLOAT_ORBIT_PARRY: apply Moonfloat slow once, after passive boosts and Guard Fatigue.
+    // Attack and skill windup/active/recovery slow; cooldowns stay unchanged.
+    if (this.atk && this.orbitDisplayT > 0 && this.orbitDisplayStacks > 0) {
+      const orbitSpeed = this.orbitSlowMultiplier();
+      this.atk = { ...this.atk,
+        wind: this.atk.wind / orbitSpeed,
+        active: this.atk.active / orbitSpeed,
+        recover: this.atk.recover / orbitSpeed };
     }
     // Standardize the parry counter windup from the already-scaled timing.
     // Only windup is clamped; parry timing, damage, active and recovery remain unchanged.

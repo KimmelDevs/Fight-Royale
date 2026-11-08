@@ -97,7 +97,7 @@ function ZenithTempoMeter({ stacks, seconds, blades, right = false }: {
 function OrbitMeter({ stacks, seconds, right = false }: { stacks: number; seconds: number; right?: boolean }) {
   const n = seconds > 0 ? Math.max(0, Math.min(6, Math.floor(stacks))) : 0;
   return <div aria-label={`Orbit Marks ${n} of 6; ${seconds.toFixed(1)} seconds remaining`}
-    title="Nythera Orbit Marks: 25s on contact, consumed by Dreadfall's successful scythe strikes"
+    title="Moonfloat: each Orbit Mark slows enemy attacks and guard raising 5% (up to 30%, 25s); Dreadfall spends one mark per damaging hit"
     style={{ marginTop: 5, display: "flex", alignItems: "center",
       justifyContent: right ? "flex-end" : "flex-start", gap: 5,
       color: "#e1baff", textShadow: "0 1px 4px #3f1768", fontSize: 11, fontWeight: 800 }}>

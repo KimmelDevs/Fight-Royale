@@ -164,7 +164,7 @@ export const CHARACTERS: Character[] = [
 
   // NYTHERA_GRAVITY_REAPER_INSTALL_V1 — intentionally uses Aster VRM temporarily.
   { id: "nythera", title: "Gravity Reaper", role: "Duelist - Eclipsed Mourning Scythe",
-    desc: "Moonfloat dances lift the enemy; Dreadfall crushes Orbit Marks. F switches gravity. Scythe executions reward confirmed aerial combos, not unavoidable grabs.",
+    desc: "Moonfloat hits apply up to 6 Orbit Marks, each slowing enemy attacks and shield raising by 5%. Dreadfall spends one Orb per damaging hit to build attack speed. F switches gravity; scythe attacks remain defendable.",
     stats: { power: 4, speed: 4, range: 4, defense: 2 },
     look: { name: "Nythera", body: "f", vrm: "nythera", kit: "scythe", element: "gravity", outfit: "assassin", style: "long", hat: "none",
       hair: "#cbbce5", hair_shade: "#53466b", iris_top: "#763cd3", iris_bottom: "#d9bbff", eye_dark: "#1b1233",

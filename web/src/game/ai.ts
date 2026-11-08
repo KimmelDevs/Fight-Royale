@@ -1616,10 +1616,11 @@ export class AiBrain implements Brain {
     }
     const canShift = f.gravitySwitchCd <= 0 && now - this.nytheraLastStanceAt > 2.3;
     // Light gravity gathers marks; heavy gravity converts them to damage/tempo.
-    // V29: only switch to Dreadfall if the target already carries Moonfloat marks.
-    // Do not camp Dreadfall when the target has nothing left to consume.
+    // FIGHT_ROYALE_V31_MOONFLOAT_ORBIT_PARRY: Moonfloat stays in light stance to build a meaningful slow.
+    // Spend only when 4+ marks are banked, or 2+ during a real punish opening.
+    // With no marks, heavy mode never grants extra Dreadfall speed.
     const orbit = o.orbitDisplayT > 0 ? o.orbitDisplayStacks : 0;
-    if (canShift && f.gravityMode === "light" && orbit >= (punish ? 1 : 2) &&
+    if (canShift && f.gravityMode === "light" && orbit >= (punish ? 2 : 4) &&
         gap < 3.10) return act("f");
     if (canShift && f.gravityMode === "heavy" && orbit <= 0) return act("f");
     if (canShift && f.gravityMode === "heavy" && gap > 4.15 &&

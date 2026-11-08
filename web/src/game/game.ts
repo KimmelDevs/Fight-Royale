@@ -4685,7 +4685,7 @@ export class Game implements MobHost {
         break;
       case "parry": {
         const df = d as Fighter;
-        df.recoverFromParry(); // FIGHT_ROYALE_V29_PARRY_ORBIT_GUARD: +10% max guard, -1 fatigue
+        df.recoverFromParry(); // FIGHT_ROYALE_V31_MOONFLOAT_ORBIT_PARRY: +20% max guard, -1 fatigue (once per parry)
         if (df.kit === "tristaff") {
           df.earnDragonRhythm();
           this.fxp("num", df.chest().add(new THREE.Vector3(0, 0.82, 0)),
@@ -5476,7 +5476,7 @@ export class Game implements MobHost {
       if (f.guardFatigueStacks >= 0)
         passives.push({ label: "GUARD FATIGUE", icon: "/icons/emblems/tank.webp",
           value: `${f.guardFatigueStacks}/10`,
-          desc: "Each defended hit adds 1 fatigue (max 10), slowing total boosted attack speed by 2% per stack. Successful parries remove 1 stack and recover 10% maximum guard. Decays by 1 every 3 seconds without another defended hit." });
+          desc: "Each defended hit adds 1 fatigue (max 10), slowing total boosted attack speed by 2% per stack. Successful parries remove 1 stack and recover 20% maximum guard. Decays by 1 every 3 seconds without another defended hit." });
       if (f.kit === "tristaff") passives.push({ label: "RHYTHM", value: `${f.dragonRhythm}/3 · ${f.dragonRhythmT.toFixed(1)}s · ${["STAFF","SPLIT","WHIP","FOLDED"][f.dragonMode]}` });
       if (f.kit === "hammer") passives.push({ label: "HEARTS", value: `${f.nesaCCharges}/3` });
       if (f.kit === "bomb") passives.push({ label: "MINES", value: `${f.bobMineCharges}/4` });
@@ -5496,7 +5496,7 @@ export class Game implements MobHost {
       const add = (label: string, value: string, desc: string) => passives.push({ label, value, desc });
       if (f.orbitDisplayT > 0) passives.push({ label: "ORBIT MARKED",
         value: `${f.orbitDisplayStacks}/6 · ${f.orbitDisplayT.toFixed(1)}s`,
-        desc: "Moonfloat damaging hits build up to six Orbit Marks (25s). Each damaging Dreadfall hit consumes one mark to earn one speed stack.",
+        desc: "Moonfloat damage adds Orbit Marks (max 6, 25s). Each mark slows the marked fighter's attack and shield-raise speed by 5% (up to 30%). Dreadfall damaging hits consume one mark to gain one speed stack.",
         icon: "/icons/passives/nythera.webp" });
       if (displayId === "aster") add("SHIELD RESOLVE", `${(f.passiveGuard * 0.5).toFixed(1)}`,
         "Parry +1 stack; block +0.5. Each stack boosts defense 2.5%; shield skills and Judgment gain speed. No cap; persists for the whole match.");
@@ -5529,7 +5529,7 @@ export class Game implements MobHost {
       if (displayId === "zarek") passives.push({ label: "CLASH INFO", value: `${f.clashMomentum}`, desc: "Real weapon clashes build Momentum and improve basic-attack speed." });
       if (displayId === "roxy") passives.push({ label: "FROSTBITE INFO", value: `${f.frostShardStacks}/4`, desc: "Real frost shard hits build Frostbite toward the next freeze attempt." });
       if (displayId === "zenith") passives.push({ label: "BLADE TEMPO INFO", value: `${f.zenithTempoStacks}/14 · ${f.zenithMagneticChargeT.toFixed(1)}s`, desc: "Each successful hit grants +0.01× attack speed for 5 seconds; at most 14 stacks. Twin-blade stance has its own base speed." });
-      if (displayId === "nythera") passives.push({ label: "REAPER INFO", value: `${f.nytheraDreadfallHits}/14 · ${rival?.orbitDisplayStacks ?? 0}/6 Orbit`, desc: "Moonfloat damaging hits build up to 6 Orbit Marks lasting 25s. Each damaging Dreadfall hit consumes 1 mark for +0.05× speed (up to 1.48×). Without marks, no speed is gained. Three aerial slices. Base attacks: −10% damage; skills: −20%." });
+      if (displayId === "nythera") passives.push({ label: "REAPER INFO", value: `${f.nytheraDreadfallHits}/14 · ${rival?.orbitDisplayStacks ?? 0}/6 Orbit`, desc: "Moonfloat damaging hits build up to 6 Orbit Marks (25s), each slowing enemy attack/guard-raise speed by 5%. Each damaging Dreadfall hit spends 1 Orb for +0.05× speed (up to 1.48×); without Orbs, no speed gain. Three aerial slices. Base attacks: −10% damage; skills: −20%." });
       return { slots, passives: passives.map(p => ({ ...p,
         icon: p.icon ?? `/icons/passives/${displayId}.webp`,
         desc: p.desc || `Current ${p.label.toLowerCase()} status for ${f.look.name}.` })),
