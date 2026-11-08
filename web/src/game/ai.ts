@@ -2536,6 +2536,25 @@ export class AiBrain implements Brain {
     return true;
   }
 
+  // ZEPHYR_DRAGON_SWITCH_SPLIT_V20: close-range Split pressure uses alternate
+  // hand IDs; other characters and modes keep the original defense system.
+  private zephyrSplitPlan(f:Fighter,o:Fighter):boolean {
+    if(f.kit!=="tristaff"||f.dragonMode!==1||f.state!==S.IDLE)return false;
+    const gap=f.root.position.distanceTo(o.root.position);
+    if(gap>2.1 || f.atkLock>0)return false;
+    if(o.state===S.ATTACK&&o.atkPhase===0&&gap<1.65 && f.dashCd<=0) {
+      const side=new THREE.Vector3(o.root.position.z-f.root.position.z,0,
+        f.root.position.x-o.root.position.x).normalize();
+      f.intent.dash.copy(side);
+      f.intent.block=false;
+      return true;
+    }
+    f.intent.block=false;
+    f.intent.attack=true;
+    f.intent.splitHand=f.dragonLastHand==="r"?"l":"r";
+    return true;
+  }
+
   private zephyrModePlan(f:Fighter,o:Fighter):boolean {
     if(f.kit!=="tristaff"||this.zephyrModeCooldown>0||f.dragonModeCd>0||
        f.state!==S.IDLE||f.intent.skill||f.intent.block||f.intent.attack)return false;
@@ -2544,7 +2563,7 @@ export class AiBrain implements Brain {
     const danger=gap<1.45 && o.state===S.ATTACK && o.atkPhase===0;
     const desired=gap>3.0?2:gap>1.75?0:danger?3:1;
     if(desired===f.dragonMode)return false;
-    f.intent.skill="f"; // same input as a human, real 0.6s Fighter cooldown.
+    f.intent.skill="f"; // same input as a human, real 1.0s Fighter cooldown.
     this.zephyrModeCooldown=1.10;
     return true;
   }
@@ -2575,6 +2594,7 @@ export class AiBrain implements Brain {
     if (this.avoidKaizenSpinGuard(f, o, dt)) return;
     if (this.dodgeUnsafeContinuous(f, o, dt)) return;
     if (this.evadeUnsafeHeavy(f, o, dt)) return;
+    if (this.zephyrSplitPlan(f,o)) return;
     if (this.antiZenithDuel(f, o)) return;
     if (this.zephyrModePlan(f,o)) return;
 

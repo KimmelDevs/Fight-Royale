@@ -327,10 +327,10 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
               {false && me.id === "nythera" && <DreadfallTempoMeter hits={me.nytheraDreadfallHits} />}
               {me.id === "zephyr" && (
                 <div style={{ marginTop: 6, padding: "5px 8px", background: "rgba(4,20,22,.9)",
-                  border: "1px solid #69dfc5", borderRadius: 7, color: "#fff", fontSize: 12,
+                  border: "1px solid rgba(255,255,255,.45)" /* ZEPHYR_V23_ICONS_FX_REPAIR */, borderRadius: 7, color: "#fff", fontSize: 12,
                   fontWeight: 800, textShadow: "0 1px 2px #000" }}>
                   <Icon src="/icons/skills/tristaff-passive.webp" alt="Dragon Rhythm" size={22} fallback={<span>◎</span>} />
-                  {` DRAGON RHYTHM ${(me as any).dragonRhythm ?? 0}/3  ·  MODE: ${["STAFF","SPLIT","WHIP","FOLDED"][(me as any).dragonMode ?? 0]}`}
+                  {` DRAGON RHYTHM ${(me as any).dragonRhythm ?? 0}/3  ·  MODE: ${["STAFF","SPLIT","WHIP","FOLDED"][(me as any).dragonMode ?? 0]}${(me as any).dragonMode === 1 ? "  ·  NO GUARD" : ""}`}
                 </div>
               )}
               {/* ZAREK_WHITE_COUNTER_V1 */}

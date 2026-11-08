@@ -1,3 +1,4 @@
+// ZEPHYR_DRAGON_SWITCH_SPLIT_V20
 // PASSIVE_ROSTER_V10 — roster-wide passives, readable HUD and CPU visibility.
 // AI_ROOK_NESA_KIRA_MERGED_V1_20261108
 // KAIZEN_PARRY_SPEED_MINUS_10_PERCENT_20261107_V1
@@ -54,10 +55,10 @@ export const CONTINUOUS_STYLES = new Set([
 // ZEPHYR_DRAGON_MODE_V18 — all combat-mode numbers in one editable table.
 // Mode order: STAFF, SPLIT, WHIP, FOLDED. Set every entry to 1 to disable bonuses.
 export const DRAGON_MODE_TUNING = [
-  { reach: 1.00, wind: 1.00, recover: 1.00, guard: 1.00, block: 1.15, parry: 1.15, counter: 1.00 }, // STAFF
-  { reach: 0.88, wind: 0.85, recover: 0.88, guard: 1.00, block: 1.00, parry: 1.00, counter: 1.00 }, // SPLIT
-  { reach: 1.18, wind: 1.08, recover: 1.00, guard: 1.00, block: 0.80, parry: 0.90, counter: 1.00 }, // WHIP
-  { reach: 0.80, wind: 0.82, recover: 0.80, guard: 1.00, block: 1.00, parry: 1.00, counter: 1.25 }, // FOLDED
+  { reach: 1.00, wind: 1.00, recover: 1.00, guard: 1.00, block: 1.15, parry: 1.15, counter: 1.00, switchAttack: { name: "Snap Thrust", dmg: 14, guard: 24, reach: 2.34, knock: 0.85, stun: 0.10, hits: 1, wind: 0.07, active: 0.11, recover: 0.10, pull: 0 }, splitDamageTakenMult: 1.00, splitGuardDamageMult: 1.00, splitAlternateSpeedMult: 1.00, splitExitInvuln: 0.00, switchCooldown: 1.0, switchFlourish: 0.30 }, // STAFF
+  { reach: 0.88, wind: 0.85, recover: 0.88, guard: 1.00, block: 1.00, parry: 1.00, counter: 1.00, switchAttack: { name: "Cross Flick", dmg: 8, guard: 16, reach: 1.84, knock: 0.30, stun: 0.06, hits: 2, wind: 0.05, active: 0.14, recover: 0.09, pull: 0 }, splitDamageTakenMult: 1.10, splitGuardDamageMult: 1.12, splitAlternateSpeedMult: 0.77, splitExitInvuln: 0.08, switchCooldown: 1.0, switchFlourish: 0.30 }, // SPLIT
+  { reach: 1.18, wind: 1.08, recover: 1.00, guard: 1.00, block: 0.80, parry: 0.90, counter: 1.00, switchAttack: { name: "Chain Lash", dmg: 15, guard: 23, reach: 2.62, knock: 0.30, stun: 0.09, hits: 1, wind: 0.09, active: 0.12, recover: 0.07, pull: 0.18 }, splitDamageTakenMult: 1.00, splitGuardDamageMult: 1.00, splitAlternateSpeedMult: 1.00, splitExitInvuln: 0.00, switchCooldown: 1.0, switchFlourish: 0.30 }, // WHIP
+  { reach: 0.80, wind: 0.82, recover: 0.80, guard: 1.00, block: 1.00, parry: 1.00, counter: 1.25, switchAttack: { name: "Fold Jab", dmg: 13, guard: 22, reach: 1.55, knock: 0.28, stun: 0.17, hits: 1, wind: 0.055, active: 0.09, recover: 0.13, pull: 0 }, splitDamageTakenMult: 1.00, splitGuardDamageMult: 1.00, splitAlternateSpeedMult: 1.00, splitExitInvuln: 0.00, switchCooldown: 1.0, switchFlourish: 0.30 }, // FOLDED
 ] as const;
 
 // ZEPHYR_DRAGON_VARIANTS_V19 — editable per-mode attacks.
@@ -65,8 +66,8 @@ export const DRAGON_MODE_TUNING = [
 // applies afterward (e.g. final SPLIT reach = variant.reach * 0.88).
 // Same slot cooldowns (heavy, z, x, c) are never changed.
 // Each row reuses V18 poses; weighted GRIP_TIMELINE[move][mode] remains active.
-type DragonVariantKey = "heavy" | "z" | "x" | "c";
-export const DRAGON_VARIANTS: Record<number, Record<DragonVariantKey, Partial<Attack>>> = {
+type DragonVariantKey = "heavy" | "z" | "x" | "c" | "split_r" | "split_l";
+export const DRAGON_VARIANTS: Record<number, Partial<Record<DragonVariantKey, Partial<Attack>>>> = {
   0: { // STAFF — baseline, maximal guard pressure
     heavy: { name:"Dragon Tail Break", reach:2.52, wind:.29, active:.13, recover:.53, dmg:166, guard:52, knock:5.1, stun:.51,
       hits:1, style:"zephyr_finisher", pose_w:"zdh_w", pose_s:"zdh_s" },
@@ -80,6 +81,11 @@ export const DRAGON_VARIANTS: Record<number, Record<DragonVariantKey, Partial<At
       style:"zephyr_cyclone", pose_w:"zdc_w", pose_s:"zdc_s" },
   },
   1: { // SPLIT — two independently resolved heavy hits, fast crossing Z
+    // Left/right clicks are distinct attack IDs; no new snapshot field is required.
+    split_r: { name:"Right Fang", reach:1.88, wind:.12, active:.070, recover:.19, dmg:35, guard:17,
+      knock:.55, stun:.12, hits:1, style:"zephyr_split_right", pose_w:"zd1_w", pose_s:"zd1_s" },
+    split_l: { name:"Left Fang", reach:1.88, wind:.12, active:.070, recover:.19, dmg:35, guard:17,
+      knock:.55, stun:.12, hits:1, style:"zephyr_split_left", pose_w:"zd2_w", pose_s:"zd2_s" },
     heavy: { name:"Twin Fang", hits:2, reach:2.20, wind:.23, active:.26, recover:.40, dmg:73, guard:29, knock:.65, stun:.20,
       dragonEvenDmg:1.00, dragonOddDmg:1.00, dragonLastDmg:1.10, dragonLastGuard:1.15, dragonLastKnock:1.25, dragonLastStun:.24,
       style:"zephyr_twin_fang", pose_w:"zdh_w", pose_s:"zdh_s" },
@@ -118,15 +124,21 @@ export const DRAGON_VARIANTS: Record<number, Record<DragonVariantKey, Partial<At
   },
 };
 
+// ZEPHYR_DRAGON_SWITCH_SPLIT_V20 — real melee attacks built from l1 defaults.
+// Tuning is stored inside DRAGON_MODE_TUNING, not duplicated elsewhere.
+export const DRAGON_SWITCH_ATTACKS = DRAGON_MODE_TUNING.map(m => m.switchAttack);
+
 function applyDragonMode(attack: Attack, mode: number, fixedSkill: boolean): Attack {
   const safeMode=Math.max(0,Math.min(3,mode));
   const m=DRAGON_MODE_TUNING[safeMode];
   const key=attack.id as DragonVariantKey;
   // Attack data is cloned when committed; mode changes during recovery cannot alter it.
-  const variant=(key==="heavy"||key==="z"||key==="x"||key==="c")
+  const variant=(key==="heavy"||key==="z"||key==="x"||key==="c"||key==="split_r"||key==="split_l")
     ? DRAGON_VARIANTS[safeMode][key] : undefined;
   const selected: Attack={...attack,...variant, cd:attack.cd, id:attack.id};
   const result={...selected, reach:selected.reach*m.reach, guard:selected.guard*m.guard};
+  if(mode===1 && (attack.id==="split_r" || attack.id==="split_l"))
+    result.guard*=DRAGON_MODE_TUNING[1].splitGuardDamageMult;
   // Z/X/C/V keep their original pulse counts and temporal hit schedule.
   if (!fixedSkill) { result.wind*=m.wind; result.recover*=m.recover; }
   if (result.style==="zephyr_reversal") result.duration*=m.counter;
@@ -157,7 +169,7 @@ const STUN_DR_WINDOW = 3;
 const STUN_DR = 0.6;
 const PCT_PER_DMG = 0.07;
 
-export interface Intent { attack: boolean; block: boolean; jump: boolean; skill: string; skillHeld?: string; skillMove?: THREE.Vector3; move: THREE.Vector3; dash: THREE.Vector3; sprint?: boolean }
+export interface Intent { attack: boolean; block: boolean; jump: boolean; skill: string; splitHand?: "r"|"l"|""; skillHeld?: string; skillMove?: THREE.Vector3; move: THREE.Vector3; dash: THREE.Vector3; sprint?: boolean }
 export const DASH_CD = 3;
 const DASH_T = 0.3;
 const DASH_SPEED = 14;
@@ -355,6 +367,18 @@ export class Fighter implements Entity {
   onGravityShift: (f: Fighter) => void = () => {};
   // ZEPHYR_DRAGON_DANCER_V1 — stacks earned only on confirmed hits, parries, and clashes.
   // ZEPHYR_DRAGON_MODE_V18: host-owned stance shared via F and snapshots.
+  // ZEPHYR_DRAGON_SWITCH_SPLIT_V20: only dragonMode is network-synced.
+  dragonSwitchSerial=0;
+  dragonSwitchT=0;
+  onDragonSwitch: (f: Fighter) => void = () => {};
+  dragonLastHand: "r"|"l"|""="";
+  private dragonSplitPrev: "r"|"l"|""="";
+  private dragonSplitQueued: "r"|"l"|""="";
+  private dragonSplitStrike(hand: "r"|"l") {
+    this.dragonSplitQueued="";
+    this.holding=false; this.atkPrev=false;
+    this.startAttack(hand==="r"?"split_r":"split_l");
+  }
   dragonMode = 0; // 0 STAFF, 1 SPLIT, 2 WHIP, 3 FOLDED
   dragonModeCd = 0;
   dragonRhythm = 0;
@@ -733,7 +757,12 @@ export class Fighter implements Entity {
     this.parryWindow = st.parry; this.jumpV = st.jump;
     this.hp = this.maxHp;
     this.guard = this.maxGuard;
+    // V20: Split attacks share standard l1 collision rules, different per-hand IDs.
     this.attacks = Kits.attacks(this.kit, look.element);
+    if(this.kit==="tristaff") {
+      this.attacks.split_r={...this.attacks.l1,id:"split_r",next:"l1"};
+      this.attacks.split_l={...this.attacks.l1,id:"split_l",next:"l1"};
+    }
     // Keep Kits.attacks' original Z, X, C and V definitions, including air variants.
     // Previously saved 3-of-4 loadouts are ignored rather than remapping V to another key.
     if (emblem) {
@@ -971,10 +1000,14 @@ export class Fighter implements Entity {
   update(dt: number) {
     if (this.puppet) { this.updatePuppet(dt); return; }
     const it = this.intent;
-    it.attack = false; it.block = false; it.jump = false; it.skill = ""; it.skillHeld = ""; it.sprint = false;
+    it.attack = false; it.block = false; it.splitHand = ""; it.jump = false; it.skill = ""; it.skillHeld = ""; it.sprint = false;
     it.skillMove?.set(0, 0, 0); it.move.set(0, 0, 0); it.dash.set(0, 0, 0);
     if (this.out) { this.waitRespawn(dt); return; }
     if (this.brain && this.state !== S.KO && this.state !== S.WIN) this.brain.think(this, dt);
+    if (this.kit==="tristaff" && this.dragonMode===1) {
+      it.block=false; // hard guard/parry disable, including AI and remote input.
+      if(this.state===S.BLOCK) this.setState(S.IDLE);
+    }
     // AIR_COMBAT_V1: Right Click while hit-stunned in air = one escape per airtime.
     this.tryAirRecovery();
     // Ground and airborne blocks both work; perfect parry still uses its normal timing.
@@ -1083,6 +1116,7 @@ export class Fighter implements Entity {
     this.nyxShadowBoostT = Math.max(0, this.nyxShadowBoostT - dt);
     // ZEPHYR_DRAGON_DANCER_V1
     this.dragonModeCd = Math.max(0,this.dragonModeCd-dt);
+    this.dragonSwitchT = Math.max(0,this.dragonSwitchT-dt);
     this.dragonRhythmT = Math.max(0, this.dragonRhythmT - dt);
     if (this.dragonRhythmT <= 0) this.dragonRhythm = 0;
     this.parryCounterT = Math.max(0, this.parryCounterT - dt);
@@ -1310,6 +1344,7 @@ export class Fighter implements Entity {
     this.model.presentationT = this.stateT;
     this.model.presentationMode = "victory";
     this.model.dragonMode=this.dragonMode;
+    this.model.dragonStrikeHand=this.atkId==="split_r"?"r":this.atkId==="split_l"?"l":"";
     this.model.dragonPose = this.kit === "tristaff" ? (this.state === S.WIN ? "show_tristaff" : this.poseName) : "idle";
     this.model.dragonProgress = this.state === S.ATTACK && this.atk ?
       Math.max(0, Math.min(1, this.stateT / Math.max(0.01, this.atk.wind + this.atk.active))) : 0;
@@ -1433,6 +1468,24 @@ export class Fighter implements Entity {
     }
     if (pressed && this.atkLock > 0 && !this.hasParryCounterReady()) return;
     if (pressed && this.parryRecoilT > 0) return;
+    // V20 Split: press either mouse action for a one-hand short melee strike.
+    // Switch hands during the active phase to queue the opposite strike.
+    if(this.kit==="tristaff" && this.dragonSwitchT>0)return;
+    if(this.kit==="tristaff" && this.dragonMode===1 && this.onGround) {
+      const hand: "r"|"l"|""=this.intent.splitHand ||
+        (this.intent.attack ? (this.owner.startsWith("cpu")
+          ? (this.dragonLastHand==="r"?"l":"r") : "r") : "");
+      const splitPressed=hand!=="" && hand!==this.dragonSplitPrev;
+      this.dragonSplitPrev=hand;
+      this.holding=false;this.atkPrev=false;
+      if(splitPressed && !this.chainBoundBy && this.parryRecoilT<=0 && this.atkLock<=0) {
+        if(this.state===S.IDLE||this.state===S.BLOCK)
+          this.dragonSplitStrike(hand);
+        else if(this.state===S.ATTACK) this.dragonSplitQueued=hand;
+      }
+      return;
+    }
+    if(this.kit==="tristaff") this.dragonSplitPrev="";
     // NESA_MOMENTUM_V3: charge a directional midair hammer strike instead of auto-slicing.
     if (this.kit === "hammer" && !this.stage && !this.onGround &&
         (this.state === S.IDLE || this.state === S.BLOCK || this.nesaAirHolding)) {
@@ -1640,13 +1693,20 @@ export class Fighter implements Entity {
     if (k === "f" && this.kit === "tristaff") {
       const forbidden=[S.HITSTUN,S.STAGGER,S.KO,S.WIN,S.KNOCKDOWN,S.WAKEUP];
       const safeAttack=this.state!==S.ATTACK || this.atkPhase===2;
-      if(this.dragonModeCd<=0 && safeAttack && !forbidden.includes(this.state) &&
+      if(this.dragonModeCd<=0 && this.dragonSwitchT<=0 && safeAttack && !forbidden.includes(this.state) &&
           !this.chainBoundBy && !this.status.has("freeze")) {
+        const oldMode=this.dragonMode;
         this.dragonMode=(this.dragonMode+1)%4;
-        this.dragonModeCd=.6;
+        this.dragonModeCd=DRAGON_MODE_TUNING[this.dragonMode].switchCooldown;
+        this.dragonSwitchT=DRAGON_MODE_TUNING[this.dragonMode].switchFlourish;
+        this.atkPower=1; // a flourish is not powered by the previous heavy/skill.
+        this.dragonSwitchSerial++;
+        if(oldMode===1) this.invulnT=Math.max(this.invulnT,DRAGON_MODE_TUNING[1].splitExitInvuln);
+        this.dragonSplitPrev="";this.dragonSplitQueued="";
+        this.onDragonSwitch(this); // host/authority handles genuine melee contacts.
         this.model.dragonMode=this.dragonMode;
         this.model.dragonModeBlend=0;
-        this.model.flash(["#bcf4dc","#f4b3ac","#ffcc77","#a3c9ff"][this.dragonMode],.25);
+        // ZEPHYR_BODY_GRIP_V21: no colored mode-switch flash; physical weapon flourish only.
         // No setState(): light-attack recoveries keep their combo buffers intact.
       }
       return;
@@ -1870,8 +1930,17 @@ export class Fighter implements Entity {
       }
     }
     // ZEPHYR_DRAGON_VARIANTS_V19: pick the variant first, then apply earned Rhythm.
-    if(this.kit==="tristaff" && this.atk)
+    if(this.kit==="tristaff" && this.atk) {
       this.atk=applyDragonMode(this.atk,this.dragonMode,["z","x","c","v"].includes(id));
+      if(id==="split_r"||id==="split_l") {
+        const hand=id==="split_r"?"r":"l";
+        if(this.dragonLastHand && this.dragonLastHand!==hand) {
+          const speed=DRAGON_MODE_TUNING[1].splitAlternateSpeedMult;
+          this.atk.wind*=speed;this.atk.recover*=speed;
+        }
+        this.dragonLastHand=hand; // local derived from attack ID, never synced.
+      }
+    }
     // ZEPHYR_DRAGON_DANCER_V1: spend earned rhythm on next committed finisher.
     if (this.kit === "tristaff" && this.atk && this.dragonRhythm >= 3 &&
         ["l5", "heavy", "c", "v", "pc"].includes(id)) {
@@ -2037,6 +2106,11 @@ export class Fighter implements Entity {
       return;
     }
 
+    if(this.kit==="tristaff" && this.dragonMode===1 && this.dragonSplitQueued &&
+       this.state===S.ATTACK && this.stateT>=w+ac+0.025) {
+      const hand=this.dragonSplitQueued;
+      this.dragonSplitStrike(hand);return;
+    }
     if (this.kit === "hammer" && a.name !== "Upsie Daisie" && this.atkPhase === 0 &&
         this.stateT < w && this.intent.block) {
       // Pre-swing cancel is intentional; this move did NOT deal any damage.
@@ -2105,6 +2179,7 @@ export class Fighter implements Entity {
     }
   }
 
+  // Mode change during recovery still retains the ordinary next combo step.
   private finishAttack() {
     const a = this.atk!;
     if (/^l\d$/.test(this.atkId) && !a.next && a.type !== "melee") this.atkLock = RANGED_COMBO_REST[this.kit] ?? 1.2;
@@ -2355,6 +2430,8 @@ export class Fighter implements Entity {
       return "counter";
     }
     let dmg = a.dmg * power;
+    if(this.kit==="tristaff"&&this.dragonMode===1)
+      dmg*=DRAGON_MODE_TUNING[1].splitDamageTakenMult;
     if (a.type === "projectile" && this.garrickIsAdvancing(attacker)) dmg *= 0.75;
     // Garrick Ground Slam's sword-plant startup is braced, not invulnerable.
     if (this.kit === "greatsword" && this.state === S.ATTACK &&
@@ -3201,6 +3278,7 @@ export class Fighter implements Entity {
     this.model.presentationT = this.stateT;
     this.model.presentationMode = "victory";
     this.model.dragonMode=this.dragonMode;
+    this.model.dragonStrikeHand=this.atkId==="split_r"?"r":this.atkId==="split_l"?"l":"";
     this.model.dragonPose = this.kit === "tristaff" ? (this.state === S.WIN ? "show_tristaff" : this.poseName) : "idle";
     this.model.dragonProgress = this.state === S.ATTACK && this.atk ?
       Math.max(0, Math.min(1, this.stateT / Math.max(0.01, this.atk.wind + this.atk.active))) : 0;

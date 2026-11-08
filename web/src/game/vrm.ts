@@ -124,6 +124,27 @@ function quatIn(root: THREE.Object3D, o: THREE.Object3D, out: THREE.Quaternion) 
   return out.copy(_inv).multiply(o.getWorldQuaternion(_q2));
 }
 
+// ZEPHYR_BODY_GRIP_V21 — edit these values to adjust Zephyr's FINAL VRM body layer.
+// Radians for rotations, metres for steps/drops. No combat state is changed.
+const ZEPHYR_BODY_TUNING = {
+  torsoYaw: .42,       // chest winds against the hips during crossing cuts
+  chestLead: .19,      // upperChest follows the weapon first
+  hipYaw: .23,         // hips rotate later, counter-balancing the shoulders
+  hipLag: 9.0,         // lower = more inertia on the pelvis
+  spineLag: 15.0,      // spring-like torso follow-through
+  torsoPitch: .13,     // anticipation lean on windup, drive on contact
+  torsoRoll: .10,      // weight into the striking side
+  hipSway: .080,       // visible lateral weight transfer (metres)
+  hipDrop: .072,       // body lowers during windup (metres)
+  kneeBend: .32,       // additional knee load on attacks (radians)
+  footStep: .30,       // alternating leg swing for advancing strikes (radians)
+  footPivot: .25,      // spin/wheel pivot angle
+  footIKOverride: .65, // 0 = old foot leveling; 1 = stronger artistic pivots
+  headTilt: .14,       // glance into the weapon's leading hand
+  angularInfluence: .13,
+  idleBodyWeight: .22, // quiet breathing/idle figure-eight
+} as const;
+
 export class VrmRig {
   readonly vrm: VRM;
   private links: Link[] = [];
@@ -150,6 +171,17 @@ export class VrmRig {
   tristaffAnchor: "left" | "right" | null = "right";
   // ZEPHYR_DRAGON_MODE_V18: smooth open/curl and per-arm IK influence.
   tristaffGripWeight = {left:0,right:1};
+  // ZEPHYR_BODY_GRIP_V21: inputs are derived from the already synced pose/mode.
+  tristaffBodyPose = "idle";
+  tristaffBodyProgress = 0;
+  tristaffBodyMode = 0;
+  tristaffStrikeHand: "r"|"l"|"" = "";
+  tristaffAngularVelocity = 0;
+  private zephyrChestYaw = 0;
+  private zephyrHipYaw = 0;
+  private zephyrBodyQ = new THREE.Quaternion();
+  private zephyrBodyE = new THREE.Euler(0,0,0,"YXZ");
+
   private tristaffGripQ = new THREE.Quaternion();
   private tristaffGripBaseQ = new THREE.Quaternion();
   private tristaffWristParentQ = new THREE.Quaternion();
@@ -436,7 +468,10 @@ export class VrmRig {
       ease(b, parentQ.multiply(target), 120);
     };
     this.hurtW += ((m.hurt ? 1 : 0) - this.hurtW) * (1 - Math.exp(-(m.hurt ? 18 : 6) * dt));
-    if (this.tristaff) this.tristaffHands(setNow);
+    if (this.tristaff) {
+      this.applyZephyrBody(dt,m);  // AFTER base hips, torso, locomotion and foot IK layers.
+      this.tristaffHands(setNow);  // Solve hand sockets on the newly turned skeleton.
+    }
     else if (this.style === "magnetic" && this.spearGripR) this.zenithSpearHands(setNow);
     else if (this.gripL || this.restSword) this.heavyBlade(dt, !!m.combat, set, setNow);
     else if (this.hurtW > 0.02) this.handsForward(set);
@@ -565,6 +600,67 @@ export class VrmRig {
    */
   // ZEPHYR_DRAGON_MODE_V18: both arms follow independent sockets using the
   // same two-bone IK. IK weight blends against the already posed arm, not a hard snap.
+  /** ZEPHYR_BODY_GRIP_V21: FINAL additive layer applied AFTER base limb/foot smoothing
+   * and BEFORE weapon hand IK. Runs after locomotion and pose-table layers, then the
+   * solved hands and hair/spring physics see the resulting transformed skeleton. */
+  private applyZephyrBody(dt: number, m: MotionInfo) {
+    const H=this.vrm.humanoid;
+    const get=(name:VRMHumanBoneName)=>H.getNormalizedBoneNode(name);
+    const p=THREE.MathUtils.clamp(this.tristaffBodyProgress,0,1);
+    const name=this.tristaffBodyPose;
+    const showcase=name==="show_tristaff";
+    const attack=showcase||/^zd/.test(name)||this.tristaffStrikeHand!=="";
+    const wheel=/zd4|zdz|zdc|zdv/.test(name)||showcase;
+    const wind=name.endsWith("_w")||/zd[hx]_w/.test(name);
+    const sign=this.tristaffStrikeHand==="l"?-1:this.tristaffStrikeHand==="r"?1:
+      /zd2|zd4/.test(name)?-1:1;
+    // Attack peaks across the strike; windups preload the hips and knees.
+    const attackEnvelope=attack?(0.38+0.62*Math.sin(Math.PI*Math.max(.04,p))):0;
+    const idleEnvelope=attack?0:ZEPHYR_BODY_TUNING.idleBodyWeight;
+    const energy=attackEnvelope+idleEnvelope;
+    const pulse=wind?-0.65:1;
+    const spin=wheel?Math.sin(p*Math.PI*2*(name==="zdc_s"?2:1)):0;
+    const angular=THREE.MathUtils.clamp(this.tristaffAngularVelocity,-5,5)*ZEPHYR_BODY_TUNING.angularInfluence;
+    const goalYaw=sign*ZEPHYR_BODY_TUNING.torsoYaw*energy*pulse+spin*.16+angular*.08;
+    const goalHip=-sign*ZEPHYR_BODY_TUNING.hipYaw*energy*pulse+spin*.12;
+    this.zephyrChestYaw=THREE.MathUtils.damp(this.zephyrChestYaw,goalYaw,ZEPHYR_BODY_TUNING.spineLag,dt);
+    this.zephyrHipYaw=THREE.MathUtils.damp(this.zephyrHipYaw,goalHip,ZEPHYR_BODY_TUNING.hipLag,dt);
+    const add=(name:VRMHumanBoneName,x:number,y:number,z:number)=>{
+      const b=get(name);if(!b)return;
+      b.quaternion.multiply(this.zephyrBodyQ.setFromEuler(this.zephyrBodyE.set(x,y,z,"YXZ")));
+      b.updateMatrixWorld(true);
+    };
+    const bend=energy*ZEPHYR_BODY_TUNING.kneeBend*(wind?1.25:.72);
+    add("spine",ZEPHYR_BODY_TUNING.torsoPitch*energy*(wind?-1:0.45),this.zephyrChestYaw*.52,
+      sign*ZEPHYR_BODY_TUNING.torsoRoll*energy);
+    add("chest",0,this.zephyrChestYaw*.37,-sign*.045*energy);
+    add("upperChest",0,this.zephyrChestYaw*.27,-sign*ZEPHYR_BODY_TUNING.chestLead*energy);
+    add("head",-.035*energy,-sign*.055*energy,sign*ZEPHYR_BODY_TUNING.headTilt*energy);
+    const hips=get("hips");
+    if(hips){
+      hips.position.x+=sign*ZEPHYR_BODY_TUNING.hipSway*energy/this.scale;
+      hips.position.y-=ZEPHYR_BODY_TUNING.hipDrop*energy*(wind?1.1:.48)/this.scale;
+      add("hips",.025*energy,this.zephyrHipYaw,-sign*.05*energy);
+    }
+    // Explicit pivot/step layering AFTER regular leg rotation and foot leveling.
+    const stride=wheel?Math.sin(p*Math.PI*4)*ZEPHYR_BODY_TUNING.footStep:
+      ZEPHYR_BODY_TUNING.footStep*energy*(wind?-.45:.75);
+    const pivot=(wheel?(Math.sin(p*Math.PI*2)*1.25):sign*.36)*
+      ZEPHYR_BODY_TUNING.footPivot*energy;
+    for(const side of ["left","right"] as const){
+      const sideSign=side==="left"?1:-1;
+      const lead=sideSign*sign;
+      add(`${side}UpperLeg` as VRMHumanBoneName,lead*stride-bend*.18,lead*pivot*.18,lead*.055*energy);
+      add(`${side}LowerLeg` as VRMHumanBoneName,bend*(lead>0?.85:1.12),0,0);
+      add(`${side}Foot` as VRMHumanBoneName,
+        -lead*stride*.34*ZEPHYR_BODY_TUNING.footIKOverride,
+        lead*pivot*ZEPHYR_BODY_TUNING.footIKOverride,
+        lead*.07*energy*ZEPHYR_BODY_TUNING.footIKOverride);
+    }
+    // Recompute the transformed bone hierarchy before the two-hand IK pass.
+    this.vrm.scene.updateMatrixWorld(true);
+  }
+
   private tristaffHands(setNow: (b: THREE.Object3D | null, q: THREE.Quaternion) => void) {
     const root=this.j.root;
     root.updateMatrixWorld(true);

@@ -1,3 +1,4 @@
+// ZEPHYR_V23_ICONS_FX_REPAIR
 // PASSIVE_ROSTER_V10 — roster-wide passives, readable HUD and CPU visibility.
 // ROXY_V7_5PCT_LIGHT_CHARGED_BIRD_NO_WIND_20261108: remove unavailable Frostwing wind sound.
 // AI_ROOK_NESA_KIRA_MERGED_V1_20261108
@@ -43,7 +44,7 @@
 import * as THREE from "three";
 import * as M from "./mat";
 import { Fx } from "./fx";
-import { Fighter, S, STOCKS, RANGED_COMBO_REST, DASH_CD, DRAGON_VARIANTS, type Entity, type Brain, type Stage } from "./fighter";
+import { Fighter, S, STOCKS, RANGED_COMBO_REST, DASH_CD, DRAGON_VARIANTS, DRAGON_SWITCH_ATTACKS, type Entity, type Brain, type Stage } from "./fighter";
 import { Mob, waveRoster, MOB_TYPES, type MobHost } from "./mobs";
 import { AiBrain, LEVELS, type Threats } from "./ai";
 import { CHARACTERS } from "./roster";
@@ -152,8 +153,18 @@ class RemoteBrain implements Brain {
 }
 
 function applyRaw(f: Fighter, r: RawInput) {
-  f.intent.attack = r.attack;
-  f.intent.block = r.block;
+  // ZEPHYR_DRAGON_SWITCH_SPLIT_V20: existing networked attack/block bits encode
+  // left/right clicks, so Split needs no new networking field at all.
+  if(f.kit==="tristaff" && f.dragonMode===1) {
+    const hand: "r"|"l"|""=r.block&&!r.attack?"l":r.attack?"r":"";
+    f.intent.splitHand=hand;
+    f.intent.attack=!!hand;
+    f.intent.block=false;
+  } else {
+    f.intent.splitHand="";
+    f.intent.attack=r.attack;
+    f.intent.block=r.block;
+  }
   f.intent.jump = r.jump;
   f.intent.sprint = !!r.sprint; // Shift + move, also relayed to online hosts
   if (r.skill) {
@@ -1202,6 +1213,7 @@ export class Game implements MobHost {
     f.root.position.copy(pos);
     f.root.rotation.y = rotY;
     f.onSwing = (x) => this.onSwing(x);
+    f.onDragonSwitch = (x) => this.zephyrSwitchFlourish(x);
     f.onGravityShift = (x) => {
       this.fxp("ring", x.root.position.clone().add(new THREE.Vector3(0, 0.22, 0)),
         x.gravityMode === "heavy" ? "#62309c" : "#c9aaff", 1.65, 0.28, 0.92);
@@ -2409,6 +2421,33 @@ export class Game implements MobHost {
     this.fxp("sparks",victim.chest(),"#f3b5a8",9,2.1);
   }
 
+  // ZEPHYR_DRAGON_SWITCH_SPLIT_V20 — F is a short, real, defendable melee action.
+  // The switch is authority-only: puppet snapshots update visuals, not hits.
+  private zephyrSwitchFlourish(f:Fighter) {
+    if(f.kit!=="tristaff"||f.puppet)return;
+    const mode=f.dragonMode;
+    const tuning=DRAGON_SWITCH_ATTACKS[mode];
+    if(!tuning)return;
+    const base:Attack={...f.attacks.l1,...tuning,
+      id:"dragon_switch",type:"melee",heavy:false,no_parry:false,
+      style:"zephyr_switch",next:"",lunge:0,
+      dragonRhythmOnHit:true,dragonPull:tuning.pull};
+    const hits=Math.max(1,Math.min(2,tuning.hits));
+    const serial=f.dragonSwitchSerial,round=this.round;
+    // V21: no color-coded trails, spark bursts or flash when F is pressed.
+    // Rod pose and mode label show the stance; real melee impacts retain their normal effects.
+    if(base.dmg<=0)return; // cosmetic-only if disabled in tuning.
+    for(let i=0;i<hits;i++)this.laterCombo(f,base.wind+(i*base.active/hits),()=>{
+      if(round!==this.round || f.isDown() || f.dragonSwitchSerial!==serial ||
+          f.dragonMode!==mode || f.dragonSwitchT<=0 ||
+          [S.HITSTUN,S.STAGGER,S.KO,S.WIN,S.KNOCKDOWN,S.WAKEUP].includes(f.state))return;
+      const pulse:Attack={...base,id:`dragon_switch_${i+1}`,dmg:base.dmg,
+        dragonPull:mode===2?base.dragonPull:undefined};
+      // Intentionally no switch-specific colored FX.
+      this.melee(f,pulse); // normal block, parry, clash, dodge, hit checks.
+    });
+  }
+
   private zephyrComboSwing(f: Fighter, a: Attack) {
     const count = Math.max(1,Math.min(12,a.hits ?? (a.style === "zephyr_serpent" ? 3 : a.style === "zephyr_cyclone" ? 5 : a.style === "zephyr_twin_fang" ? 2 : 9)));
     const tick = a.active / count;
@@ -2747,6 +2786,7 @@ export class Game implements MobHost {
       if (dist<1.25 && victim instanceof Fighter && victim.state===S.ATTACK) f.intent.block=true;
     }};
     copy.onSwing=x=>this.onSwing(x);
+    copy.onDragonSwitch=x=>this.zephyrSwitchFlourish(x);
     copy.onKo=()=>{
       const item=this.iceClones.find(c=>c.fighter===copy);
       if (item) this.finishIceClone(item,true);
@@ -4405,14 +4445,23 @@ export class Game implements MobHost {
     // ZEPHYR_DRAGON_VARIANTS_V19: award only on real HP damage, once per swing serial.
     if(attacker instanceof Fighter && attacker.kit==="tristaff" && a.dragonRhythmOnHit &&
        (result==="hit"||result==="crit"||result==="ko")) {
-      attacker.earnDragonRhythm(attacker.swingSerial);
+      attacker.earnDragonRhythm(a.id.startsWith("dragon_switch_")
+        ? 1000000+attacker.dragonSwitchSerial : attacker.swingSerial);
+      if(a.id.startsWith("dragon_switch_")) {
+        // ZEPHYR_V23_ICONS_FX_REPAIR: F-switch colored ring removed.
+        this.add_trauma(Math.min(.19,.025+a.dmg*.006));
+      }
       this.fxp("num",attacker.chest().add(new THREE.Vector3(0,.83,0)),
-        `HIDDEN RHYTHM ${attacker.dragonRhythm}/3`,"#b7ffe3",.72);
+        `HIDDEN RHYTHM ${attacker.dragonRhythm}/3`,
+        a.style === "zephyr_switch" ? "#ffffff" : "#b7ffe3",.72);
     }
     if(attacker instanceof Fighter && attacker.kit==="tristaff" &&
        d instanceof Fighter && result==="blocked" && a.dragonPull) {
       this.zephyrPull(d,attacker,a.dragonPull);
     }
+    if(attacker instanceof Fighter && attacker.kit==="tristaff" &&
+      a.id.startsWith("dragon_switch_") && d instanceof Fighter && a.dragonPull &&
+      (result==="hit" || result==="crit")) this.zephyrPull(d,attacker,a.dragonPull);
     // PASSIVES_V10: only actual resolved outcomes count; this runs on the host.
     if (d instanceof Fighter) d.passiveOnDefense(result);
     if (attacker instanceof Fighter) {
@@ -4531,7 +4580,12 @@ export class Game implements MobHost {
       this.fxp("num", attacker.chest().add(new THREE.Vector3(0, 0.72, 0)),
         "RIPOSTE +15%", "#aeffff", 0.85);
     }
-    const glow = attacker instanceof Fighter ? attacker.look.glow : attacker instanceof Mob ? attacker.def.color : "#ffffff";
+    // ZEPHYR_V23_ICONS_FX_REPAIR: neutralize *only* real F-switch hit effects.
+    const neutralDragonSwitch = attacker instanceof Fighter &&
+      attacker.kit === "tristaff" && (a.style === "zephyr_switch" || a.id.startsWith("dragon_switch_"));
+    const glow = neutralDragonSwitch ? "#dedede" :
+      attacker instanceof Fighter ? attacker.look.glow :
+      attacker instanceof Mob ? attacker.def.color : "#ffffff";
     const heavy = a.heavy || a.id === "l3";
     const shieldPos = d instanceof Fighter ? d.model.shieldNode.getWorldPosition(new THREE.Vector3()) : hitPos;
     switch (result) {
@@ -4556,7 +4610,8 @@ export class Game implements MobHost {
         break;
       }
       case "hit": case "crit": case "ko": {
-        if (attacker instanceof Fighter) this.highlightHit(attacker, a, d.lastDamage, result === "ko");
+        if (attacker instanceof Fighter && !neutralDragonSwitch)
+          this.highlightHit(attacker, a, d.lastDamage, result === "ko");
         const crit = d.lastCrit;
         // A real floor knockdown is different from KO, and remains cosmetic
         // beyond its short, automatic recovery state.
@@ -4577,7 +4632,7 @@ export class Game implements MobHost {
         // weapon-impact starburst. No CLASH label: this was a damage hit, not a parry.
         if (!ranged && a.type === "melee") {
           this.fxp("clashBurst", hitPos, glow, heavy ? 0.95 : 0.65);
-          this.fxp("sparks", hitPos, "#fff4d4", heavy ? 18 : 10, 6);
+          this.fxp("sparks", hitPos, neutralDragonSwitch ? "#e7e7e7" : "#fff4d4", neutralDragonSwitch ? 6 : heavy ? 18 : 10, 6);
         }
         this.fxp("sparks", hitPos, glow, heavy ? 30 : 18, heavy ? 8 : 6, dir);
         this.fxp("flash", hitPos, glow, heavy ? 0.45 : 0.3, 0.14, 0.8);
@@ -4620,11 +4675,11 @@ export class Game implements MobHost {
         if (ranged && a.type === "projectile")
           this.fxp("impactBurst", shieldPos, "#a9e8ff", 0.88, "block");
         else if (!ranged && a.type === "melee")
-          this.fxp("impactBurst", shieldPos, "#ffe19c", 0.76, "block");
+          this.fxp("impactBurst", shieldPos, neutralDragonSwitch ? "#dedede" : "#ffe19c", 0.76, "block");
         this.snd("block", 0.7);
-        if (!ranged && a.type === "melee") this.fxp("clashBurst", shieldPos, "#ffd27a", 0.72);
-        this.fxp("sparks", shieldPos, "#ffd27a", 16, 5, dir.clone().negate().add(new THREE.Vector3(0, 0.3, 0)));
-        this.fxp("flash", shieldPos, "#ffd980", 0.35, 0.1, 0.6);
+        if (!ranged && a.type === "melee") this.fxp("clashBurst", shieldPos, neutralDragonSwitch ? "#dedede" : "#ffd27a", 0.72);
+        this.fxp("sparks", shieldPos, neutralDragonSwitch ? "#dedede" : "#ffd27a", 16, 5, dir.clone().negate().add(new THREE.Vector3(0, 0.3, 0)));
+        this.fxp("flash", shieldPos, neutralDragonSwitch ? "#ffffff" : "#ffd980", neutralDragonSwitch ? 0.11 : 0.35, 0.1, 0.6);
         this.fxp("num", shieldPos.clone().add(new THREE.Vector3(0, 0.4, 0)), (attacker instanceof Fighter && attacker.kit === "hammer" && a.id === "z" ? "CRUSH BLOCK!" : "BLOCK"), "#c9d3e6", 0.7); // NESA_CRUSH_BLOCK_V2
         if (!ranged && attacker instanceof Fighter && attacker.kit !== "chainblade" &&
             !(d instanceof Fighter && d.kit === "chainblade")) attacker.model.recoil = 0.6;
@@ -4649,8 +4704,8 @@ export class Game implements MobHost {
           this.fxp("num", df.chest().add(new THREE.Vector3(0, 1.1, 0)),
             `RESOLVE ${df.garrickResolve}/3`, "#ffd49a", 0.86);
         }
-        this.fxp("impactBurst", shieldPos, "#b9f5ff", 1.65, "clash");
-        this.fxp("impactFrame", "parry", "#b9f5ff", 0.72);
+        this.fxp("impactBurst", shieldPos, neutralDragonSwitch ? "#dedede" : "#b9f5ff", 1.65, "clash");
+        this.fxp("impactFrame", "parry", neutralDragonSwitch ? "#dedede" : "#b9f5ff", 0.72);
         if (attacker instanceof Fighter) {
           if (attacker.onComboParried()) {
             this.delayComboFollowups(attacker, 0.20);
@@ -4672,11 +4727,11 @@ export class Game implements MobHost {
         } else if (!ranged && attacker instanceof Mob) attacker.receiveHit(d, { ...a, dmg: 0, knock: 4 }, 0);
         this.snd("parry", 0.9);
         if (!ranged && a.type === "melee")
-          this.fxp("clashBurst", shieldPos, "#aee9ff", 1.15);
-        this.fxp("sparks", shieldPos, "#aee9ff", 40, 9);
-        this.fxp("flash", shieldPos, "#b3f2ff", 0.5, 0.2, 0.9);
-        this.fxp("ring", shieldPos, "#b3f2ff", 0.8, 0.35, 0.9);
-        this.fxp("num", shieldPos.clone().add(new THREE.Vector3(0, 0.5, 0)), "PARRY!", "#8fe6ff", 1.4);
+          this.fxp("clashBurst", shieldPos, neutralDragonSwitch ? "#dedede" : "#aee9ff", 1.15);
+        this.fxp("sparks", shieldPos, neutralDragonSwitch ? "#dedede" : "#aee9ff", 40, 9);
+        this.fxp("flash", shieldPos, neutralDragonSwitch ? "#ffffff" : "#b3f2ff", neutralDragonSwitch ? 0.12 : 0.5, 0.2, 0.9);
+        this.fxp("ring", shieldPos, neutralDragonSwitch ? "#dedede" : "#b3f2ff", 0.8, 0.35, 0.9);
+        this.fxp("num", shieldPos.clone().add(new THREE.Vector3(0, 0.5, 0)), "PARRY!", neutralDragonSwitch ? "#ffffff" : "#8fe6ff", 1.4);
         this.add_trauma(0.28);
         this.hitStop(0.08, 0.10);
         break;
@@ -4717,10 +4772,10 @@ export class Game implements MobHost {
         break;
       }
       case "guard_break":
-        this.fxp("impactBurst", hitPos, "#ff9f43", 1.65, "clash");
-        this.fxp("impactFrame", "guardbreak", "#ff9f43", 0.85);
-        this.fxp("sparks", hitPos, "#ffb347", 40, 9);
-        this.fxp("flash", hitPos, "#ffb34d", 0.5, 0.2, 0.9);
+        this.fxp("impactBurst", hitPos, neutralDragonSwitch ? "#dedede" : "#ff9f43", 1.65, "clash");
+        this.fxp("impactFrame", "guardbreak", neutralDragonSwitch ? "#dedede" : "#ff9f43", 0.85);
+        this.fxp("sparks", hitPos, neutralDragonSwitch ? "#dedede" : "#ffb347", 40, 9);
+        this.fxp("flash", hitPos, neutralDragonSwitch ? "#ffffff" : "#ffb34d", neutralDragonSwitch ? 0.12 : 0.5, 0.2, 0.9);
         this.fxp("num", hitPos.clone().add(new THREE.Vector3(0, 0.55, 0)), "GUARD BREAK", "#ff8a50", 1.2);
         this.snd("guard_break", 0.9);
         this.add_trauma(0.55);

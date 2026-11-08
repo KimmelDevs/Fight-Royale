@@ -59,96 +59,105 @@ const JOINTS = ["torso", "head", "arm_r", "hand_r", "arm_l", "hand_l", "leg_l", 
 // ZEPHYR_DRAGON_MODE_V18 — socket events are normalized 0..1 of the move.
 // Arrays are indexed STAFF(0), SPLIT(1), WHIP(2), FOLDED(3).
 // A null socket releases that hand. A move's next catch is anticipated by 0.18 progress.
+// ZEPHYR_BODY_GRIP_V21 — AUTHORITATIVE timelines; the old V19 variant
+// overrides have been replaced, so they cannot silently force middle-rod grips.
+// 0=STAFF, 1=SPLIT, 2=WHIP, 3=FOLDED. All times are 0..1 of dragonProgress.
 type DragonGripEvent = { t: number; R: string | null; L: string | null };
 const GRIP_TIMELINE: Record<string, DragonGripEvent[][]> = {
   idle: [
-    [{t:0,R:"middle:mid",L:"middle:low"}],
-    [{t:0,R:"upper:far",L:"lower:far"},{t:.70,R:"upper:mid",L:"lower:mid"}],
-    [{t:0,R:"middle:low",L:null},{t:.75,R:"middle:mid",L:null}],
-    [{t:0,R:"middle:mid",L:null}],
+    [ {t:0,R:"middle:mid",L:"middle:low"}, {t:0.22,R:"upper:near",L:"middle:low"}, {t:0.39,R:null,L:"upper:near"}, {t:0.57,R:"upper:mid",L:null}, {t:0.75,R:"upper:near",L:"lower:near"}, {t:0.9,R:"middle:high",L:"lower:near"} ],
+    [ {t:0,R:"upper:mid",L:"lower:mid"}, {t:0.23,R:null,L:"lower:near"}, {t:0.43,R:"upper:far",L:"lower:near"}, {t:0.57,R:"upper:mid",L:null}, {t:0.77,R:"upper:near",L:"lower:far"}, {t:0.92,R:"upper:mid",L:"lower:mid"} ],
+    [ {t:0,R:"lower:near",L:null}, {t:0.22,R:"lower:mid",L:null}, {t:0.38,R:null,L:"upper:near"}, {t:0.57,R:"upper:far",L:null}, {t:0.73,R:null,L:"lower:mid"}, {t:0.88,R:"upper:near",L:null} ],
+    [ {t:0,R:"middle:mid",L:null}, {t:0.19,R:"upper:near",L:null}, {t:0.37,R:null,L:"lower:near"}, {t:0.57,R:"lower:mid",L:null}, {t:0.74,R:null,L:"upper:near"}, {t:0.9,R:"middle:mid",L:null} ]
   ],
   l1: [
-    [{t:0,R:"middle:low",L:"middle:mid"},{t:.78,R:"middle:mid",L:"middle:low"}],
-    [{t:0,R:"upper:far",L:"lower:far"},{t:.48,R:"upper:mid",L:"lower:far"}],
-    [{t:0,R:"middle:low",L:null},{t:.45,R:"middle:mid",L:null}],
-    [{t:0,R:"middle:mid",L:null},{t:.75,R:"middle:high",L:null}],
+    [ {t:0,R:"middle:mid",L:"middle:low"}, {t:0.22,R:"upper:near",L:"middle:low"}, {t:0.39,R:null,L:"upper:near"}, {t:0.57,R:"upper:mid",L:null}, {t:0.75,R:"upper:near",L:"lower:near"}, {t:0.9,R:"middle:high",L:"lower:near"} ],
+    [ {t:0,R:"upper:mid",L:"lower:mid"}, {t:0.23,R:null,L:"lower:near"}, {t:0.43,R:"upper:far",L:"lower:near"}, {t:0.57,R:"upper:mid",L:null}, {t:0.77,R:"upper:near",L:"lower:far"}, {t:0.92,R:"upper:mid",L:"lower:mid"} ],
+    [ {t:0,R:"lower:near",L:null}, {t:0.22,R:"lower:mid",L:null}, {t:0.38,R:null,L:"upper:near"}, {t:0.57,R:"upper:far",L:null}, {t:0.73,R:null,L:"lower:mid"}, {t:0.88,R:"upper:near",L:null} ],
+    [ {t:0,R:"middle:mid",L:null}, {t:0.19,R:"upper:near",L:null}, {t:0.37,R:null,L:"lower:near"}, {t:0.57,R:"lower:mid",L:null}, {t:0.74,R:null,L:"upper:near"}, {t:0.9,R:"middle:mid",L:null} ]
   ],
   l2: [
-    [{t:0,R:"middle:mid",L:"middle:low"},{t:.64,R:"middle:high",L:"middle:low"}],
-    [{t:0,R:"upper:mid",L:"lower:far"},{t:.38,R:null,L:"lower:far"},{t:.75,R:"upper:far",L:"lower:mid"}],
-    [{t:0,R:"lower:near",L:null},{t:.55,R:null,L:"lower:far"}],
-    [{t:0,R:"middle:mid",L:null},{t:.65,R:null,L:"upper:near"}],
+    [ {t:0,R:"middle:mid",L:"middle:low"}, {t:0.22,R:"upper:near",L:"middle:low"}, {t:0.39,R:null,L:"upper:near"}, {t:0.57,R:"upper:mid",L:null}, {t:0.75,R:"upper:near",L:"lower:near"}, {t:0.9,R:"middle:high",L:"lower:near"} ],
+    [ {t:0,R:"upper:mid",L:"lower:mid"}, {t:0.23,R:null,L:"lower:near"}, {t:0.43,R:"upper:far",L:"lower:near"}, {t:0.57,R:"upper:mid",L:null}, {t:0.77,R:"upper:near",L:"lower:far"}, {t:0.92,R:"upper:mid",L:"lower:mid"} ],
+    [ {t:0,R:"lower:near",L:null}, {t:0.22,R:"lower:mid",L:null}, {t:0.38,R:null,L:"upper:near"}, {t:0.57,R:"upper:far",L:null}, {t:0.73,R:null,L:"lower:mid"}, {t:0.88,R:"upper:near",L:null} ],
+    [ {t:0,R:"middle:mid",L:null}, {t:0.19,R:"upper:near",L:null}, {t:0.37,R:null,L:"lower:near"}, {t:0.57,R:"lower:mid",L:null}, {t:0.74,R:null,L:"upper:near"}, {t:0.9,R:"middle:mid",L:null} ]
   ],
   l3: [
-    [{t:0,R:"middle:mid",L:"middle:low"},{t:.72,R:"middle:high",L:"middle:low"}],
-    [{t:0,R:"upper:far",L:"lower:mid"},{t:.53,R:"upper:mid",L:"lower:far"}],
-    [{t:0,R:"middle:low",L:null},{t:.56,R:"middle:high",L:null}],
-    [{t:0,R:"middle:mid",L:null},{t:.5,R:"middle:low",L:null}],
+    [ {t:0,R:"middle:mid",L:"middle:low"}, {t:0.22,R:"upper:near",L:"middle:low"}, {t:0.39,R:null,L:"upper:near"}, {t:0.57,R:"upper:mid",L:null}, {t:0.75,R:"upper:near",L:"lower:near"}, {t:0.9,R:"middle:high",L:"lower:near"} ],
+    [ {t:0,R:"upper:mid",L:"lower:mid"}, {t:0.23,R:null,L:"lower:near"}, {t:0.43,R:"upper:far",L:"lower:near"}, {t:0.57,R:"upper:mid",L:null}, {t:0.77,R:"upper:near",L:"lower:far"}, {t:0.92,R:"upper:mid",L:"lower:mid"} ],
+    [ {t:0,R:"lower:near",L:null}, {t:0.22,R:"lower:mid",L:null}, {t:0.38,R:null,L:"upper:near"}, {t:0.57,R:"upper:far",L:null}, {t:0.73,R:null,L:"lower:mid"}, {t:0.88,R:"upper:near",L:null} ],
+    [ {t:0,R:"middle:mid",L:null}, {t:0.19,R:"upper:near",L:null}, {t:0.37,R:null,L:"lower:near"}, {t:0.57,R:"lower:mid",L:null}, {t:0.74,R:null,L:"upper:near"}, {t:0.9,R:"middle:mid",L:null} ]
   ],
   l4: [
-    [{t:0,R:"middle:high",L:"middle:low"},{t:.55,R:null,L:"middle:low"},{t:.78,R:"middle:high",L:"middle:low"}],
-    [{t:0,R:"upper:far",L:"lower:far"},{t:.38,R:null,L:"lower:far"},{t:.62,R:"upper:mid",L:"lower:far"}],
-    [{t:0,R:"middle:low",L:null},{t:.38,R:null,L:null},{t:.56,R:null,L:"upper:near"}],
-    [{t:0,R:"middle:mid",L:null},{t:.46,R:null,L:"middle:mid"}],
+    [ {t:0,R:"middle:mid",L:"middle:low"}, {t:0.22,R:"upper:near",L:"middle:low"}, {t:0.39,R:null,L:"upper:near"}, {t:0.57,R:"upper:mid",L:null}, {t:0.75,R:"upper:near",L:"lower:near"}, {t:0.9,R:"middle:high",L:"lower:near"} ],
+    [ {t:0,R:"upper:mid",L:"lower:mid"}, {t:0.23,R:null,L:"lower:near"}, {t:0.43,R:"upper:far",L:"lower:near"}, {t:0.57,R:"upper:mid",L:null}, {t:0.77,R:"upper:near",L:"lower:far"}, {t:0.92,R:"upper:mid",L:"lower:mid"} ],
+    [ {t:0,R:"lower:near",L:null}, {t:0.22,R:"lower:mid",L:null}, {t:0.38,R:null,L:"upper:near"}, {t:0.57,R:"upper:far",L:null}, {t:0.73,R:null,L:"lower:mid"}, {t:0.88,R:"upper:near",L:null} ],
+    [ {t:0,R:"middle:mid",L:null}, {t:0.19,R:"upper:near",L:null}, {t:0.37,R:null,L:"lower:near"}, {t:0.57,R:"lower:mid",L:null}, {t:0.74,R:null,L:"upper:near"}, {t:0.9,R:"middle:mid",L:null} ]
   ],
   l5: [
-    [{t:0,R:"middle:high",L:"middle:low"},{t:.79,R:"middle:mid",L:"middle:low"}],
-    [{t:0,R:"upper:far",L:"lower:far"},{t:.65,R:"upper:mid",L:"lower:mid"}],
-    [{t:0,R:"middle:low",L:null},{t:.70,R:"middle:high",L:"lower:far"}],
-    [{t:0,R:"middle:mid",L:null},{t:.73,R:"middle:low",L:null}],
+    [ {t:0,R:"middle:mid",L:"middle:low"}, {t:0.22,R:"upper:near",L:"middle:low"}, {t:0.39,R:null,L:"upper:near"}, {t:0.57,R:"upper:mid",L:null}, {t:0.75,R:"upper:near",L:"lower:near"}, {t:0.9,R:"middle:high",L:"lower:near"} ],
+    [ {t:0,R:"upper:mid",L:"lower:mid"}, {t:0.23,R:null,L:"lower:near"}, {t:0.43,R:"upper:far",L:"lower:near"}, {t:0.57,R:"upper:mid",L:null}, {t:0.77,R:"upper:near",L:"lower:far"}, {t:0.92,R:"upper:mid",L:"lower:mid"} ],
+    [ {t:0,R:"lower:near",L:null}, {t:0.22,R:"lower:mid",L:null}, {t:0.38,R:null,L:"upper:near"}, {t:0.57,R:"upper:far",L:null}, {t:0.73,R:null,L:"lower:mid"}, {t:0.88,R:"upper:near",L:null} ],
+    [ {t:0,R:"middle:mid",L:null}, {t:0.19,R:"upper:near",L:null}, {t:0.37,R:null,L:"lower:near"}, {t:0.57,R:"lower:mid",L:null}, {t:0.74,R:null,L:"upper:near"}, {t:0.9,R:"middle:mid",L:null} ]
   ],
   heavy: [
-    [{t:0,R:"middle:low",L:"middle:high"},{t:.72,R:"middle:mid",L:"middle:low"}],
-    [{t:0,R:"upper:far",L:"lower:far"},{t:.65,R:"upper:mid",L:"lower:mid"}],
-    [{t:0,R:"middle:low",L:null},{t:.55,R:null,L:null},{t:.73,R:"upper:near",L:"lower:near"}],
-    [{t:0,R:"middle:mid",L:null},{t:.66,R:"middle:high",L:null}],
+    [ {t:0,R:"middle:mid",L:"middle:low"}, {t:0.22,R:"upper:near",L:"middle:low"}, {t:0.39,R:null,L:"upper:near"}, {t:0.57,R:"upper:mid",L:null}, {t:0.75,R:"upper:near",L:"lower:near"}, {t:0.9,R:"middle:high",L:"lower:near"} ],
+    [ {t:0,R:"upper:mid",L:"lower:mid"}, {t:0.23,R:null,L:"lower:near"}, {t:0.43,R:"upper:far",L:"lower:near"}, {t:0.57,R:"upper:mid",L:null}, {t:0.77,R:"upper:near",L:"lower:far"}, {t:0.92,R:"upper:mid",L:"lower:mid"} ],
+    [ {t:0,R:"lower:near",L:null}, {t:0.22,R:"lower:mid",L:null}, {t:0.38,R:null,L:"upper:near"}, {t:0.57,R:"upper:far",L:null}, {t:0.73,R:null,L:"lower:mid"}, {t:0.88,R:"upper:near",L:null} ],
+    [ {t:0,R:"middle:mid",L:null}, {t:0.19,R:"upper:near",L:null}, {t:0.37,R:null,L:"lower:near"}, {t:0.57,R:"lower:mid",L:null}, {t:0.74,R:null,L:"upper:near"}, {t:0.9,R:"middle:mid",L:null} ]
   ],
   z: [
-    [{t:0,R:"middle:low",L:"middle:high"},{t:.42,R:"middle:mid",L:"middle:low"},{t:.78,R:"middle:high",L:"middle:low"}],
-    [{t:0,R:"upper:far",L:"lower:far"},{t:.38,R:"upper:mid",L:"lower:far"},{t:.7,R:"upper:far",L:"lower:mid"}],
-    [{t:0,R:"middle:low",L:null},{t:.32,R:null,L:"lower:near"},{t:.66,R:"middle:low",L:null}],
-    [{t:0,R:"middle:mid",L:null},{t:.51,R:null,L:"middle:mid"},{t:.78,R:"middle:mid",L:null}],
+    [ {t:0,R:"middle:mid",L:"middle:low"}, {t:0.22,R:"upper:near",L:"middle:low"}, {t:0.39,R:null,L:"upper:near"}, {t:0.57,R:"upper:mid",L:null}, {t:0.75,R:"upper:near",L:"lower:near"}, {t:0.9,R:"middle:high",L:"lower:near"} ],
+    [ {t:0,R:"upper:mid",L:"lower:mid"}, {t:0.23,R:null,L:"lower:near"}, {t:0.43,R:"upper:far",L:"lower:near"}, {t:0.57,R:"upper:mid",L:null}, {t:0.77,R:"upper:near",L:"lower:far"}, {t:0.92,R:"upper:mid",L:"lower:mid"} ],
+    [ {t:0,R:"lower:near",L:null}, {t:0.22,R:"lower:mid",L:null}, {t:0.38,R:null,L:"upper:near"}, {t:0.57,R:"upper:far",L:null}, {t:0.73,R:null,L:"lower:mid"}, {t:0.88,R:"upper:near",L:null} ],
+    [ {t:0,R:"middle:mid",L:null}, {t:0.19,R:"upper:near",L:null}, {t:0.37,R:null,L:"lower:near"}, {t:0.57,R:"lower:mid",L:null}, {t:0.74,R:null,L:"upper:near"}, {t:0.9,R:"middle:mid",L:null} ]
   ],
   x: [
-    [{t:0,R:"middle:mid",L:"middle:low"},{t:.6,R:"middle:mid",L:"middle:low"}],
-    [{t:0,R:"upper:mid",L:"lower:mid"},{t:.52,R:"upper:far",L:"lower:far"}],
-    [{t:0,R:"middle:low",L:null},{t:.50,R:"middle:mid",L:null}],
-    [{t:0,R:"middle:mid",L:null},{t:.65,R:"middle:low",L:null}],
+    [ {t:0,R:"middle:mid",L:"upper:near"}, {t:0.46,R:"upper:near",L:"lower:near"}, {t:0.9,R:"middle:high",L:"lower:near"} ],
+    [ {t:0,R:"upper:mid",L:"lower:mid"}, {t:0.48,R:"upper:far",L:"lower:near"}, {t:0.82,R:"upper:mid",L:"lower:mid"} ],
+    [ {t:0,R:"lower:near",L:null}, {t:0.55,R:"lower:mid",L:null}, {t:0.85,R:"upper:near",L:null} ],
+    [ {t:0,R:"upper:near",L:null}, {t:0.45,R:"lower:near",L:null}, {t:0.84,R:"upper:near",L:null} ]
   ],
   c: [
-    [{t:0,R:"middle:low",L:"middle:high"},{t:.2,R:null,L:"middle:low"},{t:.4,R:"middle:high",L:null},{t:.6,R:null,L:"middle:low"},{t:.8,R:"middle:mid",L:"middle:low"}],
-    [{t:0,R:"upper:far",L:"lower:far"},{t:.2,R:null,L:"lower:far"},{t:.4,R:"upper:mid",L:null},{t:.6,R:null,L:"lower:mid"},{t:.8,R:"upper:far",L:"lower:far"}],
-    [{t:0,R:"middle:low",L:null},{t:.2,R:null,L:"upper:near"},{t:.4,R:"lower:near",L:null},{t:.6,R:null,L:null},{t:.8,R:"middle:low",L:null}],
-    [{t:0,R:"middle:mid",L:null},{t:.2,R:null,L:"middle:mid"},{t:.4,R:"middle:mid",L:null},{t:.6,R:null,L:"middle:low"},{t:.8,R:"middle:mid",L:null}],
+    [ {t:0,R:"middle:mid",L:"middle:low"}, {t:0.22,R:"upper:near",L:"middle:low"}, {t:0.39,R:null,L:"upper:near"}, {t:0.57,R:"upper:mid",L:null}, {t:0.75,R:"upper:near",L:"lower:near"}, {t:0.9,R:"middle:high",L:"lower:near"} ],
+    [ {t:0,R:"upper:mid",L:"lower:mid"}, {t:0.23,R:null,L:"lower:near"}, {t:0.43,R:"upper:far",L:"lower:near"}, {t:0.57,R:"upper:mid",L:null}, {t:0.77,R:"upper:near",L:"lower:far"}, {t:0.92,R:"upper:mid",L:"lower:mid"} ],
+    [ {t:0,R:"lower:near",L:null}, {t:0.22,R:"lower:mid",L:null}, {t:0.38,R:null,L:"upper:near"}, {t:0.57,R:"upper:far",L:null}, {t:0.73,R:null,L:"lower:mid"}, {t:0.88,R:"upper:near",L:null} ],
+    [ {t:0,R:"middle:mid",L:null}, {t:0.19,R:"upper:near",L:null}, {t:0.37,R:null,L:"lower:near"}, {t:0.57,R:"lower:mid",L:null}, {t:0.74,R:null,L:"upper:near"}, {t:0.9,R:"middle:mid",L:null} ]
   ],
   v: [
-    [{t:0,R:"middle:low",L:"middle:high"},{t:.25,R:null,L:"middle:low"},{t:.52,R:"middle:high",L:null},{t:.79,R:"middle:high",L:"middle:low"}],
-    [{t:0,R:"upper:far",L:"lower:far"},{t:.25,R:null,L:"lower:far"},{t:.52,R:"upper:far",L:null},{t:.79,R:"upper:mid",L:"lower:mid"}],
-    [{t:0,R:"middle:low",L:null},{t:.25,R:null,L:"lower:near"},{t:.52,R:"middle:low",L:null},{t:.79,R:"upper:near",L:null}],
-    [{t:0,R:"middle:mid",L:null},{t:.52,R:null,L:"middle:mid"},{t:.79,R:"middle:mid",L:null}],
+    [ {t:0,R:"middle:mid",L:"middle:low"}, {t:0.22,R:"upper:near",L:"middle:low"}, {t:0.39,R:null,L:"upper:near"}, {t:0.57,R:"upper:mid",L:null}, {t:0.75,R:"upper:near",L:"lower:near"}, {t:0.9,R:"middle:high",L:"lower:near"} ],
+    [ {t:0,R:"upper:mid",L:"lower:mid"}, {t:0.23,R:null,L:"lower:near"}, {t:0.43,R:"upper:far",L:"lower:near"}, {t:0.57,R:"upper:mid",L:null}, {t:0.77,R:"upper:near",L:"lower:far"}, {t:0.92,R:"upper:mid",L:"lower:mid"} ],
+    [ {t:0,R:"lower:near",L:null}, {t:0.22,R:"lower:mid",L:null}, {t:0.38,R:null,L:"upper:near"}, {t:0.57,R:"upper:far",L:null}, {t:0.73,R:null,L:"lower:mid"}, {t:0.88,R:"upper:near",L:null} ],
+    [ {t:0,R:"middle:mid",L:null}, {t:0.19,R:"upper:near",L:null}, {t:0.37,R:null,L:"lower:near"}, {t:0.57,R:"lower:mid",L:null}, {t:0.74,R:null,L:"upper:near"}, {t:0.9,R:"middle:mid",L:null} ]
+  ],
+  switch: [
+    [ {t:0,R:"middle:mid",L:"middle:low"}, {t:0.22,R:"upper:near",L:"middle:low"}, {t:0.39,R:null,L:"upper:near"}, {t:0.57,R:"upper:mid",L:null}, {t:0.75,R:"upper:near",L:"lower:near"}, {t:0.9,R:"middle:high",L:"lower:near"} ],
+    [ {t:0,R:"upper:mid",L:"lower:mid"}, {t:0.23,R:null,L:"lower:near"}, {t:0.43,R:"upper:far",L:"lower:near"}, {t:0.57,R:"upper:mid",L:null}, {t:0.77,R:"upper:near",L:"lower:far"}, {t:0.92,R:"upper:mid",L:"lower:mid"} ],
+    [ {t:0,R:"lower:near",L:null}, {t:0.22,R:"lower:mid",L:null}, {t:0.38,R:null,L:"upper:near"}, {t:0.57,R:"upper:far",L:null}, {t:0.73,R:null,L:"lower:mid"}, {t:0.88,R:"upper:near",L:null} ],
+    [ {t:0,R:"middle:mid",L:null}, {t:0.19,R:"upper:near",L:null}, {t:0.37,R:null,L:"lower:near"}, {t:0.57,R:"lower:mid",L:null}, {t:0.74,R:null,L:"upper:near"}, {t:0.9,R:"middle:mid",L:null} ]
+  ],
+  split_r: [
+    [ {t:0,R:"middle:mid",L:"middle:low"}, {t:0.22,R:"upper:near",L:"middle:low"}, {t:0.39,R:null,L:"upper:near"}, {t:0.57,R:"upper:mid",L:null}, {t:0.75,R:"upper:near",L:"lower:near"}, {t:0.9,R:"middle:high",L:"lower:near"} ],
+    [ {t:0,R:"upper:far",L:"lower:near"}, {t:0.2,R:null,L:"lower:mid"}, {t:0.46,R:"upper:mid",L:"lower:mid"}, {t:0.69,R:"upper:far",L:null}, {t:0.85,R:"upper:far",L:"lower:near"} ],
+    [ {t:0,R:"lower:near",L:null}, {t:0.22,R:"lower:mid",L:null}, {t:0.38,R:null,L:"upper:near"}, {t:0.57,R:"upper:far",L:null}, {t:0.73,R:null,L:"lower:mid"}, {t:0.88,R:"upper:near",L:null} ],
+    [ {t:0,R:"middle:mid",L:null}, {t:0.19,R:"upper:near",L:null}, {t:0.37,R:null,L:"lower:near"}, {t:0.57,R:"lower:mid",L:null}, {t:0.74,R:null,L:"upper:near"}, {t:0.9,R:"middle:mid",L:null} ]
+  ],
+  split_l: [
+    [ {t:0,R:"middle:mid",L:"middle:low"}, {t:0.22,R:"upper:near",L:"middle:low"}, {t:0.39,R:null,L:"upper:near"}, {t:0.57,R:"upper:mid",L:null}, {t:0.75,R:"upper:near",L:"lower:near"}, {t:0.9,R:"middle:high",L:"lower:near"} ],
+    [ {t:0,R:"upper:near",L:"lower:far"}, {t:0.18,R:"upper:mid",L:"lower:far"}, {t:0.42,R:"upper:mid",L:null}, {t:0.63,R:"upper:far",L:"lower:mid"}, {t:0.83,R:"upper:near",L:"lower:far"} ],
+    [ {t:0,R:"lower:near",L:null}, {t:0.22,R:"lower:mid",L:null}, {t:0.38,R:null,L:"upper:near"}, {t:0.57,R:"upper:far",L:null}, {t:0.73,R:null,L:"lower:mid"}, {t:0.88,R:"upper:near",L:null} ],
+    [ {t:0,R:"middle:mid",L:null}, {t:0.19,R:"upper:near",L:null}, {t:0.37,R:null,L:"lower:near"}, {t:0.57,R:"lower:mid",L:null}, {t:0.74,R:null,L:"upper:near"}, {t:0.9,R:"middle:mid",L:null} ]
   ],
   show_tristaff: [
-    [{t:0,R:"middle:mid",L:"middle:low"},{t:.35,R:null,L:"middle:high"},{t:.72,R:"middle:mid",L:"middle:low"}],
-    [{t:0,R:"upper:far",L:"lower:far"},{t:.35,R:null,L:"lower:mid"},{t:.72,R:"upper:mid",L:"lower:far"}],
-    [{t:0,R:"middle:low",L:null},{t:.35,R:null,L:"lower:near"},{t:.72,R:"middle:mid",L:null}],
-    [{t:0,R:"middle:mid",L:null},{t:.35,R:null,L:"middle:mid"},{t:.72,R:"middle:mid",L:null}],
+    [ {t:0,R:"middle:mid",L:"middle:low"}, {t:0.22,R:"upper:near",L:"middle:low"}, {t:0.39,R:null,L:"upper:near"}, {t:0.57,R:"upper:mid",L:null}, {t:0.75,R:"upper:near",L:"lower:near"}, {t:0.9,R:"middle:high",L:"lower:near"} ],
+    [ {t:0,R:"upper:mid",L:"lower:mid"}, {t:0.23,R:null,L:"lower:near"}, {t:0.43,R:"upper:far",L:"lower:near"}, {t:0.57,R:"upper:mid",L:null}, {t:0.77,R:"upper:near",L:"lower:far"}, {t:0.92,R:"upper:mid",L:"lower:mid"} ],
+    [ {t:0,R:"lower:near",L:null}, {t:0.22,R:"lower:mid",L:null}, {t:0.38,R:null,L:"upper:near"}, {t:0.57,R:"upper:far",L:null}, {t:0.73,R:null,L:"lower:mid"}, {t:0.88,R:"upper:near",L:null} ],
+    [ {t:0,R:"middle:mid",L:null}, {t:0.19,R:"upper:near",L:null}, {t:0.37,R:null,L:"lower:near"}, {t:0.57,R:"lower:mid",L:null}, {t:0.74,R:null,L:"upper:near"}, {t:0.9,R:"middle:mid",L:null} ]
   ],
 };
-// ZEPHYR_DRAGON_VARIANTS_V19: full move+mode grip mapping. Reuses existing
-// sockets/poses, with custom releases for each new charged variant.
-// Tune these independently without changing combat or physics.
-const DRAGON_VARIANT_GRIPS: Record<string,DragonGripEvent[]> = {
-  "0:heavy": GRIP_TIMELINE.heavy[0],
-  "1:heavy": [{t:0,R:"upper:far",L:"lower:far"},{t:.36,R:"upper:mid",L:"lower:far"},{t:.68,R:"upper:far",L:"lower:mid"}],
-  "2:heavy": [{t:0,R:"middle:low",L:null},{t:.52,R:null,L:null},{t:.75,R:"upper:near",L:null}],
-  "3:heavy": [{t:0,R:"middle:mid",L:null},{t:.60,R:"middle:high",L:null}],
-  "0:z": GRIP_TIMELINE.z[0], "1:z": GRIP_TIMELINE.z[1],
-  "2:z": GRIP_TIMELINE.z[2], "3:z": GRIP_TIMELINE.z[3],
-  "0:x": GRIP_TIMELINE.x[0], "1:x": GRIP_TIMELINE.x[1],
-  "2:x": GRIP_TIMELINE.x[2], "3:x": GRIP_TIMELINE.x[3],
-  "0:c": GRIP_TIMELINE.c[0], "1:c": GRIP_TIMELINE.c[1],
-  "2:c": GRIP_TIMELINE.c[2], "3:c": GRIP_TIMELINE.c[3],
-};
+// Do not restore the obsolete DRAGON_VARIANT_GRIPS map; V21's source of truth
+// for every attack variant is GRIP_TIMELINE[move][mode].
+
 // Socket-palm alignment; thrust grips run along the forearm, normal grips cross palm.
 const DRAGON_SOCKET_PALM: Record<string, number> = {
   "middle:low": .12, "middle:mid": 0, "middle:high": -.12,
@@ -156,6 +165,24 @@ const DRAGON_SOCKET_PALM: Record<string, number> = {
   "lower:near": -.16, "lower:mid": 0, "lower:far": .10,
 };
 
+
+// ZEPHYR_BODY_GRIP_V21: set to true to diagnose holder, socket IK and catch events.
+// Logs only when a grip changes, plus one audit for every move/mode at spawn.
+const ZEPHYR_GRIP_DEBUG = false;
+const ZEPHYR_V21_MODES = ["STAFF","SPLIT","WHIP","FOLDED"] as const;
+function auditZephyrGrips() {
+  if(!ZEPHYR_GRIP_DEBUG) return;
+  const moves=["idle","l1","l2","l3","l4","l5","heavy","z","x","c","v","switch","split_r","split_l","show_tristaff"];
+  for(const move of moves)for(let mode=0;mode<4;mode++){
+    const timeline=GRIP_TIMELINE[move]?.[mode] ?? [];
+    const seq=timeline.map(e=>`${e.t.toFixed(2)} R:${e.R??"FREE"} L:${e.L??"FREE"}`).join(" | ");
+    console.info(`[ZEPHYR GRIP] ${move} / ${ZEPHYR_V21_MODES[mode]}: ${seq}`);
+    if(!timeline.some(e=>[e.R,e.L].some(x=>x!==null&&/^(upper|lower):/.test(x))))
+      console.warn(`[ZEPHYR GRIP] ${move}/${mode} only holds the middle rod!`);
+    if(move!=="x"&&!timeline.some(e=>e.R===null||e.L===null))
+      console.warn(`[ZEPHYR GRIP] ${move}/${mode}: no release/re-catch event!`);
+  }
+}
 
 const DRAGON_STAFF_ROTATIONS: Record<string,[number,number,number]> = {
       idle:[1.55,-.19,.14],block:[1.47,.11,.16],
@@ -253,6 +280,7 @@ export class FighterModel extends THREE.Group {
   // ZEPHYR_DRAGON_MODE_V18: no reparenting, smoothly weighted holder sockets.
   dragonMode = 0;
   dragonModeBlend = 1;
+  dragonStrikeHand: "r"|"l"|""="";
   private dragonLastVisualMode = 0;
   private dragonPreviousMode = 0;
   private dragonHolder: "RIGHT"|"LEFT"|"BOTH"|"FREE" = "RIGHT";
@@ -261,6 +289,12 @@ export class FighterModel extends THREE.Group {
   private dragonHandWorld = new THREE.Vector3();
   private dragonSocketWorld = new THREE.Vector3();
   private dragonJointVel = [0,0,0,0,0,0];
+  private dragonLastGripDebug = "";
+  private dragonPreviousGrip = "";
+  private dragonWasAudited = false;
+  private dragonBodyPrevQ = new THREE.Quaternion();
+  private dragonBodyVelocity = 0;
+  private dragonBodyInitialized = false;
   private dragonTmpV = new THREE.Vector3();
   private dragonTmpS = new THREE.Vector3();
   private dragonTmpQ = new THREE.Quaternion();
@@ -1012,6 +1046,7 @@ export class FighterModel extends THREE.Group {
     const root = pivot(this); // ZEPHYR_DRAGON_MODE_V18 independent from hand bones
     root.name = "zephyrMiddleGrip";
     this.dragonRoot = root;
+    if (ZEPHYR_GRIP_DEBUG && !this.dragonWasAudited) { auditZephyrGrips(); this.dragonWasAudited=true; }
     const lacquer = this.tn("#251b20");
     const red = this.tn("#ad2032");
     const black = this.tn("#111016");
@@ -1115,11 +1150,14 @@ export class FighterModel extends THREE.Group {
     }
     this.dragonModeBlend=Math.min(1,this.dragonModeBlend+dt/.25);
     const modeBlend=this.dragonModeBlend*this.dragonModeBlend*(3-2*this.dragonModeBlend);
-    const p=show?((phase%2.25)/2.25):THREE.MathUtils.clamp(this.dragonProgress,0,1);
-    const key=show?"show_tristaff":/^zd[1-5]_/.test(pose)?"l"+pose[2]:
+    const inSwitch=!show && this.dragonModeBlend<1;
+    let p=show?((phase%2.25)/2.25):inSwitch?this.dragonModeBlend:
+      THREE.MathUtils.clamp(this.dragonProgress,0,1);
+    const key=show?"show_tristaff":inSwitch?"switch":mode===1&&this.dragonStrikeHand?"split_"+this.dragonStrikeHand:/^zd[1-5]_/.test(pose)?"l"+pose[2]:
       /^zdh/.test(pose)?"heavy":/^zdz/.test(pose)?"z":/^zdx/.test(pose)?"x":
       /^zdc/.test(pose)?"c":/^zdv/.test(pose)?"v":"idle";
-    const timeline=DRAGON_VARIANT_GRIPS[`${mode}:${key}`] ?? GRIP_TIMELINE[key]?.[mode] ?? GRIP_TIMELINE.idle[mode];
+    if(key==="idle"&&!show&&!inSwitch) p=((this.t*.45)%1+1)%1;
+    const timeline=GRIP_TIMELINE[key]?.[mode] ?? GRIP_TIMELINE.idle[mode];
     let current=timeline[0];
     for(const event of timeline) if(p>=event.t) current=event;
     // Predict the next catch up to ~0.2 progress units before the actual grip change.
@@ -1143,6 +1181,16 @@ export class FighterModel extends THREE.Group {
     const holdR=right!==null,holdL=left!==null;
     this.dragonHolder=holdR&&holdL?"BOTH":holdR?"RIGHT":holdL?"LEFT":"FREE";
     this.dragonHands.right=right;this.dragonHands.left=left;
+    // Log changing sockets, not every frame; no extra state is networked.
+    if (ZEPHYR_GRIP_DEBUG) {
+      const logKey=`${mode}:${key}:${right}:${left}:${this.dragonHolder}`;
+      if (logKey!==this.dragonLastGripDebug){
+        console.info(`[ZEPHYR ${ZEPHYR_V21_MODES[mode]} ${key}] `+
+          `R=${right??"FREE"} (${this.dragonGripW.right.toFixed(2)}) `+
+          `L=${left??"FREE"} (${this.dragonGripW.left.toFixed(2)}) holder=${this.dragonHolder}`);
+        this.dragonLastGripDebug=logKey;
+      }
+    }
     this.dragonAnchor=null; // independent hierarchy; neither hand is its permanent parent.
 
     // Strike poses stay shared; rod/chain configuration and socket timelines vary by mode.
@@ -1159,6 +1207,13 @@ export class FighterModel extends THREE.Group {
     this.dragonSpinQ.setFromAxisAngle(this.dragonAxisY,
       (DRAGON_SOCKET_PALM[palm]??0)+Math.sin(spin*.5)*.22+flourish);
     this.dragonTargetQ.multiply(this.dragonSpinQ);
+    // Release gives both chain hinges an angular impulse so the free rods swing through.
+    const nextGrip=`${right??""}/${left??""}`;
+    if(nextGrip!==this.dragonPreviousGrip){
+      this.dragonJointVel[0]=THREE.MathUtils.clamp(this.dragonJointVel[0]+(right?.startsWith("upper") ? .35 : -.25),-3.5,3.5);
+      this.dragonJointVel[3]=THREE.MathUtils.clamp(this.dragonJointVel[3]+(left?.startsWith("lower") ? -.35 : .25),-3.5,3.5);
+      this.dragonPreviousGrip=nextGrip;
+    }
     root.quaternion.slerp(this.dragonTargetQ,1-Math.exp(-18*Math.min(dt,.05)));
 
     // Mode shape: STAFF taut, SPLIT two outward rods, WHIP trailing, FOLDED Z-fold.
@@ -1251,6 +1306,26 @@ export class FighterModel extends THREE.Group {
       this.dragonWasTossed=false;
     }
   }
+  // ZEPHYR_BODY_GRIP_V21: after VrmRig.update() has positioned BOTH real hands,
+  // correct the detached weapon against the final hand pose instead of the previous-frame rig.
+  // Blend rather than snap, and do not alter any hitbox or attack parameter.
+  private finishDragonGripAfterIK(dt:number){
+    const root=this.dragonRoot;
+    if(!root||!this.vrmRig)return;
+    const side=this.dragonHands.right?"right":this.dragonHands.left?"left":null;
+    if(!side)return; // FREE toss
+    const socketName=side==="right"?this.dragonHands.right:this.dragonHands.left;
+    const socket=socketName?this.dragonSockets[socketName]:null;
+    const hand=this.vrmRig.vrm.humanoid.getNormalizedBoneNode(side==="right"?"rightHand":"leftHand");
+    if(!socket||!hand)return;
+    this.updateMatrixWorld(true);
+    this.worldToLocal(hand.getWorldPosition(this.dragonHandWorld));
+    this.worldToLocal(socket.getWorldPosition(this.dragonSocketWorld));
+    const correction=1-Math.exp(-Math.min(.05,dt)/.095);
+    root.position.addScaledVector(this.dragonHandWorld.sub(this.dragonSocketWorld),correction);
+    root.updateMatrixWorld(true);
+  }
+
   /** ZAREK_STORM_V1: double-ended conductive glaive; meshes follow the VRM's hands. */
   private buildGlaive() {
     if (this.look.element === "metal") { this.buildZenithSpear(); return; }
@@ -2738,7 +2813,26 @@ export class FighterModel extends THREE.Group {
           this.reachZenithGrip("right",this.dragonSockets[this.dragonHands.right]);
       }
     } else if (this.gripL && !noScytheGrip) this.reachGrip();
+    if (this.kit === "tristaff" && this.vrmRig) {
+      // The normalized skeleton's body layer is applied after all regular poses and foot leveling.
+      this.vrmRig.tristaffBodyPose=this.dragonModeBlend<1 ? "zdz_s" : this.dragonPose;
+      this.vrmRig.tristaffBodyProgress=this.dragonPose==="show_tristaff" ? ((this.presentationT%2.25)/2.25) :
+        this.dragonModeBlend<1 ? this.dragonModeBlend : this.dragonProgress;
+      this.vrmRig.tristaffBodyMode=this.dragonMode;
+      this.vrmRig.tristaffStrikeHand=this.dragonStrikeHand;
+      if (this.dragonRoot) {
+        this.dragonRoot.getWorldQuaternion(this.dragonTmpQ);
+        if (this.dragonBodyInitialized) {
+          const a=this.dragonBodyPrevQ.angleTo(this.dragonTmpQ);
+          this.dragonBodyVelocity=THREE.MathUtils.damp(this.dragonBodyVelocity,
+            Math.min(6,a/Math.max(.009,dt)),12,dt);
+        } else this.dragonBodyInitialized=true;
+        this.dragonBodyPrevQ.copy(this.dragonTmpQ);
+      }
+      this.vrmRig.tristaffAngularVelocity=this.dragonBodyVelocity;
+    }
     this.vrmRig?.update(dt, { t: this.t, walk: this.walk, phase: this.walkPhase, crouch: this.hipsY, combat: this.combat, hurt: this.hurt, draw: this.draw, knee: this.knee, pose: actionPose });
+    if (this.kit === "tristaff") this.finishDragonGripAfterIK(dt);
     // ROXY V6: correct both procedural and VRM grimoire placement, every frame.
     if (this.roxyFloatingBook) {
       const hand = this.vrmRig?.vrm.humanoid.getNormalizedBoneNode("rightHand") ?? this.hand_r;
