@@ -403,26 +403,10 @@ input:focus { border-color: #e6c26e; }
 .fr-passive-content { display: flex; flex: 1; min-width: 0; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; }
 .fr-passive-content strong { font-size: 10px; color: #e8e5cf; letter-spacing: .015em; }
 .fr-passive-content b { font-size: 10px; color: #fff; font-variant-numeric: tabular-nums; }
-.cpu-spectator-column { top: 142px; width: clamp(224px, 25vw, 340px); max-height: calc(100vh - 230px); overflow-y: auto; pointer-events: auto; background: #050609; border-color: #646980; color: #fff; box-shadow: 0 6px 28px #000c; }
-.cpu-spectator-column.left { border-left-color: #8bbfff; }
-.cpu-spectator-column.right { border-right-color: #ffaaa5; }
-.fr-cpu-skill-detail,.fr-cpu-passive-detail { display:flex; align-items:flex-start; gap: 7px; padding: 7px 4px; border-bottom: 1px solid #31313b; text-shadow: none; }
-.fr-cpu-skill-content,.fr-cpu-passive-content { min-width: 0; flex: 1; color: #fff; }
-.fr-cpu-skill-title { display:flex; justify-content:space-between; gap:5px; align-items:flex-start; }
-.fr-cpu-skill-title strong,.fr-cpu-passive-content strong { color:#f2f5ff; font-weight:800; font-size: 11px; line-height:1.3; }
-.fr-cpu-skill-title b { white-space:nowrap; font-size:10px; }
-.fr-cpu-skill-title .ready { color: #aaffb5; }
-.fr-cpu-skill-title .waiting { color: #ffdd93; }
-.fr-cpu-skill-content p,.fr-cpu-passive-content p { margin:3px 0 0; font-size:10px; line-height:1.35; color:#d5d8e3; overflow-wrap:break-word; }
-.fr-cpu-passive-content b { display:block; font-size:11px; color:#fff4ad; line-height:1.25; padding-top:2px; }
+/* NYTHERA_BALANCE_CPU_COMPACT_V12: compact spectator sizing restored; dark non-spectator passive counters retained. */
 @media (max-width: 650px) {
  .fr-passive-readouts { max-height: 115px; }
  .fr-passive-row { padding: 2px 4px; gap:3px; font-size: 9px; }
  .fr-passive-content strong,.fr-passive-content b { font-size: 9px; }
- .cpu-spectator-column { top: 142px; width: min(47vw, 245px); padding: 6px; max-height:calc(100vh - 200px); }
- .cpu-spectator-column.left { left: 2vw; }
- .cpu-spectator-column.right { right: 2vw; }
- .fr-cpu-skill-title strong,.fr-cpu-passive-content strong,.fr-cpu-passive-content b { font-size:9px; }
- .fr-cpu-skill-title b,.fr-cpu-skill-content p,.fr-cpu-passive-content p { font-size:8px; }
 }
 

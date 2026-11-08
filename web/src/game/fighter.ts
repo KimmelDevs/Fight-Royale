@@ -263,9 +263,13 @@ export class Fighter implements Entity {
   // NYTHERA_ELEGANT_REAPER_V4: passive readout on both clients, tied to the afflicted fighter.
   orbitDisplayStacks = 0;
   orbitDisplayT = 0;
-  // NYTHERA_AERIAL_DREADFALL_V9: +0.10x each real Dreadfall hit, capped at 2.40x for this round.
+  // NYTHERA_AERIAL_DREADFALL_V9: V12 balance: +0.05x each real Dreadfall hit, capped at 1.70x for this round.
   nytheraDreadfallHits = 0;
-  nytheraAttackSpeed(): number { return Math.min(2.4, 1 + Math.min(14, this.nytheraDreadfallHits) * 0.10); }
+  // NYTHERA_ZENITH_LOWER_CAPS_V14: flat -0.20x speed at ALL stacks; maximum 1.50x.
+  nytheraAttackSpeed(): number {
+    const stacks = Math.max(0, Math.min(14, this.nytheraDreadfallHits));
+    return Math.min(1.50, 0.80 + stacks * 0.05);
+  }
   onGravityShift: (f: Fighter) => void = () => {};
   onSwing: (f: Fighter) => void = () => {};
   // ZENITH_IRON_SOVEREIGN_V1_20261108 — pure game-side spear state.
@@ -279,9 +283,10 @@ export class Fighter implements Entity {
   zenithMagneticChargeT = 0;
   zenithTempoStacks = 0; // ZENITH_TEMPO_01X_5S_V7: +0.01x each, up to 14 stacks; 5s timeout
   bleedDisplayStacks = 0; // replicated from victims' status for both HUDs
+  // NYTHERA_ZENITH_LOWER_CAPS_V14: permanent -0.30x vs the old base AND max at every stack.
   zenithAttackSpeed() {
     const bonus = Math.min(14, this.zenithTempoStacks) * 0.01;
-    return this.zenithSpearOut ? Math.min(3.4, 2 + bonus) : Math.min(2.4, 1 + bonus);
+    return this.zenithSpearOut ? Math.min(1.84, 1.70 + bonus) : Math.min(0.84, 0.70 + bonus);
   }
   zenithDominionRepel = false;
   onZenithRecall: (f: Fighter) => void = () => {};
@@ -1782,7 +1787,7 @@ export class Fighter implements Entity {
         active: this.atk.active / speed, recover: this.atk.recover / speed };
     }
     // NYTHERA_AERIAL_DREADFALL_V9: speed earned ONLY through true damaging Dreadfall hits.
-    // Stored for the rest of the round, in either stance; caps at 2.40x.
+    // Stored for the rest of the round, in either stance; caps at 1.70x.
     if (this.kit === "scythe") {
       const speed = this.nytheraAttackSpeed();
       this.atk = { ...this.atk,
@@ -1791,7 +1796,7 @@ export class Fighter implements Entity {
         recover: this.atk.recover / speed };
     }
     // ZENITH_TEMPO_01X_5S_V7: real hit +0.01x up to 14 stacks, resetting after 5s.
-    // Actual current ceiling: 1.14x spear / 2.14x twin blades (14-stack cap).
+    // NYTHERA_ZENITH_LOWER_CAPS_V14: 0.70-0.84x spear / 1.70-1.84x twin blades at 0-14 stacks.
     // Reduce REAL wind-up, active, recovery, not just pose blending.
     if (this.kit === "glaive" && this.look.element === "metal") {
       const speed = this.zenithAttackSpeed();

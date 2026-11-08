@@ -69,7 +69,7 @@ function ZenithTempoMeter({ stacks, seconds, blades, right = false }: {
   stacks: number; seconds: number; blades: boolean; right?: boolean;
 }) {
   const count = seconds > 0 ? Math.max(0, Math.min(14, Math.floor(stacks))) : 0;
-  const speed = Math.min(blades ? 3.4 : 2.4, (blades ? 2 : 1) + count * 0.01);
+  const speed = Math.min(blades ? 1.84 : 0.84, (blades ? 1.70 : 0.70) + count * 0.01); // NYTHERA_ZENITH_LOWER_CAPS_V14
   const left = Math.max(0, Math.min(5, seconds));
   return <div title="Zenith Tempo: each damaging hit gives +0.01x speed, up to 14 stacks; resets 5 seconds after the last successful hit. Blocks, parries and clashes deny stacks."
     aria-label={`Zenith Tempo: ${count} of 14 stacks, ${speed.toFixed(2)}x attack speed, ${left.toFixed(1)} seconds remaining`}
@@ -111,12 +111,12 @@ function OrbitMeter({ stacks, seconds, right = false }: { stacks: number; second
   </div>;
 }
 
-// Dreadfall increases Nythera's real attack speed by 0.1x per damaging hit.
+// Dreadfall starts at 0.80x and scales to 1.50x at 14 damaging hits.
 // This meter is shown to both fighters; it lasts until the round ends.
 function DreadfallTempoMeter({ hits, right = false }: { hits: number; right?: boolean }) {
   const stacks = Math.max(0, Math.min(14, Math.floor(hits)));
-  const speed = Math.min(2.4, 1 + stacks * 0.10);
-  return <div title="Dreadfall Tempo: every real damaging hit in Dreadfall earns +0.10x attack speed. Caps at 2.40x, persists through stance switches, resets next round. Block/parry/clash deny stacks."
+  const speed = Math.min(1.50, 0.80 + stacks * 0.05); // NYTHERA_ZENITH_LOWER_CAPS_V14
+  return <div title="Dreadfall Tempo: starts at 0.80x attack speed; 14 real damaging Dreadfall hits raise it to 1.50x. Persists through stance switches, resets next round. Block/parry/clash deny stacks."
     aria-label={`Nythera Dreadfall Tempo: ${stacks} of 14 stacks, ${speed.toFixed(2)}x attack speed, until end of round`}
     style={{ marginTop: 5, padding: "4px 7px", borderRadius: 7,
       border: "1px solid rgba(191,145,255,.54)", background: "rgba(31,15,53,.85)",
@@ -154,39 +154,36 @@ function PassiveHUD({ list, right = false }: { list?: PassiveReadout[]; right?: 
   </div>;
 }
 
-/** CPU spectator: full skill names, explanations, live cooldowns and passive descriptions. */
+// NYTHERA_BALANCE_CPU_COMPACT_V12 -- restored pre-V10 compact CPU spectator HUD.
+// Keep real live skill timers and passive counters, without descriptions.
 function CpuSpectatorSkills({ data, side }: {
   data: NonNullable<NonNullable<Hud["spectatorSkills"]>["left"]>;
   side: "left" | "right";
 }) {
   return (
     <section className={`cpu-spectator-column ${side}`} aria-label={`${side === "left" ? "CPU 1" : "CPU 2"} cooldowns and passives`}>
-      <div className="cpu-spectator-heading">SKILLS · LIVE COOLDOWNS</div>
+      <div className="cpu-spectator-heading">SKILL COOLDOWNS</div>
       <div className="cpu-spectator-slots">
         {data.slots.map((slot) => (
-          <div className="fr-cpu-skill-detail" key={slot.key} title={slot.desc}>
-            <Icon src={skillIcon(data.kit, data.element, slot.icon)} alt={`${slot.key.toUpperCase()} icon`} size={29} />
-            <div className="fr-cpu-skill-content">
-              <div className="fr-cpu-skill-title"><strong>{slot.key.toUpperCase()} · {slot.name}</strong>
-                <b className={slot.cd <= 0.05 ? "ready" : "waiting"}>{slot.cd <= 0.05 ? "READY" : `${slot.cd.toFixed(1)}s`}</b>
-              </div>
-              <p>{slot.desc}</p>
-            </div>
+          <div className="cpu-spectator-skill" key={slot.key} title={slot.name}>
+            <Icon src={skillIcon(data.kit, data.element, slot.icon)} alt={`${slot.key.toUpperCase()} icon`} size={25} />
+            <b>{slot.key.toUpperCase()}</b>
+            <strong className={slot.cd <= 0.05 ? "ready" : "waiting"}>
+              {slot.cd <= 0.05 ? "0.0s" : `${slot.cd.toFixed(1)}s`}
+            </strong>
           </div>
         ))}
       </div>
-      <div className="cpu-spectator-heading passive">PASSIVES · LIVE STACKS</div>
+      <div className="cpu-spectator-heading passive">PASSIVE</div>
       {data.passives.length ? data.passives.map((p, idx) => (
-        <div className="fr-cpu-passive-detail" key={`${p.label}-${idx}`}>
-          {p.icon && <Icon src={p.icon} alt={`${p.label} passive`} size={29} />}
-          <div className="fr-cpu-passive-content"><strong>{p.label}</strong><b>{p.value}</b>
-            <p>{p.desc}</p>
-          </div>
+        <div className="cpu-spectator-passive" key={`${p.label}-${idx}`} title={p.desc || p.label}>
+          <span>{p.label}</span><b>{p.value}</b>
         </div>
       )) : <div className="cpu-spectator-empty">No active stacks</div>}
     </section>
   );
 }
+
 
 export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
   cfg: GameConfig; net: Net | null; onExit: () => void; matchId?: string; bet?: number; team?: number;

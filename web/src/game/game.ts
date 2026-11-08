@@ -4272,8 +4272,15 @@ export class Game implements MobHost {
     const marks = mark && mark.expires > this.time ? mark.stacks : 0;
     const heavySentence = !!gravityOwner && gravityOwner.gravityMode === "heavy" &&
       a.dmg > 0 && a.style !== "gravity_well" && a.style !== "gravity_requiem";
-    const sentenceMult = heavySentence ? 1 + marks * 0.08 : 1;
-    const result = d.receiveHit(attacker, zenithAttack, (riposte ? power * 1.15 : power) * sentenceMult);
+    // NYTHERA_BALANCE_CPU_COMPACT_V12: Dreadfall consumes marks for +5% each (max +25%).
+    const sentenceMult = heavySentence ? 1 + marks * 0.05 : 1;
+    // Match all Nythera attacks, including scheduled Z/X/V beats.
+    // The original attack data and visual contact events remain untouched.
+    const nytheraBasic = /^l[1-6]$/.test(a.id) || /^air_l[1-4]$/.test(a.id) || a.id === "heavy";
+    const balancedAttack = gravityOwner && a.dmg > 0
+      ? { ...zenithAttack, dmg: zenithAttack.dmg * (nytheraBasic ? 0.90 : 0.80) }
+      : zenithAttack;
+    const result = d.receiveHit(attacker, balancedAttack, (riposte ? power * 1.15 : power) * sentenceMult);
     // PASSIVES_V10: only actual resolved outcomes count; this runs on the host.
     if (d instanceof Fighter) d.passiveOnDefense(result);
     if (attacker instanceof Fighter) {
@@ -5298,7 +5305,7 @@ export class Game implements MobHost {
       if (displayId === "zarek") passives.push({ label: "CLASH INFO", value: `${f.clashMomentum}`, desc: "Real weapon clashes build Momentum and improve basic-attack speed." });
       if (displayId === "roxy") passives.push({ label: "FROSTBITE INFO", value: `${f.frostShardStacks}/4`, desc: "Real frost shard hits build Frostbite toward the next freeze attempt." });
       if (displayId === "zenith") passives.push({ label: "BLADE TEMPO INFO", value: `${f.zenithTempoStacks}/14 · ${f.zenithMagneticChargeT.toFixed(1)}s`, desc: "Each successful hit grants +0.01× attack speed for 5 seconds; at most 14 stacks. Twin-blade stance has its own base speed." });
-      if (displayId === "nythera") passives.push({ label: "REAPER INFO", value: `${f.nytheraDreadfallHits}/14 · ${rival?.orbitDisplayStacks ?? 0}/5 Orbit`, desc: "Orbit Marks last 25s; damaging Dreadfall strikes gain +0.10× attack speed, max 2.40× for the round. Can chain four air slices." });
+      if (displayId === "nythera") passives.push({ label: "REAPER INFO", value: `${f.nytheraDreadfallHits}/14 · ${rival?.orbitDisplayStacks ?? 0}/5 Orbit`, desc: "Orbit Marks last 25s; Dreadfall starts at 0.80× and gains +0.05× per damaging hit, max 1.50× for this round. Four air slices remain. Base scythe attacks: −10% damage; skills: −20%." });
       return { slots, passives: passives.map(p => ({ ...p,
         icon: p.icon ?? `/icons/passives/${displayId}.webp`,
         desc: p.desc || `Current ${p.label.toLowerCase()} status for ${f.look.name}.` })),
@@ -5362,3 +5369,7 @@ export class Game implements MobHost {
     };
   }
 }
+
+// NYTHERA_ZENITH_START_SPEED_V13: passive descriptions updated for V13 starting speeds.
+
+// NYTHERA_ZENITH_LOWER_CAPS_V14: speed-cap description synced with combat.
