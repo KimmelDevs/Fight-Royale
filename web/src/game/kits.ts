@@ -77,7 +77,8 @@ export const STATS: Record<string, { hp: number; guard: number; move: number; wa
   sickle: { hp: 1950, guard: 62, move: 4.5, walk: 3.55, parry: 0.20, jump: 8.2 },
   glaive: { hp: 2250, guard: 88, move: 4.0, walk: 3.15, parry: 0.19, jump: 7.7 },
   // ZEPHYR_DRAGON_DANCER_V1
-  tristaff: { hp: 2225, guard: 82, move: 3.90, walk: 3.05, parry: 0.205, jump: 7.9 },
+  // ZEPHYR_FULL_BALANCE_RHYTHM_V25: 2225 * 1.20 = 2670 HP, unchanged guard.
+  tristaff: { hp: 2670, guard: 82, move: 3.90, walk: 3.05, parry: 0.205, jump: 7.9 },
   bomb: { hp: 2100, guard: 70, move: 3.5, walk: 2.8, parry: 0.16, jump: 7.0 },
   chainblade: { hp: 2450, guard: 100, move: 3.55, walk: 2.75, parry: 0.16, jump: 7.0 },
   hammer: { hp: 2650, guard: 110, move: 3.05, walk: 2.45, parry: 0.15, jump: 7.0 },

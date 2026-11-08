@@ -35,7 +35,7 @@
 // keeps its preferred range (ranged kits kite), and picks attacks and skills when idle.
 // NESA_ZENITH_AGGRESSIVE_AI_V8_20261108: V1/V2 low-HP logic removed, Nesa/Zenith tactics updated.
 import * as THREE from "three";
-import { Fighter, S, HOLD_T, type Brain } from "./fighter";
+import { Fighter, S, HOLD_T, DRAGON_MODE_TUNING, type Brain } from "./fighter";
 
 export const LEVELS = ["Easy", "Normal", "Hard", "Master"];
 const PRESETS = [
@@ -2123,7 +2123,8 @@ export class AiBrain implements Brain {
 
     const shieldReady = f.state === S.BLOCK && f.stateT >= f.shieldRaise;
     const shieldCanRaise = [S.IDLE, S.BLOCK].includes(f.state) &&
-      eta >= (f.nextShieldFast ? 0.01 : 0.10) + 0.035;
+      eta >= (f.kit==="tristaff" && f.dragonMode===0 ? DRAGON_MODE_TUNING[0].staffShieldRaise :
+          (f.nextShieldFast ? 0.01 : 0.10)) + 0.035;
     const guardNeed = Math.max(12, atk.guard * (atk.heavy ? 1.25 : 1.05));
     const canAffordBlock = f.guard > guardNeed && (shieldReady || shieldCanRaise);
     const myLight = f.attacks.l1;
@@ -2271,7 +2272,8 @@ export class AiBrain implements Brain {
     const remain = a.wind + a.active - o.stateT;
     if (remain < -0.15 && !o.isContinuousComboActive()) return false;
     const shieldReady = f.state === S.BLOCK && f.stateT >= f.shieldRaise;
-    const raise = f.nextShieldFast ? 0.01 : 0.10;
+    const raise = f.kit==="tristaff" && f.dragonMode===0 ?
+      DRAGON_MODE_TUNING[0].staffShieldRaise : (f.nextShieldFast ? 0.01 : 0.10);
     if (!shieldReady && eta + (o.isContinuousComboActive() ? 0.22 : 0.035) < raise) return false;
 
     this.zarekGuardWants = false;
@@ -2536,10 +2538,46 @@ export class AiBrain implements Brain {
     return true;
   }
 
+  // ZEPHYR_MODE_BALANCE_V25: genuine mode-aware decisions, normal inputs only.
+  private zephyrV25ModeCombat(f:Fighter,o:Fighter):boolean {
+    if(f.kit!=="tristaff" || f.isDown() || f.state!==S.IDLE || f.atkLock>0)return false;
+    const dist=f.root.position.distanceTo(o.root.position);
+    const incoming=o.state===S.ATTACK && o.atk?.type==="melee" &&
+      o.atkPhase===0 && (o.atk.wind-o.stateT)>0.025;
+    if(f.dragonMode===0){
+      // Lightning-fast STAFF guard is worthwhile against observed windups.
+      if(incoming && dist<(o.atk?.reach??2)+0.25 && f.guard>f.maxGuard*.25 &&
+         !f.intent.skill && !f.intent.attack){
+        f.intent.block=true; return true;
+      }
+      // The charged staff is for already-low guard; don't spam it into full guard.
+      if(o.state===S.BLOCK && o.guard<o.maxGuard*.42 && dist<2.42 &&
+         this.queue.length===0 && !f.intent.block){
+        this.queue.push([0,HOLD_T+0.43]); return true;
+      }
+    }
+    if(f.dragonMode===2 && !incoming && dist>1.85 && dist<3.05 &&
+       f.cooldowns.z<=0 && o.state!==S.STAGGER && !f.intent.block &&
+       !f.intent.skill && this.skillCd<=0.25){
+      // Whip's new wide arc can punish sidestepping opponents.
+      f.intent.skill="z"; this.skillCd=1.0; return true;
+    }
+    if(f.dragonMode===3 && dist<1.87 &&
+       (o.state===S.STAGGER || o.state===S.HITSTUN ||
+         (o.state===S.ATTACK && o.atkPhase===2)) &&
+       !f.intent.skill && !f.intent.block){
+      // Use actual 1.5x Folded basics to punish visible recovery.
+      f.intent.attack=true; return true;
+    }
+    return false;
+  }
+
   // ZEPHYR_DRAGON_SWITCH_SPLIT_V20: close-range Split pressure uses alternate
   // hand IDs; other characters and modes keep the original defense system.
   private zephyrSplitPlan(f:Fighter,o:Fighter):boolean {
-    if(f.kit!=="tristaff"||f.dragonMode!==1||f.state!==S.IDLE)return false;
+    if(f.kit!=="tristaff"||f.dragonMode!==1||
+       (f.state!==S.IDLE && !(f.state===S.ATTACK &&
+         (f.atkId==="split_r" || f.atkId==="split_l"))))return false;
     const gap=f.root.position.distanceTo(o.root.position);
     if(gap>2.1 || f.atkLock>0)return false;
     if(o.state===S.ATTACK&&o.atkPhase===0&&gap<1.65 && f.dashCd<=0) {
@@ -2560,11 +2598,60 @@ export class AiBrain implements Brain {
        f.state!==S.IDLE||f.intent.skill||f.intent.block||f.intent.attack)return false;
     const gap=f.root.position.distanceTo(o.root.position);
     // Opponent telegraphs a close attack: fold for the strongest counter.
-    const danger=gap<1.45 && o.state===S.ATTACK && o.atkPhase===0;
-    const desired=gap>3.0?2:gap>1.75?0:danger?3:1;
+    // Prefer fast STAFF defense against visible threats and 2x guard pressure
+    // when an opponent is close to a guard break; Folded can punish recovery.
+    const danger=gap<2.25 && o.state===S.ATTACK && o.atkPhase===0;
+    const guardBreak=gap<2.45 && o.state===S.BLOCK && o.guard<o.maxGuard*.42;
+    const punish=gap<1.80 && (o.state===S.HITSTUN || o.state===S.STAGGER ||
+      (o.state===S.ATTACK && o.atkPhase===2));
+    const desired=gap>2.85?2:danger||guardBreak?0:punish?3:gap>1.85?0:1;
     if(desired===f.dragonMode)return false;
     f.intent.skill="f"; // same input as a human, real 1.0s Fighter cooldown.
-    this.zephyrModeCooldown=1.10;
+    this.zephyrModeCooldown=1.55; // ZEPHYR_MODE_BALANCE_V25: avoid flicker
+    return true;
+  }
+
+  // GUARD_FATIGUE_V26: observable guard and fatigue only, ordinary movement.
+  // Deliberately brief: no previous anti-Zenith eternal-block regression.
+  private fatigueCircleT = 0;
+  private fatigueCircleCd = 0;
+  private fatigueSide = 1;
+  private guardFatigueTactics(f: Fighter, o: Fighter, dt: number): boolean {
+    this.fatigueCircleT = Math.max(0, this.fatigueCircleT - dt);
+    this.fatigueCircleCd = Math.max(0, this.fatigueCircleCd - dt);
+    if (f.isDown() || !f.onGround || f.state !== S.IDLE || f.stage ||
+        o.isDown() || o.state !== S.BLOCK ||
+        f.intent.attack || f.intent.skill || f.intent.block ||
+        f.intent.dash.lengthSq() > 0.01 ||
+        this.blockWait >= 0 || this.blockHold > 0 ||
+        o.guard < o.maxGuard * 0.30 ||
+        (o.state === S.ATTACK && o.atkPhase < 2)) {
+      this.fatigueCircleT = 0;
+      return false;
+    }
+    const danger = this.threats.projectiles().some(p => p.target === f &&
+      p.pos.distanceTo(f.root.position) < 3.4);
+    if (danger) { this.fatigueCircleT = 0; return false; }
+    const dist = f.root.position.distanceTo(o.root.position);
+    if (dist > 3.7 || RANGED.has(f.kit)) return false;
+    // Easy/Normal sometimes keep pressure; Hard/Master avoid donating fatigue.
+    const lowTempo = f.guardFatigueStacks >= 3;
+    const shouldBait = lowTempo || (f.guardFatigueStacks >= 1 && this.iqLevel >= 2);
+    if (this.fatigueCircleT <= 0 && this.fatigueCircleCd <= 0 &&
+        (shouldBait || (this.iqLevel >= 2 && Math.random() < dt * 1.8))) {
+      this.fatigueCircleT = lowTempo ? 0.55 : 0.36;
+      this.fatigueCircleCd = lowTempo ? 1.25 : 1.70;
+      this.fatigueSide = Math.random() < 0.5 ? -1 : 1;
+      this.queue=[]; this.hold=0;
+    }
+    if (this.fatigueCircleT <= 0) return false;
+    const toward = o.root.position.clone().sub(f.root.position).setY(0);
+    if (toward.lengthSq() < 0.02) return false;
+    toward.normalize();
+    const sidestep = new THREE.Vector3(-toward.z, 0, toward.x).multiplyScalar(this.fatigueSide);
+    // Reposition outside a raised shield; resume pressure on shield drop or timer end.
+    f.intent.move.copy(sidestep).addScaledVector(toward, dist < 1.8 ? -0.40 : 0.10).normalize();
+    f.intent.attack = false;
     return true;
   }
   think(f: Fighter, dt: number) {
@@ -2594,6 +2681,7 @@ export class AiBrain implements Brain {
     if (this.avoidKaizenSpinGuard(f, o, dt)) return;
     if (this.dodgeUnsafeContinuous(f, o, dt)) return;
     if (this.evadeUnsafeHeavy(f, o, dt)) return;
+    if (this.zephyrV25ModeCombat(f,o)) return;
     if (this.zephyrSplitPlan(f,o)) return;
     if (this.antiZenithDuel(f, o)) return;
     if (this.zephyrModePlan(f,o)) return;
@@ -2610,6 +2698,7 @@ export class AiBrain implements Brain {
     if (f.stage) { if (this.platform(f, o, dt)) return; }
     this.react(f, o);
     this.defendLongCombo(f, o);
+    if (this.guardFatigueTactics(f, o, dt)) return;
     if (this.projectileCounterfire(f, o)) return;
     if (!f.stage) {
       this.projectileSwordCommit = Math.max(0, this.projectileSwordCommit - dt);
@@ -2626,7 +2715,7 @@ export class AiBrain implements Brain {
     if (!f.stage && (f.kit === "kicks" || f.kit === "assassin" || f.kit === "scythe") &&
         !f.onGround && f.state === S.ATTACK &&
         (f.kit === "kicks" ? /^air_l[1-3]$/.test(f.atkId) :
-          f.kit === "scythe" ? /^air_l[1-4]$/.test(f.atkId) : /^air_l[1-2]$/.test(f.atkId))) {
+          f.kit === "scythe" ? /^air_l[1-3]$/.test(f.atkId) : /^air_l[1-2]$/.test(f.atkId))) {
       const toward = o.root.position.clone().sub(f.root.position).setY(0);
       const distance = toward.length();
       if (distance > 1.1) f.intent.move.copy(toward.divideScalar(distance));
@@ -2661,7 +2750,7 @@ export class AiBrain implements Brain {
     if (!f.stage && !f.onGround &&
         (f.state === S.IDLE || (f.state === S.ATTACK &&
           (f.kit === "kicks" ? /^air_l[1-3]$/.test(f.atkId) :
-            f.kit === "scythe" ? /^air_l[1-4]$/.test(f.atkId) :
+            f.kit === "scythe" ? /^air_l[1-3]$/.test(f.atkId) :
             f.kit === "assassin" && f.atkId === "air_l1"))) &&
         !f.airSliceUsed &&
         flatGap < f.attacks.air_l1.reach + 0.20 &&
@@ -3291,7 +3380,8 @@ export class AiBrain implements Brain {
         return;
       }
       // Shield must finish rising before contact; successful parry makes the next 90% faster.
-      const raise = f.nextShieldFast ? 0.01 : 0.10;
+      const raise = f.kit==="tristaff" && f.dragonMode===0 ?
+      DRAGON_MODE_TUNING[0].staffShieldRaise : (f.nextShieldFast ? 0.01 : 0.10);
       if (r < this.p.parry) this.schedule(Math.max(tth - raise - 0.03, 0),
         o.isContinuousComboActive() ? Math.max(0.35, o.atk.wind + o.atk.active + o.atk.recover) : 0.3);
       else if (r < this.p.parry + bc) this.schedule(rand(this.p.react[0], this.p.react[1]) * 0.45,
@@ -3348,7 +3438,8 @@ export class AiBrain implements Brain {
       this.comboParryTarget = -1;
       this.comboParryReleased = false;
     }
-    const raise = f.nextShieldFast ? 0.01 : 0.10;
+    const raise = f.kit==="tristaff" && f.dragonMode===0 ?
+      DRAGON_MODE_TUNING[0].staffShieldRaise : (f.nextShieldFast ? 0.01 : 0.10);
     if (this.comboParryTarget < 0) {
       // Give Hard/Master a meaningful chance on *every new hit beat*.
       // Easy still blocks; Normal tries occasionally without perfect reaction.
@@ -3594,7 +3685,8 @@ export class AiBrain implements Brain {
     if (f.state !== S.IDLE || !f.onGround || f.guard < f.maxGuard * 0.26 ||
         this.blockHold > 0 || this.blockWait >= 0 || this.projectileSwordCommit > 0) return false;
     const eta = this.projectileTimeToContact(f, pr);
-    const raise = f.nextShieldFast ? 0.01 : 0.10;
+    const raise = f.kit==="tristaff" && f.dragonMode===0 ?
+      DRAGON_MODE_TUNING[0].staffShieldRaise : (f.nextShieldFast ? 0.01 : 0.10);
     if (eta < raise + 0.035 || eta > raise + Math.min(f.parryWindow * 0.9, 0.22)) return false;
     if (Math.random() > this.p.parry * 2.0 + (f.look.name === "Garrick" ? 0.15 : 0.08)) return false;
     this.blockWait = 0;
@@ -4601,7 +4693,9 @@ private offense(f: Fighter, o: Fighter, dt: number) {
   if (f.stage && Math.abs(o.root.position.y - f.root.position.y) > 1.4 && !RANGED.has(f.kit)) return;
   const id = f.look.name.toLowerCase();
   const style = FIGHT_STYLES[id];
-  const reach = style ? (RANGED.has(f.kit) ? 9 : style.range + 0.24)
+  const reach = f.kit==="tristaff" && f.dragonMode===2 ? 3.12 :
+    f.kit==="tristaff" && f.dragonMode===3 ? 1.93 :
+    style ? (RANGED.has(f.kit) ? 9 : style.range + 0.24)
     : RANGED.has(f.kit) ? 9 : f.kit === "assassin" || f.kit === "knuckles" || f.kit === "kicks"
       ? 1.7 : f.kit === "greatsword" ? 2.3 : f.kit === "glaive" ? 2.1 : 1.9;
   const punish = this.hasPunishWindow(o);
@@ -4625,6 +4719,11 @@ private offense(f: Fighter, o: Fighter, dt: number) {
   if (danger && !punish && id !== "zarek" && id !== "aster" && Math.random() < 0.80) return;
   // Do not donate free parries: Zenith flanks a full guard rather than
   // mindlessly feeding an opponent stacks with fast spear basics.
+  // GUARD_FATIGUE_V26: all fighters probe defenses instead of endlessly
+  // donating attack speed. Respect actual enemy recovery and low guard.
+  if (blocked && f.guardFatigueStacks >= 2 && !punish &&
+      o.guard > o.maxGuard * 0.48 &&
+      Math.random() < [0.25, 0.48, 0.70, 0.86][this.iqLevel]) return;
   if (id === "zenith" && blocked && o.guard > o.maxGuard * 0.55 &&
       !punish && Math.random() < (this.iqLevel >= 2 ? 0.82 : 0.50)) return;
   // Near predicted enemy skill return, favor movement/defense over a risky commit.
@@ -4639,6 +4738,12 @@ private offense(f: Fighter, o: Fighter, dt: number) {
     ? rand(0.24, f.zenithSpearOut ? 0.43 : 0.49)
     : fast ? rand(0.45, 0.96) : rand(0.7, 1.45)) * this.p.think;
   if (punish) this.thinkCd *= 0.45; // uses an observed recovery, not foreknowledge
+  // A visibly fatigued foe recovers and swings more slowly. Press the opening,
+  // but keep real reach, cooldown, attack states and anti-projectile dodges.
+  if (o.guardFatigueStacks >= 5 && !blocked && !danger &&
+      this.iqLevel >= 2) this.thinkCd *= 0.75;
+  // Own fatigue favors careful single attacks, not spamming a protected shield.
+  if (f.guardFatigueStacks >= 8 && !punish) this.thinkCd *= 1.10;
   if (id === "zenith") this.thinkCd *= f.zenithSpearOut ? 0.55 :
     f.zenithTempoStacks > 0 ? 0.72 : 0.88;
   if (!punish) this.thinkCd *= 1 + cdIntel.caution * 0.24;
@@ -4654,6 +4759,11 @@ private offense(f: Fighter, o: Fighter, dt: number) {
     (this.personaMode === "pressure" ? 0.09 :
       this.personaMode === "probe" ? -0.06 :
       this.personaMode === "reset" ? -0.13 : 0), 0.06, 0.80);
+  // ZEPHYR_MODE_BALANCE_V25: use charged staff for weakened guards.
+  if (id==="zephyr" && f.dragonMode===0 && blocked &&
+      o.guard<o.maxGuard*.45) heavyChance=Math.max(heavyChance,.72);
+  if (id==="zephyr" && f.dragonMode===3 && punish)
+      heavyChance=Math.min(heavyChance,.20); // fast Folded light punish
   // Zenith: landed basics build +0.01x Tempo (5s); ONLY skills inflict x2 Bleed; prefer basics to
   // slow charging while preserving occasional guard-break attempts.
   if (id === "zenith") heavyChance = o.state === S.BLOCK &&

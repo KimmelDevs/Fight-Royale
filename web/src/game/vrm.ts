@@ -145,6 +145,50 @@ const ZEPHYR_BODY_TUNING = {
   idleBodyWeight: .22, // quiet breathing/idle figure-eight
 } as const;
 
+// ZEPHYR_V26_COMBO_ANTICLIP — only Zephyr's visual VRM skeleton, never combat.
+const ZEPHYR_ARM_TUNING_V26 = {
+  torsoRadius: .22, wristClearance: .055, headRadius: .175,
+  targetFront: .24, minHands: .28, sideClear: .13,
+  elbowOut: .80, elbowDown: -.56, wristLimit: 1.55,
+  maxShoulderYaw: 1.15, clipFade: 18,
+} as const;
+// Distinct additions on top of the shared P(...) base poses; rows STAFF, SPLIT,
+// WHIP, FOLDED; columns l1..l5, heavy. Rotations in radians.
+const ZEPHYR_COMBO_BODY_V26: {yaw:number;hip:number;step:number;lead:number;armR:number;armL:number}[][] = [
+  [
+    {yaw:.23,hip:-.10,step:.22,lead:1,armR:-.15,armL:.12},
+    {yaw:.24,hip:-.11,step:.26,lead:-1,armR:.13,armL:-.16},
+    {yaw:.29,hip:-.15,step:.26,lead:1,armR:-.21,armL:.09},
+    {yaw:.32,hip:-.14,step:.32,lead:-1,armR:.12,armL:-.18},
+    {yaw:.37,hip:-.19,step:.35,lead:1,armR:-.24,armL:.12},
+    {yaw:.35,hip:-.18,step:.31,lead:1,armR:-.19,armL:.13},
+  ],
+  [
+    {yaw:.17,hip:-.08,step:.27,lead:1,armR:-.18,armL:.17},
+    {yaw:.18,hip:-.08,step:.29,lead:-1,armR:.15,armL:-.18},
+    {yaw:.22,hip:-.10,step:.27,lead:1,armR:-.20,armL:.15},
+    {yaw:.23,hip:-.11,step:.31,lead:-1,armR:.15,armL:-.21},
+    {yaw:.29,hip:-.14,step:.33,lead:1,armR:-.23,armL:.18},
+    {yaw:.27,hip:-.13,step:.26,lead:1,armR:-.21,armL:.19},
+  ],
+  [
+    {yaw:.28,hip:-.14,step:.25,lead:1,armR:-.22,armL:.08},
+    {yaw:.30,hip:-.14,step:.29,lead:-1,armR:.15,armL:-.22},
+    {yaw:.35,hip:-.18,step:.31,lead:1,armR:-.25,armL:.10},
+    {yaw:.36,hip:-.20,step:.37,lead:-1,armR:.13,armL:-.26},
+    {yaw:.40,hip:-.22,step:.39,lead:1,armR:-.27,armL:.12},
+    {yaw:.41,hip:-.23,step:.34,lead:1,armR:-.27,armL:.08},
+  ],
+  [
+    {yaw:.15,hip:-.07,step:.18,lead:1,armR:-.11,armL:.12},
+    {yaw:.17,hip:-.08,step:.18,lead:-1,armR:.13,armL:-.12},
+    {yaw:.20,hip:-.09,step:.22,lead:1,armR:-.15,armL:.14},
+    {yaw:.21,hip:-.10,step:.24,lead:-1,armR:.12,armL:-.15},
+    {yaw:.25,hip:-.11,step:.24,lead:1,armR:-.16,armL:.15},
+    {yaw:.27,hip:-.12,step:.27,lead:1,armR:-.16,armL:.12},
+  ],
+];
+
 export class VrmRig {
   readonly vrm: VRM;
   private links: Link[] = [];
@@ -168,6 +212,13 @@ export class VrmRig {
   gripR: THREE.Object3D | null = null;
   /** Enables two-rod socket IK only for Zephyr; does not alter other kits. */
   tristaff = false;
+  tristaffDebug = false;
+  private zephyrAimRight=new THREE.Vector3();
+  private zephyrAimLeft=new THREE.Vector3();
+  private zephyrTorsoMid=new THREE.Vector3();
+  private zephyrHeadMid=new THREE.Vector3();
+  private zephyrAimDiff=new THREE.Vector3();
+  private zephyrClipFrames=0;
   tristaffAnchor: "left" | "right" | null = "right";
   // ZEPHYR_DRAGON_MODE_V18: smooth open/curl and per-arm IK influence.
   tristaffGripWeight = {left:0,right:1};
@@ -657,37 +708,124 @@ export class VrmRig {
         lead*pivot*ZEPHYR_BODY_TUNING.footIKOverride,
         lead*.07*energy*ZEPHYR_BODY_TUNING.footIKOverride);
     }
+    // V26: mode-specific basic/heavy body poses, additive AFTER locomotion.
+    // The 24 samples are deliberately unique. Skills keep their current body poses.
+    const which=/^zd([1-5])_[ws]$/.exec(name);
+    const heavy=/^zdh_[ws]$/.test(name);
+    const index=which?Number(which[1])-1:heavy?5:-1;
+    if(index>=0){
+      const tune=ZEPHYR_COMBO_BODY_V26[Math.min(3,this.tristaffBodyMode)][index];
+      const onset=name.endsWith("_w")?-.62:1;
+      const stress=(.35+.65*Math.sin(Math.PI*Math.max(.01,p)))*onset;
+      const toward=tune.lead;
+      add("spine",.04*stress,tune.yaw*toward*stress,.015*stress);
+      add("chest",.025*stress,tune.yaw*.43*toward*stress,0);
+      add("hips",-.015*stress,tune.hip*toward*stress,0);
+      add("rightShoulder",-.015*stress,0,-tune.armR*.15*stress);
+      add("leftShoulder",-.015*stress,0,tune.armL*.15*stress);
+      // This is arm POSE motion, not a target override; held hands are solved by IK next.
+      add("rightUpperArm",tune.armR*stress,-toward*.055*stress,-.06*stress);
+      add("leftUpperArm",tune.armL*stress,toward*.055*stress,.06*stress);
+      add("rightUpperLeg",-tune.step*toward*.57*stress,0,-.045*stress);
+      add("leftUpperLeg",tune.step*toward*.57*stress,0,.045*stress);
+      add("rightFoot",tune.step*toward*.16*stress,0,0);
+      add("leftFoot",-tune.step*toward*.16*stress,0,0);
+    }
     // Recompute the transformed bone hierarchy before the two-hand IK pass.
     this.vrm.scene.updateMatrixWorld(true);
   }
 
   private tristaffHands(setNow: (b: THREE.Object3D | null, q: THREE.Quaternion) => void) {
-    const root=this.j.root;
+    const root=this.j.root,h=this.vrm.humanoid;
     root.updateMatrixWorld(true);
-    const drive=(side:"left"|"right",grip:THREE.Object3D|null)=>{
+    const chest=h.getNormalizedBoneNode("chest"),hips=h.getNormalizedBoneNode("hips");
+    if(chest&&hips){
+      root.worldToLocal(chest.getWorldPosition(this.zephyrTorsoMid));
+      root.worldToLocal(hips.getWorldPosition(this.zephyrHeadMid));
+      this.zephyrTorsoMid.add(this.zephyrHeadMid).multiplyScalar(.5);
+    }else this.zephyrTorsoMid.set(0,1.05,0);
+    // First gather both targets, so minimum separation is independent of IK order.
+    const goal=(side:"right"|"left",socket:THREE.Object3D|null,out:THREE.Vector3)=>{
+      if(!socket){out.set(side==="right"?-.29:.29,1.02,.34);return;}
+      root.worldToLocal(socket.getWorldPosition(out));
+      const x=out.x-this.zephyrTorsoMid.x;
+      const z=out.z-this.zephyrTorsoMid.z;
+      const d=Math.sqrt(x*x+z*z);
+      const min=ZEPHYR_ARM_TUNING_V26.torsoRadius+ZEPHYR_ARM_TUNING_V26.wristClearance;
+      // Shortest outward radial correction with preference for the facing plane.
+      if(d<min){
+        if(d>.001){out.x=this.zephyrTorsoMid.x+x*min/d;out.z=this.zephyrTorsoMid.z+z*min/d;}
+        else out.z=this.zephyrTorsoMid.z+min;
+      }
+      // The shoulder line stays uncrossed except intentional special move passes.
+      const special=/^zd[zxcv]|show_tristaff/.test(this.tristaffBodyPose);
+      if(!special){
+        out.x=side==="right"?Math.min(out.x,this.zephyrTorsoMid.x-ZEPHYR_ARM_TUNING_V26.sideClear):
+          Math.max(out.x,this.zephyrTorsoMid.x+ZEPHYR_ARM_TUNING_V26.sideClear);
+        out.z=Math.max(out.z,this.zephyrTorsoMid.z+ZEPHYR_ARM_TUNING_V26.targetFront);
+      }
+    };
+    goal("right",this.gripR,this.zephyrAimRight);
+    goal("left",this.gripL,this.zephyrAimLeft);
+    if(this.gripR&&this.gripL){
+      const dist=this.zephyrAimDiff.copy(this.zephyrAimRight).sub(this.zephyrAimLeft).length();
+      if(dist<ZEPHYR_ARM_TUNING_V26.minHands){
+        const half=(ZEPHYR_ARM_TUNING_V26.minHands-dist)*.5;
+        this.zephyrAimRight.x-=half;
+        this.zephyrAimLeft.x+=half;
+      }
+    }
+    const drive=(side:"left"|"right",grip:THREE.Object3D|null,target:THREE.Vector3)=>{
       const w=THREE.MathUtils.clamp(this.tristaffGripWeight[side],0,1);
       if(!grip||w<.01)return;
-      const goal=root.worldToLocal(grip.getWorldPosition(_v));
-      const pole=side==="left"?_v2.set(.78,-.62,-.30):_v2.set(-.78,-.62,-.30);
-      this.solveArm(side,goal,pole,(bone,quat)=>{
+      const pole=side==="left"?_v2.set(ZEPHYR_ARM_TUNING_V26.elbowOut,
+        ZEPHYR_ARM_TUNING_V26.elbowDown,-.23):
+        _v2.set(-ZEPHYR_ARM_TUNING_V26.elbowOut,ZEPHYR_ARM_TUNING_V26.elbowDown,-.23);
+      const apply=(bone:THREE.Object3D|null,quat:THREE.Quaternion)=>{
         if(!bone)return;
         this.tristaffGripQ.copy(quatIn(root,bone,this.tristaffGripBaseQ)).slerp(quat,w);
-        // Never exceed ~100 degrees of local wrist twist relative to the forearm.
-        if(this.nameOf.get(bone)?.endsWith("Hand") && bone.parent){
-          const parentQ=quatIn(root,bone.parent,this.tristaffWristParentQ);
-          const local=this.tristaffWristLocalQ.copy(parentQ).invert().multiply(this.tristaffGripQ);
-          const e=this.tristaffWristEuler.setFromQuaternion(local,"YXZ");
-          e.x=THREE.MathUtils.clamp(e.x,-1.745,1.745);
-          e.y=THREE.MathUtils.clamp(e.y,-1.745,1.745);
-          e.z=THREE.MathUtils.clamp(e.z,-1.745,1.745);
-          this.tristaffGripQ.copy(parentQ).multiply(local.setFromEuler(e));
+        // Clamp wrist and shoulder to avoid twisting into the chest.
+        if(bone.parent){
+          const name=this.nameOf.get(bone)??"";
+          if(name.endsWith("Hand")||name.endsWith("UpperArm")){
+            const parentQ=quatIn(root,bone.parent,this.tristaffWristParentQ);
+            const local=this.tristaffWristLocalQ.copy(parentQ).invert().multiply(this.tristaffGripQ);
+            const e=this.tristaffWristEuler.setFromQuaternion(local,"YXZ");
+            const limit=name.endsWith("Hand")?ZEPHYR_ARM_TUNING_V26.wristLimit:
+              ZEPHYR_ARM_TUNING_V26.maxShoulderYaw;
+            e.y=THREE.MathUtils.clamp(e.y,-limit,limit);
+            if(name.endsWith("Hand")){
+              e.x=THREE.MathUtils.clamp(e.x,-limit,limit);
+              e.z=THREE.MathUtils.clamp(e.z,-limit,limit);
+            }
+            this.tristaffGripQ.copy(parentQ).multiply(local.setFromEuler(e));
+          }
         }
         setNow(bone,this.tristaffGripQ);
-      });
+      };
+      this.solveArm(side,target,pole,apply);
+      // Post-IK self-check: warn if a wrist/elbow or hand pair intersects the torso.
+      const wrist=h.getNormalizedBoneNode(`${side}Hand`);
+      const elbow=h.getNormalizedBoneNode(`${side}LowerArm`);
+      if(wrist&&elbow){
+        root.worldToLocal(wrist.getWorldPosition(this.zephyrAimDiff));
+        const badW=this.zephyrAimDiff.distanceTo(this.zephyrTorsoMid)<ZEPHYR_ARM_TUNING_V26.torsoRadius;
+        root.worldToLocal(elbow.getWorldPosition(this.zephyrAimDiff));
+        const badE=this.zephyrAimDiff.distanceTo(this.zephyrTorsoMid)<ZEPHYR_ARM_TUNING_V26.torsoRadius;
+        if(badW||badE){
+          target.z+=ZEPHYR_ARM_TUNING_V26.wristClearance;
+          target.x+=side==="right"?-.07:.07;
+          this.solveArm(side,target,pole,apply);
+          if(this.tristaffDebug&&this.zephyrClipFrames%45===0)
+            console.warn(`[Zephyr V26] ${side} ${badW?"wrist":"elbow"} inside torso — IK readjusted`);
+        }
+      }
     };
-    drive("left",this.gripL);
-    drive("right",this.gripR);
+    drive("left",this.gripL,this.zephyrAimLeft);
+    drive("right",this.gripR,this.zephyrAimRight);
+    this.zephyrClipFrames++;
   }
+
 
   private zenithSpearHands(setNow: (b: THREE.Object3D | null, q: THREE.Quaternion) => void) {
     const root = this.j.root;

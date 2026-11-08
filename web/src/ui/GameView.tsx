@@ -111,12 +111,12 @@ function OrbitMeter({ stacks, seconds, right = false }: { stacks: number; second
   </div>;
 }
 
-// Dreadfall starts at 0.80x and scales to 1.50x at 14 damaging hits.
+// Dreadfall starts at 0.80x and scales to 1.48x at 14 damaging hits.
 // This meter is shown to both fighters; it lasts until the round ends.
 function DreadfallTempoMeter({ hits, right = false }: { hits: number; right?: boolean }) {
   const stacks = Math.max(0, Math.min(14, Math.floor(hits)));
   const speed = Math.min(1.50, 0.80 + stacks * 0.05); // NYTHERA_ZENITH_LOWER_CAPS_V14
-  return <div title="Dreadfall Tempo: starts at 0.80x attack speed; 14 real damaging Dreadfall hits raise it to 1.50x. Persists through stance switches, resets next round. Block/parry/clash deny stacks."
+  return <div title="Dreadfall Tempo: starts at 0.80x attack speed; 14 real damaging Dreadfall hits raise it to 1.48x. Persists through stance switches, resets next round. Block/parry/clash deny stacks."
     aria-label={`Nythera Dreadfall Tempo: ${stacks} of 14 stacks, ${speed.toFixed(2)}x attack speed, until end of round`}
     style={{ marginTop: 5, padding: "4px 7px", borderRadius: 7,
       border: "1px solid rgba(191,145,255,.54)", background: "rgba(31,15,53,.85)",
@@ -330,7 +330,7 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
                   border: "1px solid rgba(255,255,255,.45)" /* ZEPHYR_V23_ICONS_FX_REPAIR */, borderRadius: 7, color: "#fff", fontSize: 12,
                   fontWeight: 800, textShadow: "0 1px 2px #000" }}>
                   <Icon src="/icons/skills/tristaff-passive.webp" alt="Dragon Rhythm" size={22} fallback={<span>◎</span>} />
-                  {` DRAGON RHYTHM ${(me as any).dragonRhythm ?? 0}/3  ·  MODE: ${["STAFF","SPLIT","WHIP","FOLDED"][(me as any).dragonMode ?? 0]}${(me as any).dragonMode === 1 ? "  ·  NO GUARD" : ""}`}
+                  {` DRAGON RHYTHM ${(me as any).dragonRhythm ?? 0}/3 · ${((me as any).dragonRhythmT ?? 0).toFixed(0)}s  ·  MODE: ${["STAFF","SPLIT","WHIP","FOLDED"][me.dragonMode]}${me.dragonMode === 1 ? "  ·  NO GUARD" : ""}`}
                 </div>
               )}
               {/* ZAREK_WHITE_COUNTER_V1 */}

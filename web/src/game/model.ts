@@ -52,6 +52,29 @@ const HEAD_R = 0.19;
 const HIP = 0.84;
 /** Weapon size on VRoid bodies relative to the chibi-sized originals. */
 const VRM_WEAPON_SCALE = 0.68;
+// ZEPHYR_TRISTAFF_PROPORTIONS_V24 — visual-only; edit these values to resize the sanjiekun.
+// Unlike the procedural hand pivot, the real three-rod weapon is a detached root.
+const ZEPHYR_TRISTAFF_SIZE_V24 = {
+  globalScale: 0.68,           // Scale the ACTUAL detached root and its cosmetic toss clone.
+  middleHalfLength: 0.27,      // Middle rod length = 0.54, formerly 0.65.
+  endHalfLength: 0.27,         // Each end rod length = 0.54, formerly 0.67.
+  shaftRadius: 0.02465,        // 15% thinner than 0.029.
+  wrapRadius: 0.02805,         // 15% thinner than 0.033.
+  wrapLength: 0.02975,
+  ferruleTopRadius: 0.03910,   // 15% thinner than 0.046.
+  ferruleBottomRadius: 0.03570,
+  ferruleLength: 0.05950,
+  lipTopRadius: 0.04165,
+  lipBottomRadius: 0.03910,
+  lipLength: 0.01530,
+  ringInnerRadius: 0.03060,
+  ringOuterRadius: 0.03910,
+  chainGap: 0.20,              // 4 links; cap-to-cap clear space ~= 0.08-0.09 after scale.
+  chainLinkInner: 0.008,
+  chainLinkOuter: 0.027,      // Adjacent links overlap slightly instead of floating apart.
+} as const;
+
+
 const CAP_C = new THREE.Vector3(0, 0.035, -0.035);
 const JOINTS = ["torso", "head", "arm_r", "hand_r", "arm_l", "hand_l", "leg_l", "leg_r"] as const;
 
@@ -184,6 +207,104 @@ function auditZephyrGrips() {
   }
 }
 
+// ZEPHYR_V26_COMBO_ANTICLIP: PURELY VISUAL. No changes to Attack, melee or networking.
+// Turn this on to see torso/head exclusion volumes, elbow/wrist points and warnings.
+const ZEPHYR_ANTICLIP_DEBUG = false;
+const ZEPHYR_ANTICLIP_TUNING = {
+  torsoRadius: 0.23, headRadius: 0.175, rodClearance: 0.055,
+  handMinDistance: 0.29, wristMinSide: 0.14,
+  elbowOut: 0.72, elbowDown: -0.50, wristFront: 0.22,
+  rootFront: 0.29, rootClampStep: 0.065,
+  stanceSmooth: 15, attackSmooth: 18, rodAngularLimit: 2.80,
+  debugEveryFrames: 45,
+} as const;
+type ZephyrPoint = [number,number,number];
+type ZephyrStance = {
+  holder: "RIGHT"|"LEFT"|"BOTH"|"FREE";
+  R: string|null; L: string|null;
+  pos: ZephyrPoint; rot: ZephyrPoint; loose: [number,number];
+};
+// The weapon root is positioned in the BODY frame (fighter faces +Z).
+// loose: desired upper/lower joint angles in radians. Tunable for each carry state.
+const WEAPON_STANCE: ZephyrStance[][] = [
+  [ // STAFF — diagonal, forward of chest; rear grip near hip.
+    {holder:"BOTH",R:"middle:low",L:"middle:high",pos:[-.06,1.04,.39],rot:[1.12,-.25,.22],loose:[0,0]},
+    {holder:"BOTH",R:"middle:low",L:"middle:high",pos:[-.09,1.03,.41],rot:[1.24,-.21,.15],loose:[0,0]},
+    {holder:"BOTH",R:"middle:low",L:"middle:high",pos:[-.02,1.13,.43],rot:[1.32,-.05,.10],loose:[0,0]},
+    {holder:"BOTH",R:"middle:low",L:"middle:high",pos:[-.08,1.03,.50],rot:[1.02,-.19,.22],loose:[0,0]},
+  ],
+  [ // SPLIT — outer rods at hips; lower-middle rod hangs between them.
+    {holder:"BOTH",R:"upper:mid",L:"lower:mid",pos:[0,.86,.45],rot:[1.61,0,.05],loose:[1.28,-1.28]},
+    {holder:"BOTH",R:"upper:mid",L:"lower:mid",pos:[0,.82,.48],rot:[1.53,0,0],loose:[1.25,-1.25]},
+    {holder:"BOTH",R:"upper:mid",L:"lower:mid",pos:[0,1.02,.46],rot:[1.31,0,0],loose:[1.16,-1.16]},
+    {holder:"BOTH",R:"upper:mid",L:"lower:mid",pos:[0,.83,.54],rot:[1.78,0,.04],loose:[1.44,-1.44]},
+  ],
+  [ // WHIP — low side hold, two freely trailing rods.
+    {holder:"RIGHT",R:"lower:far",L:null,pos:[-.42,.84,.34],rot:[1.94,.18,-.33],loose:[-.94,1.11]},
+    {holder:"RIGHT",R:"lower:far",L:null,pos:[-.47,.77,.39],rot:[2.02,.15,-.34],loose:[-1.06,1.20]},
+    {holder:"RIGHT",R:"lower:far",L:null,pos:[-.43,.99,.38],rot:[1.68,.12,-.26],loose:[-.80,1.07]},
+    {holder:"RIGHT",R:"lower:far",L:null,pos:[-.53,.76,.50],rot:[2.14,.24,-.30],loose:[-1.25,1.33]},
+  ],
+  [ // FOLDED — three rods close together by right shoulder.
+    {holder:"RIGHT",R:"middle:mid",L:null,pos:[-.36,1.22,.36],rot:[.34,-.13,.12],loose:[2.60,-2.60]},
+    {holder:"RIGHT",R:"middle:mid",L:null,pos:[-.38,1.18,.39],rot:[.47,-.10,.12],loose:[2.55,-2.55]},
+    {holder:"RIGHT",R:"middle:mid",L:null,pos:[-.28,1.33,.40],rot:[.24,-.08,.05],loose:[2.65,-2.65]},
+    {holder:"RIGHT",R:"middle:mid",L:null,pos:[-.40,1.16,.51],rot:[.69,-.14,.13],loose:[2.68,-2.68]},
+  ],
+];
+// Idle/walk/block/charge index. Attack paths reuse their end point as the next
+// attack's start point, so the combo has continuous follow-through by construction.
+const ZEPHYR_COMBO_PATH_V26: {pos:ZephyrPoint[];rot:ZephyrPoint[]}[] = [
+  {pos:[[-.27,1.11,.44],[.23,1.05,.48],[-.21,1.08,.49],[.25,1.07,.49],[-.19,1.15,.46],[.07,.92,.58],[-.22,1.41,.43],[.19,.87,.62]],
+   rot:[[1.28,-.31,-.17],[1.10,.39,.13],[1.31,-.31,-.11],[1.16,.39,.16],[1.35,-.34,-.12],[1.38,.15,.09],[.43,-.17,.14],[1.66,.26,-.11]]},
+  {pos:[[-.32,.92,.45],[.28,.92,.47],[-.29,.93,.46],[.26,.92,.49],[-.31,.98,.48],[.28,.94,.54],[-.27,1.24,.46],[.26,.91,.56]],
+   rot:[[1.72,-.23,-.35],[1.51,.32,.28],[1.77,-.27,-.25],[1.48,.28,.30],[1.71,-.26,-.30],[1.50,.24,.25],[1.29,-.23,-.09],[1.56,.27,.24]]},
+  {pos:[[-.42,.90,.42],[.36,1.02,.51],[-.36,.99,.51],[.42,1.03,.51],[-.37,1.08,.50],[.44,1.06,.55],[-.39,1.35,.50],[.32,.91,.63]],
+   rot:[[1.98,-.48,-.25],[1.66,.52,.29],[2.08,-.45,-.29],[1.73,.47,.31],[1.96,-.46,-.25],[1.66,.41,.32],[.90,-.18,-.19],[2.02,.32,.20]]},
+  {pos:[[-.33,1.17,.41],[.16,1.17,.44],[-.27,1.18,.47],[.15,1.18,.48],[-.25,1.19,.47],[.12,1.10,.54],[-.31,1.34,.48],[.22,1.12,.54]],
+   rot:[[.35,-.13,.15],[.45,.22,.23],[.37,-.22,.12],[.46,.20,.18],[.34,-.22,.14],[.39,.16,.18],[.11,-.13,.08],[.61,.23,.21]]},
+];
+// Separate grip histories for ALL 24 basic/heavy+mode cases. null means RELEASE.
+// Each l1..l5 has a different sequence. lN's final event equals l(N+1)'s first.
+const ZEPHYR_COMBO_GRIPS_V26: Record<string, DragonGripEvent[][]> = {
+  l1:[
+    [{t:0,R:"middle:low",L:"middle:high"},{t:.30,R:"upper:near",L:"middle:low"},{t:.50,R:null,L:"upper:near"},{t:.76,R:"upper:far",L:"middle:high"},{t:1,R:"upper:near",L:"middle:high"}],
+    [{t:0,R:"upper:mid",L:"lower:mid"},{t:.28,R:"upper:far",L:"lower:mid"},{t:.54,R:null,L:"lower:near"},{t:.82,R:"upper:near",L:"lower:far"},{t:1,R:"upper:near",L:"lower:far"}],
+    [{t:0,R:"lower:far",L:null},{t:.25,R:"lower:mid",L:null},{t:.49,R:null,L:"upper:near"},{t:.75,R:"lower:near",L:null},{t:1,R:"lower:near",L:null}],
+    [{t:0,R:"middle:mid",L:null},{t:.27,R:"upper:near",L:null},{t:.52,R:null,L:"lower:near"},{t:.81,R:"upper:near",L:null},{t:1,R:"upper:near",L:null}],
+  ],
+  l2:[
+    [{t:0,R:"upper:near",L:"middle:high"},{t:.27,R:null,L:"upper:mid"},{t:.56,R:"lower:near",L:"upper:far"},{t:.79,R:"lower:mid",L:"upper:mid"},{t:1,R:"lower:near",L:"upper:mid"}],
+    [{t:0,R:"upper:near",L:"lower:far"},{t:.28,R:"upper:mid",L:"lower:mid"},{t:.55,R:"upper:far",L:null},{t:.82,R:"upper:far",L:"lower:near"},{t:1,R:"upper:far",L:"lower:near"}],
+    [{t:0,R:"lower:near",L:null},{t:.27,R:null,L:"upper:mid"},{t:.53,R:"upper:near",L:"upper:far"},{t:.80,R:"upper:mid",L:null},{t:1,R:"upper:mid",L:null}],
+    [{t:0,R:"upper:near",L:null},{t:.25,R:"upper:far",L:null},{t:.50,R:null,L:"lower:near"},{t:.78,R:"middle:mid",L:null},{t:1,R:"middle:mid",L:null}],
+  ],
+  l3:[
+    [{t:0,R:"lower:near",L:"upper:mid"},{t:.27,R:"lower:far",L:null},{t:.54,R:"upper:near",L:null},{t:.79,R:"upper:near",L:"middle:mid"},{t:1,R:"upper:near",L:"middle:mid"}],
+    [{t:0,R:"upper:far",L:"lower:near"},{t:.29,R:null,L:"lower:far"},{t:.53,R:"upper:near",L:"lower:mid"},{t:.80,R:"upper:mid",L:"lower:far"},{t:1,R:"upper:mid",L:"lower:far"}],
+    [{t:0,R:"upper:mid",L:null},{t:.27,R:"upper:far",L:null},{t:.51,R:null,L:"lower:near"},{t:.79,R:"lower:mid",L:null},{t:1,R:"lower:mid",L:null}],
+    [{t:0,R:"middle:mid",L:null},{t:.28,R:"lower:near",L:null},{t:.51,R:null,L:"upper:near"},{t:.79,R:"upper:mid",L:null},{t:1,R:"upper:mid",L:null}],
+  ],
+  l4:[
+    [{t:0,R:"upper:near",L:"middle:mid"},{t:.27,R:null,L:"lower:near"},{t:.53,R:"lower:mid",L:"upper:far"},{t:.80,R:"lower:far",L:"upper:near"},{t:1,R:"lower:mid",L:"upper:near"}],
+    [{t:0,R:"upper:mid",L:"lower:far"},{t:.26,R:"upper:far",L:null},{t:.53,R:"upper:near",L:"lower:near"},{t:.78,R:"upper:far",L:"lower:mid"},{t:1,R:"upper:far",L:"lower:mid"}],
+    [{t:0,R:"lower:mid",L:null},{t:.26,R:null,L:"upper:near"},{t:.55,R:"lower:far",L:null},{t:.79,R:"lower:near",L:null},{t:1,R:"lower:near",L:null}],
+    [{t:0,R:"upper:mid",L:null},{t:.27,R:"upper:far",L:null},{t:.53,R:null,L:"lower:near"},{t:.80,R:"middle:low",L:null},{t:1,R:"middle:low",L:null}],
+  ],
+  l5:[
+    [{t:0,R:"lower:mid",L:"upper:near"},{t:.29,R:"lower:far",L:null},{t:.53,R:"middle:mid",L:"lower:near"},{t:.79,R:"upper:near",L:"lower:mid"},{t:1,R:"middle:low",L:"middle:high"}],
+    [{t:0,R:"upper:far",L:"lower:mid"},{t:.28,R:null,L:"lower:far"},{t:.52,R:"upper:mid",L:"lower:near"},{t:.79,R:"upper:far",L:"lower:far"},{t:1,R:"upper:mid",L:"lower:mid"}],
+    [{t:0,R:"lower:near",L:null},{t:.29,R:"lower:far",L:null},{t:.55,R:null,L:"upper:mid"},{t:.82,R:"lower:mid",L:null},{t:1,R:"lower:far",L:null}],
+    [{t:0,R:"middle:low",L:null},{t:.28,R:"upper:near",L:null},{t:.52,R:null,L:"lower:near"},{t:.80,R:"middle:mid",L:null},{t:1,R:"middle:mid",L:null}],
+  ],
+  heavy:[
+    [{t:0,R:"middle:low",L:"middle:high"},{t:.23,R:"upper:near",L:"middle:low"},{t:.52,R:null,L:"upper:far"},{t:.79,R:"upper:near",L:"lower:near"},{t:1,R:"middle:low",L:"middle:high"}],
+    [{t:0,R:"upper:mid",L:"lower:mid"},{t:.26,R:"upper:far",L:null},{t:.52,R:"upper:near",L:"lower:far"},{t:.80,R:null,L:"lower:near"},{t:1,R:"upper:mid",L:"lower:mid"}],
+    [{t:0,R:"lower:far",L:null},{t:.25,R:"lower:near",L:null},{t:.49,R:null,L:"upper:far"},{t:.79,R:"lower:mid",L:null},{t:1,R:"lower:far",L:null}],
+    [{t:0,R:"middle:mid",L:null},{t:.24,R:"upper:near",L:null},{t:.50,R:null,L:"lower:far"},{t:.80,R:"middle:mid",L:null},{t:1,R:"middle:mid",L:null}],
+  ],
+};
+
 const DRAGON_STAFF_ROTATIONS: Record<string,[number,number,number]> = {
       idle:[1.55,-.19,.14],block:[1.47,.11,.16],
       zd1_w:[1.48,-.51,-.28],zd1_s:[1.04,.47,.28],
@@ -292,6 +413,14 @@ export class FighterModel extends THREE.Group {
   private dragonLastGripDebug = "";
   private dragonPreviousGrip = "";
   private dragonWasAudited = false;
+  private dragonClipHip = new THREE.Vector3();
+  private dragonClipChest = new THREE.Vector3();
+  private dragonClipHead = new THREE.Vector3();
+  private dragonClipAxis = new THREE.Vector3();
+  private dragonClipSample = new THREE.Vector3();
+  private dragonClipCheck = new THREE.Vector3();
+  private dragonClipViz: THREE.Group | null = null;
+  private dragonClipFrames = 0;
   private dragonBodyPrevQ = new THREE.Quaternion();
   private dragonBodyVelocity = 0;
   private dragonBodyInitialized = false;
@@ -1045,6 +1174,8 @@ export class FighterModel extends THREE.Group {
   private buildDragonStaff() {
     const root = pivot(this); // ZEPHYR_DRAGON_MODE_V18 independent from hand bones
     root.name = "zephyrMiddleGrip";
+    // V24: the previous 0.79 adjusted only hand pivots, NOT this detached mesh.
+    root.scale.setScalar(ZEPHYR_TRISTAFF_SIZE_V24.globalScale);
     this.dragonRoot = root;
     if (ZEPHYR_GRIP_DEBUG && !this.dragonWasAudited) { auditZephyrGrips(); this.dragonWasAudited=true; }
     const lacquer = this.tn("#251b20");
@@ -1059,21 +1190,33 @@ export class FighterModel extends THREE.Group {
       return s;
     };
     const makeRod = (parent: THREE.Object3D, name: "upper" | "middle" | "lower", sign: number) => {
-      const r = name === "middle" ? .325 : .335;
+      const r = name === "middle" ? ZEPHYR_TRISTAFF_SIZE_V24.middleHalfLength :
+        ZEPHYR_TRISTAFF_SIZE_V24.endHalfLength;
       const rod = name === "middle" ? root : pivot(parent);
       rod.name = `zephyrRod_${name}`;
       const c = name === "middle" ? 0 : sign * r;
-      mesh(rod, cyl(.029,.029,r*2,12), lacquer, [0,c,0]);
+      mesh(rod, cyl(ZEPHYR_TRISTAFF_SIZE_V24.shaftRadius,
+        ZEPHYR_TRISTAFF_SIZE_V24.shaftRadius,r*2,12), lacquer, [0,c,0]);
       // Two red spiraling wrap bands; rods stay rigid, unscaled, and separate.
       for (let i = 0; i < 5; i++) {
-        const y = name === "middle" ? -.22+i*.11 : sign*(.11+i*.11);
-        mesh(rod, cyl(.033,.033,.035,12), i%2 ? black : red, [0,y,0]);
+        // Wraps follow each shorter rod rather than extending past its ends.
+        const y = name === "middle" ? (-.80+i*.40)*r : sign*(.36+i*.36)*r;
+        mesh(rod, cyl(ZEPHYR_TRISTAFF_SIZE_V24.wrapRadius,
+          ZEPHYR_TRISTAFF_SIZE_V24.wrapRadius,
+          ZEPHYR_TRISTAFF_SIZE_V24.wrapLength,12), i%2 ? black : red, [0,y,0]);
       }
       const ends = name === "middle" ? [-r,r] : [0,sign*2*r];
       for (const y of ends) {
-        mesh(rod, cyl(.046,.042,.070,12), darkMetal, [0,y,0]);
-        mesh(rod, cyl(.049,.046,.018,12), ferrule, [0,y+Math.sign(y||sign)*.029,0]);
-        mesh(rod, torus(.036,.046), red, [0,y-Math.sign(y||sign)*.048,0]);
+        mesh(rod, cyl(ZEPHYR_TRISTAFF_SIZE_V24.ferruleTopRadius,
+          ZEPHYR_TRISTAFF_SIZE_V24.ferruleBottomRadius,
+          ZEPHYR_TRISTAFF_SIZE_V24.ferruleLength,12), darkMetal, [0,y,0]);
+        mesh(rod, cyl(ZEPHYR_TRISTAFF_SIZE_V24.lipTopRadius,
+          ZEPHYR_TRISTAFF_SIZE_V24.lipBottomRadius,
+          ZEPHYR_TRISTAFF_SIZE_V24.lipLength,12), ferrule,
+          [0,y+Math.sign(y||sign)*ZEPHYR_TRISTAFF_SIZE_V24.ferruleLength*.415,0]);
+        mesh(rod, torus(ZEPHYR_TRISTAFF_SIZE_V24.ringInnerRadius,
+          ZEPHYR_TRISTAFF_SIZE_V24.ringOuterRadius), red,
+          [0,y-Math.sign(y||sign)*ZEPHYR_TRISTAFF_SIZE_V24.ferruleLength*.686,0]);
       }
       if (name === "middle") {
         makeSocket(rod,"middle:low",-r);
@@ -1088,21 +1231,26 @@ export class FighterModel extends THREE.Group {
     };
     makeRod(root,"middle",1);
     const buildChain = (sign: number, name: "upper"|"lower", index: number) => {
-      const hinge = pivot(root, [0, sign*.325, 0]);
+      const hinge = pivot(root, [0, sign*ZEPHYR_TRISTAFF_SIZE_V24.middleHalfLength, 0]);
       hinge.name = `zephyrChainJoint_${name}`;
       this.dragonHinges[index] = hinge;
       const links: THREE.Group[] = [];
       let prev: THREE.Group = hinge;
-      // Exactly four overlapping metal links, 0.13 metres between rod ends.
+      // Exactly four linked rings bridge the larger, visible chain gap.
+      // The endpoints are separated by `chainGap`, including the cap overhang.
       for (let k=0; k<4; k++) {
-        const link = pivot(prev, [0, sign*(k===0 ? .01625 : .0325), 0]);
+        const link = pivot(prev, [0, sign*(k===0 ?
+          ZEPHYR_TRISTAFF_SIZE_V24.chainGap/8 :
+          ZEPHYR_TRISTAFF_SIZE_V24.chainGap/4), 0]);
         link.name = `zephyrChain_${name}_${k}`;
-        mesh(link, torus(.008,.022), ferrule, [0,0,0], [k%2 ? PI/2 : 0,0,k%2 ? PI/2 : 0]);
+        mesh(link, torus(ZEPHYR_TRISTAFF_SIZE_V24.chainLinkInner,
+          ZEPHYR_TRISTAFF_SIZE_V24.chainLinkOuter), ferrule,
+          [0,0,0], [k%2 ? PI/2 : 0,0,k%2 ? PI/2 : 0]);
         links.push(link);
         prev = link;
       }
-      // Final half-link completes a real 0.13-unit gap.
-      const end = pivot(prev,[0,sign*.01625,0]);
+      // Final half-link joins the far rod, preserving the visible chain gap.
+      const end = pivot(prev,[0,sign*ZEPHYR_TRISTAFF_SIZE_V24.chainGap/8,0]);
       const rod = makeRod(end,name,sign);
       this.dragonRods[index] = rod;
       this.dragonChains[index] = links;
@@ -1157,13 +1305,19 @@ export class FighterModel extends THREE.Group {
       /^zdh/.test(pose)?"heavy":/^zdz/.test(pose)?"z":/^zdx/.test(pose)?"x":
       /^zdc/.test(pose)?"c":/^zdv/.test(pose)?"v":"idle";
     if(key==="idle"&&!show&&!inSwitch) p=((this.t*.45)%1+1)%1;
-    const timeline=GRIP_TIMELINE[key]?.[mode] ?? GRIP_TIMELINE.idle[mode];
+    const basicKey=key==="split_r"?"l1":key==="split_l"?"l2":key;
+    const timeline=ZEPHYR_COMBO_GRIPS_V26[basicKey]?.[mode] ??
+      GRIP_TIMELINE[key]?.[mode] ?? GRIP_TIMELINE.idle[mode];
     let current=timeline[0];
     for(const event of timeline) if(p>=event.t) current=event;
     // Predict the next catch up to ~0.2 progress units before the actual grip change.
     let upcoming: DragonGripEvent|null=null;
     for(const event of timeline) if(event.t>p){upcoming=event;break;}
     let right=current.R, left=current.L;
+    if(key==="idle" && !show && !inSwitch && pose!=="idle"){
+      const still=WEAPON_STANCE[mode][pose==="block"?2:pose==="charge"?3:0];
+      right=still.R;left=still.L;
+    }
     const toss=show && phase>=4.52 && phase<6.24;
     if(toss){right=null;left=null;}
     const catching=upcoming&&upcoming.t-p<.18;
@@ -1182,7 +1336,7 @@ export class FighterModel extends THREE.Group {
     this.dragonHolder=holdR&&holdL?"BOTH":holdR?"RIGHT":holdL?"LEFT":"FREE";
     this.dragonHands.right=right;this.dragonHands.left=left;
     // Log changing sockets, not every frame; no extra state is networked.
-    if (ZEPHYR_GRIP_DEBUG) {
+    if (ZEPHYR_GRIP_DEBUG || ZEPHYR_ANTICLIP_DEBUG) {
       const logKey=`${mode}:${key}:${right}:${left}:${this.dragonHolder}`;
       if (logKey!==this.dragonLastGripDebug){
         console.info(`[ZEPHYR ${ZEPHYR_V21_MODES[mode]} ${key}] `+
@@ -1193,19 +1347,58 @@ export class FighterModel extends THREE.Group {
     }
     this.dragonAnchor=null; // independent hierarchy; neither hand is its permanent parent.
 
-    // Strike poses stay shared; rod/chain configuration and socket timelines vary by mode.
+    // V26: l1..l5 and heavy have separate BODY-FRAME paths per mode.
+    // The last point of an attack is literally the first point of the next light.
+    const comboIndex=/^l[1-5]$/.test(basicKey)?Number(basicKey[1])-1:
+      basicKey==="heavy"?5:-1;
+    const path=ZEPHYR_COMBO_PATH_V26[mode];
+    const combo=comboIndex>=0 && !inSwitch && !show;
+    const wind=pose.endsWith("_w");
+    const phaseT=wind?(.05+.30*p):(.35+.65*p);
+    const stage=THREE.MathUtils.smoothstep(phaseT,0,1);
+    const stanceState=pose==="block"?2:pose==="charge"?3:
+      this.walk>.12?1:0;
+    const stance=WEAPON_STANCE[mode][stanceState];
+    const fromStance=WEAPON_STANCE[this.dragonPreviousMode][stanceState];
+    const tween=(a:number,b:number,t:number)=>THREE.MathUtils.lerp(a,b,t);
+    // Stances interpolate across F: no teleport or rigid snap when modes change.
+    const stancePos=this.dragonTmpS.set(
+      tween(fromStance.pos[0],stance.pos[0],modeBlend),
+      tween(fromStance.pos[1],stance.pos[1],modeBlend),
+      tween(fromStance.pos[2],stance.pos[2],modeBlend));
+    if(combo){
+      const a=path.pos[comboIndex===5?6:comboIndex];
+      const b=path.pos[comboIndex===5?7:comboIndex+1];
+      stancePos.set(tween(a[0],b[0],stage),tween(a[1],b[1],stage),
+        tween(a[2],b[2],stage));
+    }
+    // The body remains in +Z foreground; preserve room for the real hands to reach.
+    const attackRate=1-Math.exp(-ZEPHYR_ANTICLIP_TUNING.attackSmooth*Math.min(dt,.05));
+    root.position.lerp(stancePos,attackRate);
     const b=DRAGON_STAFF_ROTATIONS[pose]??DRAGON_STAFF_ROTATIONS.idle;
-    const spin=show?phase*Math.PI*1.8:key==="c"?p*Math.PI*8:
+    const baseSpin=show?phase*Math.PI*1.8:key==="c"?p*Math.PI*8:
       key==="z"?p*Math.PI*6:key==="v"?p*Math.PI*8:
-      key==="l3"||key==="l4"?p*Math.PI*2.4:key==="idle"?Math.sin(this.t*1.5)*.35:p*.85;
-    this.dragonTargetQ.setFromEuler(this.dragonTmpEuler.set(b[0],b[1],b[2],"YXZ"));
+      combo?0:key==="idle"?Math.sin(this.t*1.5)*.24:p*.65;
+    const spin=mode===1&&key==="split_r"?p*Math.PI*.38:
+      mode===1&&key==="split_l"?-p*Math.PI*.38:
+      mode===2&&!combo&&key!=="idle"&&!show?baseSpin*1.28:baseSpin;
+    if(combo){
+      const a=path.rot[comboIndex===5?6:comboIndex];
+      const b=path.rot[comboIndex===5?7:comboIndex+1];
+      this.dragonTmpEuler.set(tween(a[0],b[0],stage),
+        tween(a[1],b[1],stage),tween(a[2],b[2],stage),"YXZ");
+    }else if(key==="idle"||pose==="block"||pose==="charge"){
+      this.dragonTmpEuler.set(tween(fromStance.rot[0],stance.rot[0],modeBlend),
+        tween(fromStance.rot[1],stance.rot[1],modeBlend),
+        tween(fromStance.rot[2],stance.rot[2],modeBlend),"YXZ");
+    }else this.dragonTmpEuler.set(b[0],b[1],b[2],"YXZ");
+    this.dragonTargetQ.setFromEuler(this.dragonTmpEuler);
     this.dragonSpinQ.setFromAxisAngle(this.dragonAxisZ,spin);
     this.dragonTargetQ.multiply(this.dragonSpinQ);
     const palm=right||left||"middle:mid";
-    // Every F transition gets a brief 0.25-second visual wrist flourish.
     const flourish=Math.sin(modeBlend*PI)*.65*(1-modeBlend);
     this.dragonSpinQ.setFromAxisAngle(this.dragonAxisY,
-      (DRAGON_SOCKET_PALM[palm]??0)+Math.sin(spin*.5)*.22+flourish);
+      (DRAGON_SOCKET_PALM[palm]??0)+Math.sin(spin*.5)*.15+flourish);
     this.dragonTargetQ.multiply(this.dragonSpinQ);
     // Release gives both chain hinges an angular impulse so the free rods swing through.
     const nextGrip=`${right??""}/${left??""}`;
@@ -1223,11 +1416,14 @@ export class FighterModel extends THREE.Group {
       if(!hinge||!rod)continue;
       const sign=i===0?1:-1;
       const shape=(m:number)=>m===0?0:m===1?sign*1.18:m===2?sign*(.65+.4*Math.sin(this.t*5+i)):sign*2.60;
-      const oldZ=shape(this.dragonPreviousMode),newZ=shape(mode);
+      const stanceOld=WEAPON_STANCE[this.dragonPreviousMode][stanceState];
+      const stanceNew=WEAPON_STANCE[mode][stanceState];
+      const oldZ=combo||key!=="idle"?shape(this.dragonPreviousMode):stanceOld.loose[i];
+      const newZ=combo||key!=="idle"?shape(mode):stanceNew.loose[i];
       let targetZ=THREE.MathUtils.lerp(oldZ,newZ,modeBlend);
       if(mode===0&&impact)targetZ=0;
       if(mode===1&&impact)targetZ*=.35;
-      if(mode===2)targetZ+=sign*.28*Math.sin(this.t*6+spin*.7+i);
+      if(mode===2)targetZ+=sign*.40*Math.sin(this.t*6+spin*.7+i);
       const oldX=this.dragonPreviousMode===2?sign*.39:this.dragonPreviousMode===3?sign*.1:0;
       const newX=mode===2?sign*.39:mode===3?sign*.1:mode===1?sign*.18:0;
       const targetX=THREE.MathUtils.lerp(oldX,newX,modeBlend)+
@@ -1267,6 +1463,7 @@ export class FighterModel extends THREE.Group {
     this.bladeBase=this.dragonSockets["middle:high"];
     this.castPoint=this.bladeTip;
     if(this.vrmRig){
+      this.vrmRig.tristaffDebug=ZEPHYR_ANTICLIP_DEBUG;
       this.vrmRig.gripL=this.gripL;
       this.vrmRig.gripR=gripR;
       this.vrmRig.tristaffAnchor=null;
@@ -1324,6 +1521,85 @@ export class FighterModel extends THREE.Group {
     const correction=1-Math.exp(-Math.min(.05,dt)/.095);
     root.position.addScaledVector(this.dragonHandWorld.sub(this.dragonSocketWorld),correction);
     root.updateMatrixWorld(true);
+    this.enforceDragonClearance(dt);
+  }
+
+  // V26: visual-only rod avoidance after VRM IK and after socket alignment.
+  // Samples all three rigid rods against the hip-to-chest capsule and head sphere.
+  private enforceDragonClearance(dt:number){
+    const root=this.dragonRoot,vrm=this.vrmRig?.vrm;
+    if(!root||!vrm)return;
+    const visualBasic=/^zd[1-5]_|^zdh_|^idle$|^block$|^charge$/.test(this.dragonPose);
+    if(!visualBasic)return; // special behind-the-back skills may intentionally bypass.
+    const bone=(n:"hips"|"chest"|"head")=>vrm.humanoid.getNormalizedBoneNode(n);
+    const hp=bone("hips"),ch=bone("chest"),hd=bone("head");
+    if(!hp||!ch||!hd)return;
+    this.updateMatrixWorld(true);
+    this.worldToLocal(hp.getWorldPosition(this.dragonClipHip));
+    this.worldToLocal(ch.getWorldPosition(this.dragonClipChest));
+    this.worldToLocal(hd.getWorldPosition(this.dragonClipHead));
+    this.dragonClipAxis.copy(this.dragonClipChest).sub(this.dragonClipHip);
+    const d2=Math.max(.0001,this.dragonClipAxis.lengthSq());
+    let correction=0,penetrations=0;
+    const R=ZEPHYR_TRISTAFF_SIZE_V24.endHalfLength;
+    for(let i=0;i<3;i++){
+      const rod=i===0?root:this.dragonRods[i-1];if(!rod)continue;
+      const low=i===0?-ZEPHYR_TRISTAFF_SIZE_V24.middleHalfLength:0;
+      const high=i===0?ZEPHYR_TRISTAFF_SIZE_V24.middleHalfLength:
+        (i===1?2*R:-2*R);
+      for(let j=0;j<4;j++){
+        this.dragonClipSample.set(0,low+(high-low)*j/3,0);
+        this.worldToLocal(rod.localToWorld(this.dragonClipSample));
+        const t=THREE.MathUtils.clamp(this.dragonClipCheck.copy(this.dragonClipSample)
+          .sub(this.dragonClipHip).dot(this.dragonClipAxis)/d2,0,1);
+        const nearest=this.dragonClipCheck.copy(this.dragonClipHip).addScaledVector(this.dragonClipAxis,t);
+        const torsoDistance=this.dragonClipSample.distanceTo(nearest);
+        const headDistance=this.dragonClipSample.distanceTo(this.dragonClipHead);
+        const needed=Math.max(0,
+          ZEPHYR_ANTICLIP_TUNING.torsoRadius+ZEPHYR_ANTICLIP_TUNING.rodClearance-torsoDistance,
+          ZEPHYR_ANTICLIP_TUNING.headRadius+ZEPHYR_ANTICLIP_TUNING.rodClearance-headDistance);
+        if(needed>.001){correction=Math.max(correction,needed);penetrations++;}
+      }
+    }
+    if(correction>0){
+      root.position.z+=Math.min(correction,ZEPHYR_ANTICLIP_TUNING.rootClampStep);
+      // Slight yaw relief rather than an uncontrolled root rotation through the chest.
+      root.rotation.y+=THREE.MathUtils.clamp(root.position.x*.04,-.026,.026);
+      root.updateMatrixWorld(true);
+    }
+    if(ZEPHYR_ANTICLIP_DEBUG){
+      this.drawDragonDebug(penetrations);
+      this.dragonClipFrames++;
+      if(penetrations && this.dragonClipFrames%ZEPHYR_ANTICLIP_TUNING.debugEveryFrames===0)
+        console.warn(`[Zephyr V26] rod/body overlap corrected: ${penetrations} sample(s), ${this.dragonPose}, mode=${this.dragonMode}`);
+    }
+  }
+
+  private drawDragonDebug(collisionCount:number){
+    const vrm=this.vrmRig?.vrm;if(!vrm)return;
+    if(!this.dragonClipViz){
+      const g=new THREE.Group();g.name="ZEPHYR_V26_DEBUG_ONLY";
+      const material=new THREE.MeshBasicMaterial({color:0x00ffee,wireframe:true,depthTest:false});
+      const red=new THREE.MeshBasicMaterial({color:0xff3355,wireframe:true,depthTest:false});
+      const torso=new THREE.Mesh(new THREE.CapsuleGeometry(1,1,4,8),material);
+      const head=new THREE.Mesh(new THREE.SphereGeometry(1,10,7),red);
+      g.add(torso,head);
+      for(let i=0;i<4;i++)g.add(new THREE.Mesh(new THREE.SphereGeometry(.045,8,6),material));
+      this.add(g);this.dragonClipViz=g;
+    }
+    const vis=this.dragonClipViz,torso=vis.children[0] as THREE.Mesh,head=vis.children[1] as THREE.Mesh;
+    torso.position.copy(this.dragonClipHip).add(this.dragonClipChest).multiplyScalar(.5);
+    torso.scale.set(ZEPHYR_ANTICLIP_TUNING.torsoRadius,
+      Math.max(.05,this.dragonClipChest.distanceTo(this.dragonClipHip))*.5,
+      ZEPHYR_ANTICLIP_TUNING.torsoRadius);
+    head.position.copy(this.dragonClipHead);
+    head.scale.setScalar(ZEPHYR_ANTICLIP_TUNING.headRadius);
+    const names=["leftHand","rightHand","leftLowerArm","rightLowerArm"] as const;
+    for(let i=0;i<names.length;i++){
+      const n=vrm.humanoid.getNormalizedBoneNode(names[i]);
+      if(n)this.worldToLocal(n.getWorldPosition((vis.children[i+2] as THREE.Object3D).position));
+    }
+    (torso.material as THREE.MeshBasicMaterial).color.setHex(collisionCount?0xff9911:0x00ffee);
   }
 
   /** ZAREK_STORM_V1: double-ended conductive glaive; meshes follow the VRM's hands. */
@@ -3102,7 +3378,7 @@ export class FighterModel extends THREE.Group {
     // A longbow is about 85-90% of body height.
     if (this.kit === "bow") { this.vrmRig.archer = true; this.vrmRig.followArm = 0; this.bowPivot?.scale.setScalar(1.45); }
     // ZAREK_WEAPON_RANGE_MATCH_V1_NOV06: keep Zarek's long double-ended blade visible on VRM bodies.
-    const weaponScale = this.kit === "glaive" && this.look.element === "metal" ? 0.93 : this.kit === "glaive" ? 0.87 : this.kit === "scythe" ? 0.82 : this.kit === "tristaff" ? 0.79 : VRM_WEAPON_SCALE; // ZAREK_PROPORTIONATE_GLAIVE_V1: total VRoid weapon length about -29%
+    const weaponScale = this.kit === "glaive" && this.look.element === "metal" ? 0.93 : this.kit === "glaive" ? 0.87 : this.kit === "scythe" ? 0.82 : this.kit === "tristaff" ? ZEPHYR_TRISTAFF_SIZE_V24.globalScale : VRM_WEAPON_SCALE; // ZAREK_PROPORTIONATE_GLAIVE_V1: total VRoid weapon length about -29%
     for (const h of [this.hand_l, this.hand_r]) h.scale.multiplyScalar(weaponScale);
     JN.forEach((n, i) => this.joints[n].quaternion.copy(save[i]));
     this.hips.position.copy(hipsPos);

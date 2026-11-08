@@ -52,14 +52,31 @@ export const CONTINUOUS_STYLES = new Set([
   "cyclone_kick_v2", "iron_tempest", "phantom_rush",
 ]);
 
+// NYTHERA_AIR_SPEED_BALANCE_V26: only Nythera; Kira and Nyx are unchanged.
+const NYTHERA_V26_TUNING = { maxAirSlices: 3, speedCap: 1.48 } as const;
+// GUARD_FATIGUE_V26 — affects the attacker on REAL block/parry contacts.
+// Unlimited stacks; effective speed has a safety floor to avoid zero timelines.
+export const GUARD_FATIGUE_TUNING = {
+  speedLostPerStack: 0.02,
+  decaySecondsPerStack: 3.0,
+  minSpeed: 0.20,
+} as const;
 // ZEPHYR_DRAGON_MODE_V18 — all combat-mode numbers in one editable table.
 // Mode order: STAFF, SPLIT, WHIP, FOLDED. Set every entry to 1 to disable bonuses.
 export const DRAGON_MODE_TUNING = [
-  { reach: 1.00, wind: 1.00, recover: 1.00, guard: 1.00, block: 1.15, parry: 1.15, counter: 1.00, switchAttack: { name: "Snap Thrust", dmg: 14, guard: 24, reach: 2.34, knock: 0.85, stun: 0.10, hits: 1, wind: 0.07, active: 0.11, recover: 0.10, pull: 0 }, splitDamageTakenMult: 1.00, splitGuardDamageMult: 1.00, splitAlternateSpeedMult: 1.00, splitExitInvuln: 0.00, switchCooldown: 1.0, switchFlourish: 0.30 }, // STAFF
-  { reach: 0.88, wind: 0.85, recover: 0.88, guard: 1.00, block: 1.00, parry: 1.00, counter: 1.00, switchAttack: { name: "Cross Flick", dmg: 8, guard: 16, reach: 1.84, knock: 0.30, stun: 0.06, hits: 2, wind: 0.05, active: 0.14, recover: 0.09, pull: 0 }, splitDamageTakenMult: 1.10, splitGuardDamageMult: 1.12, splitAlternateSpeedMult: 0.77, splitExitInvuln: 0.08, switchCooldown: 1.0, switchFlourish: 0.30 }, // SPLIT
-  { reach: 1.18, wind: 1.08, recover: 1.00, guard: 1.00, block: 0.80, parry: 0.90, counter: 1.00, switchAttack: { name: "Chain Lash", dmg: 15, guard: 23, reach: 2.62, knock: 0.30, stun: 0.09, hits: 1, wind: 0.09, active: 0.12, recover: 0.07, pull: 0.18 }, splitDamageTakenMult: 1.00, splitGuardDamageMult: 1.00, splitAlternateSpeedMult: 1.00, splitExitInvuln: 0.00, switchCooldown: 1.0, switchFlourish: 0.30 }, // WHIP
-  { reach: 0.80, wind: 0.82, recover: 0.80, guard: 1.00, block: 1.00, parry: 1.00, counter: 1.25, switchAttack: { name: "Fold Jab", dmg: 13, guard: 22, reach: 1.55, knock: 0.28, stun: 0.17, hits: 1, wind: 0.055, active: 0.09, recover: 0.13, pull: 0 }, splitDamageTakenMult: 1.00, splitGuardDamageMult: 1.00, splitAlternateSpeedMult: 1.00, splitExitInvuln: 0.00, switchCooldown: 1.0, switchFlourish: 0.30 }, // FOLDED
+  { reach: 1.00, wind: 1.00, recover: 1.00, guard: 1.00, block: 1.15, parry: 1.15, counter: 1.00, switchAttack: { name: "Snap Thrust", dmg: 14, guard: 24, reach: 2.34, knock: 0.85, stun: 0.10, hits: 1, wind: 0.07, active: 0.11, recover: 0.10, pull: 0 }, splitDamageTakenMult: 1.00, splitGuardDamageMult: 1.00, splitAlternateSpeedMult: 1.00, splitExitInvuln: 0.00, staffShieldRaise: 0.012, staffChargedGuardMult: 2.00, switchCooldown: 1.0, switchFlourish: 0.30 }, // STAFF
+  { reach: 0.88, wind: 0.85, recover: 0.88, guard: 1.00, block: 1.00, parry: 1.00, counter: 1.00, switchAttack: { name: "Cross Flick", dmg: 8, guard: 16, reach: 1.84, knock: 0.30, stun: 0.06, hits: 2, wind: 0.05, active: 0.14, recover: 0.09, pull: 0 }, splitDamageTakenMult: 1.10, splitGuardDamageMult: 1.12, splitAlternateSpeedMult: 0.37, splitClickSpeedCap: 2.00, splitExitInvuln: 0.08, switchCooldown: 1.0, switchFlourish: 0.30 }, // SPLIT
+  { reach: 1.18, wind: 1.08, recover: 1.00, guard: 1.00, block: 0.80, parry: 0.90, counter: 1.00, switchAttack: { name: "Chain Lash", dmg: 15, guard: 23, reach: 2.62, knock: 0.30, stun: 0.09, hits: 1, wind: 0.09, active: 0.12, recover: 0.07, pull: 0.18 }, splitDamageTakenMult: 1.00, splitGuardDamageMult: 1.00, splitAlternateSpeedMult: 1.00, splitExitInvuln: 0.00, whipArcDot: -0.45, whipVisualArcMult: 1.35, switchCooldown: 1.0, switchFlourish: 0.30 }, // WHIP
+  { reach: 0.80, wind: 0.82, recover: 0.80, guard: 1.00, block: 1.00, parry: 1.00, counter: 1.25, switchAttack: { name: "Fold Jab", dmg: 13, guard: 22, reach: 1.55, knock: 0.28, stun: 0.17, hits: 1, wind: 0.055, active: 0.09, recover: 0.13, pull: 0 }, splitDamageTakenMult: 1.00, splitGuardDamageMult: 1.00, splitAlternateSpeedMult: 1.00, splitExitInvuln: 0.00, foldedAttackSpeed: 1.50, switchCooldown: 1.0, switchFlourish: 0.30 }, // FOLDED
 ] as const;
+
+// ZEPHYR_FULL_BALANCE_RHYTHM_V25: short-rebound sanjiekun gives additional
+// survivability. Values are constants so HP/DR can be independently tuned.
+export const ZEPHYR_PASSIVE_TUNING = {
+  rhythmSeconds: 25,
+  attackSpeedPerStack: 0.20, // V26: +20% attack speed per active Rhythm stack, max 3.
+  damageTakenMult: 0.80, // 20% less incoming HP damage
+} as const;
 
 // ZEPHYR_DRAGON_VARIANTS_V19 — editable per-mode attacks.
 // Values are PRE mode multipliers. The already-existing DRAGON_MODE_TUNING
@@ -137,10 +154,22 @@ function applyDragonMode(attack: Attack, mode: number, fixedSkill: boolean): Att
     ? DRAGON_VARIANTS[safeMode][key] : undefined;
   const selected: Attack={...attack,...variant, cd:attack.cd, id:attack.id};
   const result={...selected, reach:selected.reach*m.reach, guard:selected.guard*m.guard};
+  // ZEPHYR_MODE_BALANCE_V25: 2x guard pressure only on STAFF charged heavy.
+  if (safeMode===0 && attack.id==="heavy")
+    result.guard *= DRAGON_MODE_TUNING[0].staffChargedGuardMult;
+  // Whip hits use the wider real melee sector; C retains its own behind-the-back coverage.
+  if (safeMode===2) result.dragonArcCos=DRAGON_MODE_TUNING[2].whipArcDot;
   if(mode===1 && (attack.id==="split_r" || attack.id==="split_l"))
     result.guard*=DRAGON_MODE_TUNING[1].splitGuardDamageMult;
   // Z/X/C/V keep their original pulse counts and temporal hit schedule.
   if (!fixedSkill) { result.wind*=m.wind; result.recover*=m.recover; }
+  // Folded is 1.5x total animation speed on basics, heavy, Z/X/C and V.
+  // Apply AFTER the mode's normal startup/recovery multipliers; cooldowns and
+  // special counter duration remain untouched.
+  if (safeMode===3) {
+    const speed=DRAGON_MODE_TUNING[3].foldedAttackSpeed;
+    result.wind/=speed; result.active/=speed; result.recover/=speed;
+  }
   if (result.style==="zephyr_reversal") result.duration*=m.counter;
   return result;
 }
@@ -359,10 +388,10 @@ export class Fighter implements Entity {
   orbitDisplayT = 0;
   // NYTHERA_AERIAL_DREADFALL_V9: V12 balance: +0.05x each real Dreadfall hit, capped at 1.70x for this round.
   nytheraDreadfallHits = 0;
-  // NYTHERA_ZENITH_LOWER_CAPS_V14: flat -0.20x speed at ALL stacks; maximum 1.50x.
+  // NYTHERA_AIR_SPEED_BALANCE_V26: starts 0.80x, earns +0.05x per hit, caps at 1.48x.
   nytheraAttackSpeed(): number {
     const stacks = Math.max(0, Math.min(14, this.nytheraDreadfallHits));
-    return Math.min(1.50, 0.80 + stacks * 0.05);
+    return Math.min(NYTHERA_V26_TUNING.speedCap, 0.80 + stacks * 0.05);
   }
   onGravityShift: (f: Fighter) => void = () => {};
   // ZEPHYR_DRAGON_DANCER_V1 — stacks earned only on confirmed hits, parries, and clashes.
@@ -374,13 +403,54 @@ export class Fighter implements Entity {
   dragonLastHand: "r"|"l"|""="";
   private dragonSplitPrev: "r"|"l"|""="";
   private dragonSplitQueued: "r"|"l"|""="";
+  private dragonSplitLastStart = -99;
+  /** Normal unboosted Split hit cycle; the minimum interval is half when alternating. */
+  private dragonSplitMinInterval(hand: "r"|"l"): number {
+    const base = DRAGON_VARIANTS[1].split_r!;
+    const m = DRAGON_MODE_TUNING[1];
+    const total = (base.wind ?? 0.12)*m.wind + (base.active ?? 0.07) +
+      (base.recover ?? 0.19)*m.recover;
+    const alternating = !!this.dragonLastHand && this.dragonLastHand !== hand;
+    return total / (alternating ? m.splitClickSpeedCap : 1);
+  }
   private dragonSplitStrike(hand: "r"|"l") {
     this.dragonSplitQueued="";
     this.holding=false; this.atkPrev=false;
+    this.dragonSplitLastStart=this.clock;
+    // Each click starts one real melee contact. The interval guard in attackStep
+    // prevents skipping more than half the ordinary Split attack cycle.
     this.startAttack(hand==="r"?"split_r":"split_l");
   }
   dragonMode = 0; // 0 STAFF, 1 SPLIT, 2 WHIP, 3 FOLDED
   dragonModeCd = 0;
+  // ZEPHYR_FULL_BALANCE_RHYTHM_V25: values change only Zephyr, not the entire roster.
+  // The three Rhythm stacks time out 25 seconds after the latest gain.
+  // GUARD_FATIGUE_V26: anyone attacking into a guard loses tempo.
+  guardFatigueStacks = 0;
+  guardFatigueDecayT = GUARD_FATIGUE_TUNING.decaySecondsPerStack;
+  guardFatigueSpeed() {
+    return Math.max(GUARD_FATIGUE_TUNING.minSpeed,
+      1 - this.guardFatigueStacks * GUARD_FATIGUE_TUNING.speedLostPerStack);
+  }
+  applyGuardFatigue() {
+    if (this.isDown()) return;
+    this.guardFatigueStacks += 1; // intentionally unlimited
+    this.guardFatigueDecayT = GUARD_FATIGUE_TUNING.decaySecondsPerStack;
+  }
+  private tickGuardFatigue(dt: number) {
+    if (this.guardFatigueStacks <= 0) {
+      this.guardFatigueStacks = 0;
+      this.guardFatigueDecayT = GUARD_FATIGUE_TUNING.decaySecondsPerStack;
+      return;
+    }
+    this.guardFatigueDecayT -= dt;
+    while (this.guardFatigueStacks > 0 && this.guardFatigueDecayT <= 0) {
+      this.guardFatigueStacks -= 1;
+      this.guardFatigueDecayT += GUARD_FATIGUE_TUNING.decaySecondsPerStack;
+    }
+    if (this.guardFatigueStacks <= 0)
+      this.guardFatigueDecayT = GUARD_FATIGUE_TUNING.decaySecondsPerStack;
+  }
   dragonRhythm = 0;
   dragonRhythmT = 0;
   private dragonRhythmSerial = -1;
@@ -390,7 +460,7 @@ export class Fighter implements Entity {
     if (serial >= 0 && this.dragonRhythmSerial === serial) return;
     if (serial >= 0) this.dragonRhythmSerial = serial;
     this.dragonRhythm = Math.min(3, this.dragonRhythm + 1);
-    this.dragonRhythmT = 7;
+    this.dragonRhythmT = ZEPHYR_PASSIVE_TUNING.rhythmSeconds;
   }
   onSwing: (f: Fighter) => void = () => {};
   // ZENITH_IRON_SOVEREIGN_V1_20261108 — pure game-side spear state.
@@ -793,21 +863,21 @@ export class Fighter implements Entity {
       }
     }
     if (this.kit === "scythe") {
-      // Moonfloat and Dreadfall: four graceful arcs per jump, never four auto-hits.
+      // Moonfloat and Dreadfall: three graceful arcs per jump, never three auto-hits.
       // Each is a separate melee action, so the defender can block, parry,
       // dodge or clash any individual slice.
-      const names = ["Lunar Sweep", "Veil Reversal", "Falling Crescent", "Eclipse Petal"];
-      const damage = [34, 37, 40, 52];
-      for (let n = 1; n <= 4; n++) {
+      const names = ["Lunar Sweep", "Veil Reversal", "Falling Crescent"];
+      const damage = [34, 37, 52];
+      for (let n = 1; n <= NYTHERA_V26_TUNING.maxAirSlices; n++) {
         const key = `air_l${n}`;
-        const original = this.attacks[n === 4 ? "air_l3" : key];
+        const original = this.attacks[key];
         this.attacks[key] = { ...original, id: key, name: names[n - 1],
-          desc: `Air scythe cut ${n}/4: tap attack again in midair to continue. Individual cuts can be blocked, parried or clashed.`,
-          type: "melee", no_parry: false, wind: n === 4 ? 0.11 : 0.085,
-          active: 0.090, recover: n === 4 ? 0.24 : 0.115,
-          dmg: damage[n - 1], guard: n === 4 ? 22 : 12,
+          desc: `Air scythe cut ${n}/3: tap attack again in midair to continue. Individual cuts can be blocked, parried or clashed.`,
+          type: "melee", no_parry: false, wind: n === 3 ? 0.11 : 0.085,
+          active: 0.090, recover: n === 3 ? 0.24 : 0.115,
+          dmg: damage[n - 1], guard: n === 3 ? 22 : 12,
           reach: 2.40 + n * 0.045, lunge: 0.18,
-          knock: n === 4 ? 2.9 : 0.35, stun: n === 4 ? 0.26 : 0.14,
+          knock: n === 3 ? 2.9 : 0.35, stun: n === 3 ? 0.26 : 0.14,
           heavy: false, stagger: false, style: "gravity_air_crescent", next: "" };
       }
     }
@@ -903,11 +973,11 @@ export class Fighter implements Entity {
         }
       }
       if (this.kit === "scythe") {
-        // Four alternating two-hand scythe arcs with real up/level/down aiming.
+        // Three alternating two-hand scythe arcs with real up/level/down aiming.
         // Reuse proven Gravity Reaper pose sources; avoid a generic sword chop.
-        const winds = ["gr1_w", "gr2_w", "gr3_w", "gr6_w"];
-        const slashes = ["gr1_s", "gr2_s", "gr3_s", "gr6_s"];
-        for (let n = 1; n <= 4; n++) {
+        const winds = ["gr1_w", "gr2_w", "gr3_w"];
+        const slashes = ["gr1_s", "gr2_s", "gr3_s"];
+        for (let n = 1; n <= NYTHERA_V26_TUNING.maxAirSlices; n++) {
           const sw = copy(source(winds[n - 1])), ss = copy(source(slashes[n - 1]));
           sw.torso[0] += pitch < 0 ? -0.13 : pitch > 0 ? 0.07 : 0;
           ss.torso[0] += pitch < 0 ? 0.23 : pitch > 0 ? -0.18 : 0;
@@ -915,7 +985,7 @@ export class Fighter implements Entity {
           ss.head[0] += pitch < 0 ? 0.12 : pitch > 0 ? -0.09 : 0;
           sw.leg_l[0] -= 0.33; sw.leg_r[0] += 0.26;
           ss.leg_l[0] -= 0.14; ss.leg_r[0] += 0.22;
-          if (n === 4) { sw.torso[1] -= 0.18; ss.torso[1] += 0.23; }
+          if (n === 3) { sw.torso[1] -= 0.18; ss.torso[1] += 0.23; }
           this.poses[`nythera_air_${n}_${direction}_w`] = sw;
           this.poses[`nythera_air_${n}_${direction}_s`] = ss;
         }
@@ -975,10 +1045,10 @@ export class Fighter implements Entity {
     // NESA_DODGE_KIRA_AIR_3_V1: 3 taps / connected kicks for Kira, one for others.
     if (this.kit === "kicks") this.kiraAirKicks = Math.min(3, this.kiraAirKicks + 1);
     if (this.kit === "assassin") this.nyxAirStrikes = Math.min(2, this.nyxAirStrikes + 1);
-    if (this.kit === "scythe") this.nytheraAirSlices = Math.min(4, this.nytheraAirSlices + 1);
+    if (this.kit === "scythe") this.nytheraAirSlices = Math.min(NYTHERA_V26_TUNING.maxAirSlices, this.nytheraAirSlices + 1);
     this.airSliceUsed = this.kit === "kicks" ? this.kiraAirKicks >= 3 :
       this.kit === "assassin" ? this.nyxAirStrikes >= 2 :
-      this.kit === "scythe" ? this.nytheraAirSlices >= 4 : true;
+      this.kit === "scythe" ? this.nytheraAirSlices >= NYTHERA_V26_TUNING.maxAirSlices : true;
     this.kiraAirBuffered = false;
     this.nyxAirBuffered = false;
     this.nytheraAirBuffered = false;
@@ -1119,6 +1189,7 @@ export class Fighter implements Entity {
     this.dragonSwitchT = Math.max(0,this.dragonSwitchT-dt);
     this.dragonRhythmT = Math.max(0, this.dragonRhythmT - dt);
     if (this.dragonRhythmT <= 0) this.dragonRhythm = 0;
+    this.tickGuardFatigue(dt);
     this.parryCounterT = Math.max(0, this.parryCounterT - dt);
     this.parryRecoilT = Math.max(0, this.parryRecoilT - dt);
     if (this.parryRecoilT > 0) this.model.recoil = Math.max(this.model.recoil, 0.23 + 0.35 * this.parryRecoilT);
@@ -1479,7 +1550,8 @@ export class Fighter implements Entity {
       this.dragonSplitPrev=hand;
       this.holding=false;this.atkPrev=false;
       if(splitPressed && !this.chainBoundBy && this.parryRecoilT<=0 && this.atkLock<=0) {
-        if(this.state===S.IDLE||this.state===S.BLOCK)
+        if((this.state===S.IDLE||this.state===S.BLOCK) &&
+           this.clock-this.dragonSplitLastStart>=this.dragonSplitMinInterval(hand))
           this.dragonSplitStrike(hand);
         else if(this.state===S.ATTACK) this.dragonSplitQueued=hand;
       }
@@ -1520,7 +1592,7 @@ export class Fighter implements Entity {
         // Buffer second tap during Falling Fang; release into Shadow Cross on recovery.
         this.nyxAirBuffered = true;
       } else if (this.kit === "scythe" && this.state === S.ATTACK &&
-          /^air_l[1-4]$/.test(this.atkId) && this.nytheraAirSlices < 4) {
+          /^air_l[1-3]$/.test(this.atkId) && this.nytheraAirSlices < NYTHERA_V26_TUNING.maxAirSlices) {
         this.nytheraAirBuffered = true;
       } else this.tryAirSlice();
       return;
@@ -1941,6 +2013,18 @@ export class Fighter implements Entity {
         this.dragonLastHand=hand; // local derived from attack ID, never synced.
       }
     }
+    // ZEPHYR_RHYTHM_ATTACK_SPEED_V26 — earned Rhythm accelerates basics AND skills.
+    // Applied at attack commitment: gaining a stack mid-combo accelerates the next
+    // attack, not an already scheduled contact. Finisher speed is calculated before
+    // consuming 3 stacks. Mode bonuses still apply; cooldowns stay unchanged.
+    if (this.kit === "tristaff" && this.atk) {
+      const stacks = Math.max(0, Math.min(3, this.dragonRhythm));
+      const speed = 1 + stacks * ZEPHYR_PASSIVE_TUNING.attackSpeedPerStack;
+      this.atk = { ...this.atk,
+        wind: this.atk.wind / speed,
+        active: this.atk.active / speed,
+        recover: this.atk.recover / speed };
+    }
     // ZEPHYR_DRAGON_DANCER_V1: spend earned rhythm on next committed finisher.
     if (this.kit === "tristaff" && this.atk && this.dragonRhythm >= 3 &&
         ["l5", "heavy", "c", "v", "pc"].includes(id)) {
@@ -2051,6 +2135,16 @@ export class Fighter implements Entity {
         effect: "weaken", effect_t: 50, effect_p: 0.8,
       };
     }
+    // GUARD_FATIGUE_V26: finalized, kit-specific attack. Applies to both
+    // basics and Z/X/C/V wind/active/recovery, but NEVER to cooldown duration.
+    // 0.20x speed is a technical floor; stacks themselves remain uncapped.
+    if (this.atk && this.guardFatigueStacks > 0) {
+      const speed = this.guardFatigueSpeed();
+      this.atk = { ...this.atk,
+        wind: this.atk.wind / speed,
+        active: this.atk.active / speed,
+        recover: this.atk.recover / speed };
+    }
     this.atkPhase = 0;
     this.buffered = false;
     this.comboDamageMult = 1;
@@ -2084,11 +2178,11 @@ export class Fighter implements Entity {
     }
 
     if (this.kit === "scythe" && this.nytheraAirBuffered && !this.onGround &&
-        /^air_l[1-4]$/.test(this.atkId) && this.nytheraAirSlices < 4 &&
+        /^air_l[1-3]$/.test(this.atkId) && this.nytheraAirSlices < NYTHERA_V26_TUNING.maxAirSlices &&
         this.stateT >= w + ac) {
       this.nytheraAirBuffered = false;
       this.nytheraAirSlices++;
-      this.airSliceUsed = this.nytheraAirSlices >= 4;
+      this.airSliceUsed = this.nytheraAirSlices >= NYTHERA_V26_TUNING.maxAirSlices;
       this.airSliceAngle = this.airAimAtOpponent();
       this.startAttack(`air_l${this.nytheraAirSlices}`);
       return;
@@ -2106,8 +2200,12 @@ export class Fighter implements Entity {
       return;
     }
 
+    // ZEPHYR_FULL_BALANCE_RHYTHM_V25: input driven; no phantom auto-combos.
+    // Contact on the earlier swing must resolve first. Alternating hands allows
+    // a maximum 2x base cadence, repeating a hand uses the normal full cycle.
     if(this.kit==="tristaff" && this.dragonMode===1 && this.dragonSplitQueued &&
-       this.state===S.ATTACK && this.stateT>=w+ac+0.025) {
+       this.state===S.ATTACK && this.stateT>=w+ac &&
+       this.clock-this.dragonSplitLastStart>=this.dragonSplitMinInterval(this.dragonSplitQueued)) {
       const hand=this.dragonSplitQueued;
       this.dragonSplitStrike(hand);return;
     }
@@ -2189,7 +2287,10 @@ export class Fighter implements Entity {
 
   private setState(s: S) {
     if (s === S.BLOCK && this.state !== S.BLOCK) {
-      this.shieldRaise = this.nextShieldFast ? 0.01 : 0.10;
+      // ZEPHYR_MODE_BALANCE_V25: STAFF can raise guard nearly instantly.
+      this.shieldRaise = this.kit==="tristaff" && this.dragonMode===0
+        ? DRAGON_MODE_TUNING[0].staffShieldRaise
+        : (this.nextShieldFast ? 0.01 : 0.10);
       this.nextShieldFast = false;
     }
     this.state = s; this.stateT = 0; this.poseOverride = "";
@@ -2388,10 +2489,13 @@ export class Fighter implements Entity {
       this.velY = 0; this.knock = 0;
     }
     for (const d of st.dots) {
-      this.hp = Math.max(this.hp - d.dmg, 0);
+      const dotDamage=this.kit==="tristaff" ?
+        d.dmg*ZEPHYR_PASSIVE_TUNING.damageTakenMult*
+        (this.dragonMode===1?DRAGON_MODE_TUNING[1].splitDamageTakenMult:1) : d.dmg;
+      this.hp = Math.max(this.hp - dotDamage, 0);
       // Damage-over-time counts as taking damage for guard recovery.
-      if (d.dmg > 0) this.guardDelay = GUARD_REGEN_DAMAGE_DELAY;
-      this.dots.push({ ...d, src: this.status.src });
+      if (dotDamage > 0) this.guardDelay = GUARD_REGEN_DAMAGE_DELAY;
+      this.dots.push({ ...d, dmg: dotDamage, src: this.status.src });
       if (this.hp <= 0) { this.ko(); return; }
     }
     if (st.jolt && this.zenithCatchShieldT <= 0 && this.bloodFestivalT <= 0 && !this.meteorFistArmor && !this.hammerWeightArmor && this.state !== S.HITSTUN && this.state !== S.STAGGER) {
@@ -2430,6 +2534,9 @@ export class Fighter implements Entity {
       return "counter";
     }
     let dmg = a.dmg * power;
+    // Sanjiekun resilience: the fighter has learned to absorb the three rods'
+    // rebounds. SPLIT's +10% exposure is still applied on top (0.8 * 1.1).
+    if(this.kit==="tristaff") dmg*=ZEPHYR_PASSIVE_TUNING.damageTakenMult;
     if(this.kit==="tristaff"&&this.dragonMode===1)
       dmg*=DRAGON_MODE_TUNING[1].splitDamageTakenMult;
     if (a.type === "projectile" && this.garrickIsAdvancing(attacker)) dmg *= 0.75;
@@ -2677,6 +2784,8 @@ export class Fighter implements Entity {
     this.judgmentT = 0; this.model.setJudgment(false);
     this.clashMomentum = 0;
     this.nytheraDreadfallHits = 0; // new round: wipe Dreadfall speed progress
+    this.guardFatigueStacks = 0; // round reset; match-long Aster/Vesper passives unaffected
+    this.guardFatigueDecayT = GUARD_FATIGUE_TUNING.decaySecondsPerStack;
     this.passiveResetRound();
     if (this.look.element === "metal") {
       this.zenithSpearOut = false;
@@ -3110,7 +3219,7 @@ export class Fighter implements Entity {
     }
     // Directional air swings use real distinct poses, including for remote VRM models.
     if (!this.stage && this.state === S.ATTACK && (this.atkId === "air_l1" || (this.kit === "kicks" && /^air_l[2-3]$/.test(this.atkId)) ||
-        (this.kit === "scythe" && /^air_l[2-4]$/.test(this.atkId)) ||
+        (this.kit === "scythe" && /^air_l[2-3]$/.test(this.atkId)) ||
         (this.kit === "assassin" && this.atkId === "air_l2"))) {
       const direction = this.airSliceAngle < -0.28 ? "down" :
         this.airSliceAngle > 0.28 ? "up" : "level";
@@ -3120,7 +3229,7 @@ export class Fighter implements Entity {
       } else if (this.kit === "assassin") {
         p = `nyx_air_${this.atkId === "air_l2" ? 2 : 1}_${direction}_${this.atkPhase === 0 ? "w" : "s"}`;
       } else if (this.kit === "scythe") {
-        const number = Math.max(1, Math.min(4, Number(this.atkId.slice(-1)) || 1));
+        const number = Math.max(1, Math.min(NYTHERA_V26_TUNING.maxAirSlices, Number(this.atkId.slice(-1)) || 1));
         p = `nythera_air_${number}_${direction}_${this.atkPhase === 0 ? "w" : "s"}`;
       } else p = `air_slice_${direction}_${this.atkPhase === 0 ? "w" : "s"}`;
       sp = this.atkPhase === 0 ? (this.kit === "assassin" || this.kit === "scythe" ? 34 : 24) :
@@ -3158,7 +3267,8 @@ export class Fighter implements Entity {
       this.passiveGaleSmashes, this.passiveBobMines, this.passiveBobBarrels,
       this.passiveAshHits, this.passiveAshProcs, this.passiveNesaHits,
       this.passiveKaizenWeaken, this.passiveEmberGroundHits,
-      this.passiveEmberPatches, this.dragonRhythm, +this.dragonRhythmT.toFixed(2), this.dragonMode]; // PASSIVE_ROSTER_V10: optional appended snapshot fields
+      this.passiveEmberPatches, this.dragonRhythm, +this.dragonRhythmT.toFixed(2), this.dragonMode,
+      this.guardFatigueStacks, +this.guardFatigueDecayT.toFixed(2)]; // GUARD_FATIGUE_V26: optional tail, indices 86-87
   }
 
   applySnapshot(s: any[]) {
@@ -3204,6 +3314,8 @@ export class Fighter implements Entity {
     this.dragonRhythm = s.length > 83 ? s[83] : 0;
     this.dragonRhythmT = s.length > 84 ? s[84] : 0;
     this.dragonMode = s.length > 85 ? Math.max(0,Math.min(3,s[85])) : 0;
+    this.guardFatigueStacks = s.length > 86 ? Math.max(0, s[86]) : 0;
+    this.guardFatigueDecayT = s.length > 87 ? s[87] : GUARD_FATIGUE_TUNING.decaySecondsPerStack;
     this.model.dragonMode=this.dragonMode;
     this.model.gravityHeavy = this.kit === "scythe" && this.gravityMode === "heavy";
     if (this.look.element === "metal" && s.length > 58) {

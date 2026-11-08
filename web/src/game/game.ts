@@ -1879,15 +1879,15 @@ export class Game implements MobHost {
     // clear side changes and deeper Dreadfall finishes. No expanded hitboxes.
     const basic = /^l[1-6]$/.test(a.id);
     if (basic || a.type === "melee") {
-      const aerial = /^air_l[1-4]$/.test(a.id);
+      const aerial = /^air_l[1-3]$/.test(a.id);
       const beat = basic ? Math.min(6, Math.max(1, Number(a.id.substring(1)))) :
-        aerial ? Math.max(1, Math.min(4, Number(a.id.slice(-1)))) : 3;
+        aerial ? Math.max(1, Math.min(3, Number(a.id.slice(-1)))) : 3;
       this.fxp("nytheraCrescent", f.chest(), f.root.rotation.y, beat, !light);
       if (basic) this.snd(beat === 6 ? "swing_heavy" : "swing2", light ? 0.40 : 0.53);
       if (aerial) {
-        // Four airy crescent ribbons, escalating into a bright final scythe bloom.
-        this.fxp("sparks", tip, beat === 4 ? "#f1d9ff" : col, beat === 4 ? 23 : 9, beat === 4 ? 5.2 : 3.3);
-        if (beat === 4) this.fxp("ring", tip, col, 0.91, 0.19, 0.70);
+        // Three airy crescent ribbons, escalating into a bright final scythe bloom.
+        this.fxp("sparks", tip, beat === 3 ? "#f1d9ff" : col, beat === 3 ? 23 : 9, beat === 3 ? 5.2 : 3.3);
+        if (beat === 3) this.fxp("ring", tip, col, 0.91, 0.19, 0.70);
       }
     }
     this.fxp("slashes", tip, col);
@@ -4429,11 +4429,17 @@ export class Game implements MobHost {
     const sentenceMult = heavySentence ? 1 + marks * 0.05 : 1;
     // Match all Nythera attacks, including scheduled Z/X/V beats.
     // The original attack data and visual contact events remain untouched.
-    const nytheraBasic = /^l[1-6]$/.test(a.id) || /^air_l[1-4]$/.test(a.id) || a.id === "heavy";
+    const nytheraBasic = /^l[1-6]$/.test(a.id) || /^air_l[1-3]$/.test(a.id) || a.id === "heavy";
     const balancedAttack = gravityOwner && a.dmg > 0
       ? { ...zenithAttack, dmg: zenithAttack.dmg * (nytheraBasic ? 0.90 : 0.80) }
       : zenithAttack;
     const result = d.receiveHit(attacker, balancedAttack, (riposte ? power * 1.15 : power) * sentenceMult);
+    // GUARD_FATIGUE_V26: real defended contact penalizes the *attacker*.
+    // Each separate hit of a multi-hit move counts; dodges/clashes and misses do not.
+    // Guard breaks also count because they were blocked contacts.
+    if (attacker instanceof Fighter && d instanceof Fighter &&
+        (result === "blocked" || result === "parry" || result === "guard_break"))
+      attacker.applyGuardFatigue();
     // ZEPHYR_DRAGON_DANCER_V1: count actual impacts, not misses / block spam.
     if (attacker instanceof Fighter && attacker.kit === "tristaff" &&
         ["hit", "crit", "ko"].includes(result) &&
@@ -4719,8 +4725,12 @@ export class Game implements MobHost {
             this.fxp("num", attacker.chest().add(new THREE.Vector3(0, 0.9, 0)),
               "COMBO -10% • +0.2s", "#b8eaff", 0.82);
           }
-          if (!ranged && a.type === "melee") attacker.applyParryRecoil(0.50);
-          else attacker.model.recoil = Math.max(attacker.model.recoil, 0.35);
+          // ZEPHYR_MODE_BALANCE_V25: SPLIT is a committed no-guard offense.
+          // A successful enemy parry still works, but does not apply attacker recoil.
+          if (!ranged && a.type === "melee") {
+            if (!(attacker.kit==="tristaff" && attacker.dragonMode===1))
+              attacker.applyParryRecoil(0.50);
+          } else attacker.model.recoil = Math.max(attacker.model.recoil, 0.35);
           df.armParryCounter(attacker, attacker.atkId === "pc" ? attacker.parryCounterDepth + 1 : 0);
           this.fxp("num", df.chest().add(new THREE.Vector3(0, 0.95, 0)),
             "COUNTER READY", "#ffd0f5", 0.95);
@@ -5470,6 +5480,10 @@ export class Game implements MobHost {
           ? `${rival.orbitDisplayStacks}/5 · ${rival.orbitDisplayT.toFixed(1)}s` : "0/5" });
         passives.push({ label: "DREADFALL SPEED", value: `${f.nytheraAttackSpeed().toFixed(2)}× · ${f.nytheraDreadfallHits}/14 (round)` });
       }
+      if (f.guardFatigueStacks > 0)
+        passives.push({ label: "GUARD FATIGUE",
+          value: `${f.guardFatigueStacks} stacks · ${f.guardFatigueSpeed().toFixed(2)}× · ${f.guardFatigueDecayT.toFixed(1)}s`,
+          desc: "Every blocked or parried hit (including guard break) slows the attacker by 2%. No stack cap; 1 stack fades every 3s without another defended hit. Attack and skill animation speed only; cooldowns unchanged." });
       if (f.kit === "tristaff") passives.push({ label: "RHYTHM", value: `${f.dragonRhythm}/3 · ${f.dragonRhythmT.toFixed(1)}s · ${["STAFF","SPLIT","WHIP","FOLDED"][f.dragonMode]}` });
       if (f.kit === "hammer") passives.push({ label: "HEARTS", value: `${f.nesaCCharges}/3` });
       if (f.kit === "bomb") passives.push({ label: "MINES", value: `${f.bobMineCharges}/4` });
@@ -5522,7 +5536,7 @@ export class Game implements MobHost {
       if (displayId === "zarek") passives.push({ label: "CLASH INFO", value: `${f.clashMomentum}`, desc: "Real weapon clashes build Momentum and improve basic-attack speed." });
       if (displayId === "roxy") passives.push({ label: "FROSTBITE INFO", value: `${f.frostShardStacks}/4`, desc: "Real frost shard hits build Frostbite toward the next freeze attempt." });
       if (displayId === "zenith") passives.push({ label: "BLADE TEMPO INFO", value: `${f.zenithTempoStacks}/14 · ${f.zenithMagneticChargeT.toFixed(1)}s`, desc: "Each successful hit grants +0.01× attack speed for 5 seconds; at most 14 stacks. Twin-blade stance has its own base speed." });
-      if (displayId === "nythera") passives.push({ label: "REAPER INFO", value: `${f.nytheraDreadfallHits}/14 · ${rival?.orbitDisplayStacks ?? 0}/5 Orbit`, desc: "Orbit Marks last 25s; Dreadfall starts at 0.80× and gains +0.05× per damaging hit, max 1.50× for this round. Four air slices remain. Base scythe attacks: −10% damage; skills: −20%." });
+      if (displayId === "nythera") passives.push({ label: "REAPER INFO", value: `${f.nytheraDreadfallHits}/14 · ${rival?.orbitDisplayStacks ?? 0}/5 Orbit`, desc: "Orbit Marks last 25s; Dreadfall starts at 0.80× and gains +0.05× per damaging hit, max 1.48× for this round. Three air slices per jump. Base scythe attacks: −10% damage; skills: −20%." });
       return { slots, passives: passives.map(p => ({ ...p,
         icon: p.icon ?? `/icons/passives/${displayId}.webp`,
         desc: p.desc || `Current ${p.label.toLowerCase()} status for ${f.look.name}.` })),
@@ -5530,7 +5544,7 @@ export class Game implements MobHost {
     };
     const info = (f: Fighter) => ({ id: CHARACTERS[f.charIndex].id, name: f.look.name + (isCpu(f.owner) && f.owner !== "cpu" ? " (CPU)" : ""), hp: f.hp, maxHp: f.maxHp, guard: f.guard, maxGuard: f.maxGuard, down: f.isDown(), glow: f.look.glow,
       pct: f.pct, stocks: f.stocks, out: f.out, team: f.team, status: f.status.kinds(), bloodlust: f.bloodlust, bloodFrenzyT: f.bloodFrenzyT, bloodFestivalT: f.bloodFestivalT, clashMomentum: f.clashMomentum, chainBindT: f.chainBindT,
-      chainBindKind: f.chainBindKind, dragonRhythm: f.dragonRhythm, dragonRhythmT: f.dragonRhythmT, gravityMode: f.gravityMode, gravitySwitchCd: f.gravitySwitchCd,
+      chainBindKind: f.chainBindKind, dragonRhythm: f.dragonRhythm, dragonRhythmT: f.dragonRhythmT, dragonMode: f.dragonMode, dragonModeCd: f.dragonModeCd, gravityMode: f.gravityMode, gravitySwitchCd: f.gravitySwitchCd, // ZEPHYR_MODE_HUD_SYNC_V25
       orbitDisplayStacks: f.orbitDisplayStacks, orbitDisplayT: f.orbitDisplayT,
       nytheraDreadfallHits: f.nytheraDreadfallHits,
       passives: spectatorDetail(f, this.fighters.find(foe => foe !== f && foe.team !== f.team) ?? null)?.passives ?? [],
