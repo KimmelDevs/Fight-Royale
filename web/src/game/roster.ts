@@ -174,7 +174,7 @@ export const CHARACTERS: Character[] = [
   { id: "zephyr", title: "Dragon Dancer", role: "Martial Artist - Three-Section Staff",
     desc: "Dragon Rhythm: successful catches, parries, clashes and special strikes earn up to 3 stacks for 25 seconds (refreshed on gain). A lifetime of controlling a rebounding three-section staff—even being struck by his own weapon—gives Zephyr +20% HP and 10% less incoming damage. SPLIT gives up normal guard and takes slightly more damage. Each active Rhythm stack grants +20% attack speed (maximum +60%). Rhythm strengthens his next finisher.",
     stats: { power: 4, speed: 4, range: 3, defense: 4 },
-    look: { name: "Zephyr", body: "m", vrm: "garrick", kit: "tristaff", element: "dragon", outfit: "martial", style: "short", hat: "none",
+    look: { name: "Zephyr", body: "m", vrm: "zephyr", kit: "tristaff", element: "dragon", outfit: "martial", style: "short", hat: "none",
       hair: "#263f45", hair_shade: "#76939a", iris_top: "#1e8c7e", iris_bottom: "#b6ffe2", eye_dark: "#113034",
       tunic: "#203a43", band: "#85bba5", pants: "#19242e", boots: "#202936", metal: "#e0e8df", trim: "#d5be82",
       cape: "#274a53", cape_bottom: "#84c7ae", glow: "#78eed0", shield: "#243e48", emblem: "#e8d9a0" } },
