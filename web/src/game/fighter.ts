@@ -479,6 +479,70 @@ export class Fighter implements Entity {
   private parryCounterTarget: Entity | null = null;
   private parryCounterPendingDepth = 0;
   parryCounterDepth = 0;
+  // RENJI_COUNTER_FIST_V2 — combat-state-owned Read and perfect-parry form.
+  // RENJI_ECLIPSE_V32 — perfect-parry attack-cancel retained.
+  renjiRead = 0;
+  renjiReadDecayT = 30;
+  renjiReflectT = 0;
+  renjiParryFxT = 0;
+  renjiCounterRoute = 0; // 0 side, 1 overhead, 2 low, 3 thrust, 4 projectile
+  private renjiLastReadToken = "";
+  private renjiLastParryToken = "";
+  private renjiCancelPose = "rn_cancel_cross";
+  /** Called synchronously from receiveHit, before the parry result is returned.
+   * Cancel the interrupted strike and invalidate every pending arena hit by serial.
+   * The next model blend drives a visible catch -> cross -> redirect animation. */
+  renjiInterceptAttack(attacker: Entity, a: Attack) {
+    if (this.kit !== "tonfa") return;
+    const token = attacker instanceof Fighter
+      ? `${attacker.id}:${attacker.swingSerial}`
+      : `${attacker.id}:${Math.floor(this.clock * 2)}`;
+    if (this.renjiLastParryToken === token) return; // one animation per incoming swing
+    this.renjiLastParryToken = token;
+    if (this.state === S.ATTACK || this.state === S.CHARGE) {
+      const source = this.atkId;
+      this.renjiCancelPose = /^l[135]$/.test(source) || source === "z" ? "rn_cancel_left"
+        : /^l[24]$/.test(source) || source === "c" ? "rn_cancel_right"
+        : "rn_cancel_cross";
+      this.swingSerial++; // invalidate delayed onSwing + all queued multi-hit pulses
+      this.atk = null;
+      this.atkId = "";
+      this.atkPhase = 0;
+      this.buffered = false;
+      this.holding = false;
+      this.comboNext = "l1";
+      this.comboTimer = 0;
+      this.comboPauseT = 0;
+      this.trail.emitting = false;
+      this.model.charge = 0;
+      this.intent.attack = false;
+      this.intent.skill = "";
+      this.setState(S.IDLE); // returns the arms to pose blending, not a hit-stun
+      this.renjiParryFxT = Math.max(this.renjiParryFxT, 0.40);
+    } else {
+      this.renjiCancelPose = "rn_cancel_cross";
+      this.renjiParryFxT = Math.max(this.renjiParryFxT, 0.27);
+    }
+    this.model.recoil = Math.max(this.model.recoil, 0.42);
+  }
+  renjiAwardRead(attacker: Entity | null, a: Attack) {
+    if (this.kit !== "tonfa") return;
+    // One stack per actual swing, not per multi-hit sub-ID. Mob hits are throttled.
+    const token = attacker instanceof Fighter ? `${attacker.id}:${attacker.swingSerial}` : `${attacker?.id ?? "unknown"}:${Math.floor(this.clock * 2)}`;
+    if (this.renjiLastReadToken !== token) {
+      this.renjiLastReadToken = token;
+      this.renjiRead = Math.min(3, this.renjiRead + 1);
+      this.renjiReadDecayT = 30;
+      this.renjiParryFxT = Math.max(this.renjiParryFxT, 0.23);
+    }
+    if (a.type === "projectile") this.renjiCounterRoute = 4;
+    else if (/low|sweep|trip|ankle|slide/i.test(a.name + " " + a.style)) this.renjiCounterRoute = 2;
+    else if (/thrust|pierc|stab|lance|spear/i.test(a.name + " " + a.style)) this.renjiCounterRoute = 3;
+    else if (/heavy|overhead|smash|slam|cleave|upper/i.test(a.name + " " + a.style) || a.heavy) this.renjiCounterRoute = 1;
+    else this.renjiCounterRoute = 0;
+  }
+  renjiRecoilSeconds() { return 0.30 + this.renjiRead * (0.40 / 3); }
+  renjiSpendRead() { if (this.renjiRead === 3) { this.renjiRead = 0; this.renjiReadDecayT = 30; return true; } return false; }
   parryRecoilT = 0; // 0.5s recoil limits offense but never causes hard stun
   private counterVisualRemote = false;
 
@@ -1256,6 +1320,19 @@ export class Fighter implements Entity {
     if (this.out) { this.waitRespawn(dt); return; }
     if (this.brain && this.state !== S.KO && this.state !== S.WIN) this.brain.think(this, dt);
     if (this.brain) this.recoverCpuStalemate(dt);
+    // RENJI: Guard input is disabled throughout Iron Reflection (player AND CPU).
+    // The actual automatic parry happens in receiveHit(), independent of guard.
+    if (this.kit === "tonfa" && this.renjiReflectT > 0) {
+      it.block = false;
+      if (this.state === S.BLOCK) this.setState(S.IDLE);
+    }
+    // Finish the physical catch before another input can restart an attack.
+    // A short ~0.18s input lock is cosmetic; the full reflection lasts 15s.
+    if (this.kit === "tonfa" && this.renjiParryFxT > 0.22) {
+      it.attack = false;
+      it.skill = "";
+      it.skillHeld = "";
+    }
     if (this.kit==="tristaff" && this.dragonMode===1) {
       it.block=false; // hard guard/parry disable, including AI and remote input.
       if(this.state===S.BLOCK) this.setState(S.IDLE);
@@ -1359,6 +1436,17 @@ export class Fighter implements Entity {
     this.chainHookT = Math.max(0, this.chainHookT - dt);
     if (this.chainHookT === 0) this.chainHookTarget = null;
     this.counterT = Math.max(this.counterT - dt, 0);
+    if (this.kit === "tonfa") {
+      this.renjiReflectT = Math.max(0, this.renjiReflectT - dt);
+      this.renjiParryFxT = Math.max(0, this.renjiParryFxT - dt);
+      if (this.renjiRead > 0) {
+        this.renjiReadDecayT -= dt;
+        if (this.renjiReadDecayT <= 0) {
+          this.renjiRead--;
+          this.renjiReadDecayT += 30; // one stack per thirty seconds, not all at once
+        }
+      } else this.renjiReadDecayT = 30;
+    }
     this.bloodFeintT = Math.max(this.bloodFeintT - dt, 0);
     // VEYR_BLOODLUST_CARRION_V7: drain the Frenzy meter evenly rather than snapping from 100 to 0.
     const frenzyWasActive = this.bloodFrenzyT > 0;
@@ -1613,6 +1701,7 @@ export class Fighter implements Entity {
     this.model.raigoProgress = this.kit === "axeflail" && this.atk ? Math.max(0, Math.min(1, (this.stateT - this.atk.wind)/Math.max(.08,this.atk.active))) : 0;
     this.updateKiraCastVisual();
     this.updateKaedeSheathVisual();
+    this.model.renjiParryT = this.kit === "tonfa" ? this.renjiParryFxT : 0;
     this.model.blend(this.state === S.WIN
       ? presentationPose(this.look.name, this.stateT, this.poses.idle, "victory")
       : (this.poses[this.poseName] ?? this.poses.idle), dt, this.poseSpeed, this.actionPoseTag());
@@ -2047,7 +2136,9 @@ export class Fighter implements Entity {
       if (this.nesaCCharges === 3) this.nesaCRechargeT = 7.5 * this.cdMult;
       this.nesaCCharges--;
       this.cooldowns[k] = this.nesaCCharges > 0 ? 0 : this.nesaCRechargeT;
-    } else this.cooldowns[k] = this.attacks[k].type === "barrel" ? 0.6 :
+    } else this.cooldowns[k] = this.kit === "tonfa" && k === "x"
+      ? this.attacks.x.cd * this.cdMult * (1 - 0.05 * this.renjiRead)
+      : this.attacks[k].type === "barrel" ? 0.6 :
       bobMine ? (this.bobMineCharges > 0 ? 0 : this.bobMineRechargeT) : this.attacks[k].cd * this.cdMult;
     // Cast in the air, a skill with an air version uses it instead.
     if (this.look.element === "metal" && k === "c") this.zenithDominionRepel = false; // C is Spearstep, a real clashable dash
@@ -2347,6 +2438,12 @@ export class Fighter implements Entity {
         wind: this.atk.wind / orbitSpeed,
         active: this.atk.active / orbitSpeed,
         recover: this.atk.recover / orbitSpeed };
+    }
+    // Renji's riposte has four independent counter routes and cannot start a parry loop.
+    if (this.kit === "tonfa" && id === "pc" && this.atk) {
+      this.atk = { ...this.atk, no_parry:true, style:"renji_riposte" };
+      this.atk.pose_w = "rnpc_w";
+      this.atk.pose_s = ["rnpc_s","rn5_s","rn4_s","rn3_s","rn2_s"][this.renjiCounterRoute] ?? "rnpc_s";
     }
     // Standardize the parry counter windup from the already-scaled timing.
     // Only windup is clamped; parry timing, damage, active and recovery remain unchanged.
@@ -2730,6 +2827,14 @@ export class Fighter implements Entity {
     // Grounded knockdown and standing recovery cannot be chained indefinitely.
     // They remain alive; do not mark these states as KO / remove them from the match.
     if (this.knockedDown()) return "miss";
+    // RENJI_COUNTER_FIST_V2: all real incoming hits become perfect parries during X.
+    // This catches projectiles/heavies and no_parry skills; standing idle is sufficient.
+    if (this.kit === "tonfa" && this.renjiReflectT > 0 &&
+        attacker && attacker.team !== this.team && a.dmg > 0) {
+      this.renjiInterceptAttack(attacker, a); // attacks ACTUALLY end on perfect parry
+      this.model.flash("#8E51D6", 0.14);
+      return "parry";
+    }
     if (this.invulnT > 0) {
       if (this.perfectDodgeT > 0 && !this.perfectDodgeUsed && this.dashing() &&
           attacker && attacker.team !== this.team && a.dmg > 0) {
@@ -3003,6 +3108,7 @@ export class Fighter implements Entity {
     this.model.nesaSpinHorizontal = 0;
     this.parryCounterT = 0; this.parryCounterTarget = null; this.parryCounterSpin = 0;
     this.model.parryCounterSpin = 0;
+    this.renjiRead = 0; this.renjiReadDecayT = 30; this.renjiReflectT = 0; this.renjiParryFxT = 0; this.renjiLastReadToken = ""; this.renjiLastParryToken = ""; this.renjiCancelPose = "rn_cancel_cross";
     this.parryRecoilT = 0; this.parryCounterPendingDepth = 0; this.parryCounterDepth = 0; this.counterVisualRemote = false;
     this.hp = this.maxHp * frac;
     this.guard = this.maxGuard;
@@ -3049,6 +3155,7 @@ export class Fighter implements Entity {
     this.model.nesaSpinHorizontal = 0;
     this.parryCounterT = 0; this.parryCounterTarget = null; this.parryCounterSpin = 0;
     this.model.parryCounterSpin = 0;
+    this.renjiRead = 0; this.renjiReadDecayT = 30; this.renjiReflectT = 0; this.renjiParryFxT = 0; this.renjiLastReadToken = ""; this.renjiLastParryToken = ""; this.renjiCancelPose = "rn_cancel_cross";
     this.parryRecoilT = 0; this.parryCounterPendingDepth = 0; this.parryCounterDepth = 0; this.counterVisualRemote = false;
     this.clashMomentum = 0;
     this.nytheraDreadfallHits = 0;
@@ -3326,7 +3433,19 @@ export class Fighter implements Entity {
           else { p = "idle"; sp = 19; }
           break;
         }
-        if (this.poseOverride) { p = this.poseOverride; sp = 40; break; }
+        if (this.poseOverride) {
+          p = this.poseOverride;
+          sp = this.kit === "tonfa" ? 88 : 40; // RENJI_TONFA_RIG_V34
+          break;
+        }
+        if (this.kit === "tonfa" && a) {
+          if (this.atkPhase === 0) { p = a.pose_w; sp = 38; }
+          else if (this.atkPhase === 1) { p = a.pose_s; sp = 88; }
+          else if (this.stateT < a.wind + a.active + a.recover * 0.55) {
+            p = a.pose_s; sp = 28;
+          } else { p = "idle"; sp = 20; }
+          break;
+        }
         // NYTHERA_GRAVITY_REAPER_INSTALL_V1: anticipation → cut → measured follow-through.
         if (this.kit === "scythe" && a) {
           const elapsed = this.stateT - a.wind;
@@ -3483,6 +3602,12 @@ export class Fighter implements Entity {
       p = this.zenithCatchRecoilT > 0.34 ? "zncatch_w" : "zncatch_s";
       sp = this.zenithCatchRecoilT > 0.34 ? 32 : 24;
     }
+    if (this.kit === "tonfa" && this.renjiParryFxT > 0 &&
+        ![S.KO,S.KNOCKDOWN,S.HITSTUN,S.STAGGER,S.WIN].includes(this.state)) {
+      p = this.renjiParryFxT > 0.29 ? this.renjiCancelPose
+        : this.renjiParryFxT > 0.14 ? "rn_parry_cross" : "rn_parry_redirect";
+      sp = this.renjiParryFxT > 0.29 ? 112 : this.renjiParryFxT > 0.14 ? 100 : 76;
+    }
     this.poseName = p;
     this.poseSpeed = sp;
   }
@@ -3511,7 +3636,8 @@ export class Fighter implements Entity {
       this.passiveAshHits, this.passiveAshProcs, this.passiveNesaHits,
       this.passiveKaizenWeaken, this.passiveEmberGroundHits,
       this.passiveEmberPatches, this.dragonRhythm, +this.dragonRhythmT.toFixed(2), this.dragonMode,
-      this.guardFatigueStacks, +this.guardFatigueDecayT.toFixed(2), this.raigoMomentum, +this.raigoMomentumT.toFixed(2)]; // GUARD_FATIGUE_V26: optional tail, indices 86-87
+      this.guardFatigueStacks, +this.guardFatigueDecayT.toFixed(2), this.raigoMomentum, +this.raigoMomentumT.toFixed(2),
+      this.renjiRead, +this.renjiReadDecayT.toFixed(2), +this.renjiReflectT.toFixed(2), +this.renjiParryFxT.toFixed(2)]; // GUARD_FATIGUE_V26: optional tail, indices 86-87
   }
 
   applySnapshot(s: any[]) {
@@ -3559,6 +3685,11 @@ export class Fighter implements Entity {
     this.dragonMode = s.length > 85 ? Math.max(0,Math.min(3,s[85])) : 0;
     this.guardFatigueStacks = s.length > 86 ? Math.min(GUARD_FATIGUE_TUNING.maxStacks, Math.max(0, s[86])) : 0;
     this.guardFatigueDecayT = s.length > 87 ? s[87] : GUARD_FATIGUE_TUNING.decaySecondsPerStack;
+    // RENJI: appended snapshot fields, preserving all older indices.
+    this.renjiRead = s.length > 90 ? s[90] : 0;
+    this.renjiReadDecayT = s.length > 91 ? s[91] : 30;
+    this.renjiReflectT = s.length > 92 ? s[92] : 0;
+    this.renjiParryFxT = s.length > 93 ? s[93] : 0;
     this.model.dragonMode=this.dragonMode;
     this.model.gravityHeavy = this.kit === "scythe" && this.gravityMode === "heavy";
     if (this.look.element === "metal" && s.length > 58) {
@@ -3648,6 +3779,7 @@ export class Fighter implements Entity {
     this.model.raigoProgress = this.kit === "axeflail" && this.atk ? Math.max(0, Math.min(1, (this.stateT - this.atk.wind)/Math.max(.08,this.atk.active))) : 0;
     this.updateKiraCastVisual();
     this.updateKaedeSheathVisual();
+    this.model.renjiParryT = this.kit === "tonfa" ? this.renjiParryFxT : 0;
     this.model.blend(this.state === S.WIN
       ? presentationPose(this.look.name, this.stateT, this.poses.idle, "victory")
       : (this.poses[this.poseName] ?? this.poses.idle), dt, this.poseSpeed, this.actionPoseTag());

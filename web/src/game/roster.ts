@@ -21,6 +21,14 @@ export interface Character {
 }
 
 export const CHARACTERS: Character[] = [
+  // RENJI_ECLIPSE_V32 — yellow hair, Aster VRM placeholder, original dark tonfa transformations.
+  { id: "renji", title: "The Counter Fist", role: "Martial Artist - Twin Tonfas",
+    desc: "Dark-element counter fighter. Concealed chain, hook, guard-ring and telescoping tonfas amplify close-range directional counters. Iron Reflection automatically perfect-parries for 15 seconds.",
+    stats: { power: 4, speed: 5, range: 1, defense: 3 },
+    look: { name: "Renji", body: "m", vrm: "aster", kit: "tonfa", element: "dark", outfit: "martial", style: "short", hat: "none",
+      hair: "#FFD438", hair_shade: "#BB850E", iris_top: "#EDAE2F", iris_bottom: "#FFE27F", eye_dark: "#51350A",
+      tunic: "#19252E", band: "#F6BF40", pants: "#17212C", boots: "#1B242D", metal: "#9BA6B1", trim: "#EFC755",
+      cape: "#171123", cape_bottom: "#34204E", glow: "#9452D8", shield: "#1B1530", emblem: "#C49BFF" } },
   { id: "aster", title: "Azure Knight", role: "Knight - Sword & Shield",
     desc: "A tough frontline guardian with reinforced guard and armor, trading damage for endurance.",
     stats: { power: 3, speed: 3, range: 2, defense: 5 },

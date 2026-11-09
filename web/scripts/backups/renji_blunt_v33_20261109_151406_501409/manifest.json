@@ -1,0 +1,17 @@
+{
+  "version": "RENJI_BLUNT_IMPACT_V33",
+  "files": [
+    "src/game/kits.ts",
+    "src/game/model.ts",
+    "src/game/game.ts"
+  ],
+  "sounds": {
+    "light": "hit_blunt",
+    "mid": "hit_blunt2",
+    "heavy": "hit_heavy",
+    "finale": "hit_big",
+    "mechanism": "click",
+    "pivot": "land",
+    "parry": "parry"
+  }
+}

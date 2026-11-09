@@ -6,6 +6,13 @@ import type { Pose, Vec3 } from "./kits";
 type Beat = Partial<Pose>;
 type Choreo = { ready: Beat; wind: Beat; move: Beat; hero: Beat; win: Beat; tempo?: number };
 const C: Record<string, Choreo> = {
+  // RENJI_ECLIPSE_V32 — visible short-grip guard and concealed-form reveal poses.
+  renji: {
+    ready:{torso:[.18,-.20,.03],head:[-.13,.14,0],arm_r:[-1.42,.26,-.39],arm_l:[-1.45,-.25,.41],leg_l:[-.39,-.13,.18],leg_r:[.33,.10,-.18],hips_y:-.18,knee:[.42,.39]},
+    wind:{torso:[.27,-.48,.07],head:[-.08,.26,0],arm_r:[-1.75,.45,-.38],arm_l:[-1.68,-.36,.42],leg_l:[-.53,-.07,.17],leg_r:[.48,.11,-.21],hips_y:-.25,knee:[.52,.47]},
+    move:{torso:[.22,.38,-.06],head:[-.15,-.17,0],arm_r:[-2.12,-.12,-.34],arm_l:[-1.80,.34,.43],leg_l:[-.64,-.07,.18],leg_r:[.56,.11,-.18],hips_y:-.20,knee:[.43,.39]},
+    hero:{torso:[.22,-.11,0],head:[-.14,.09,0],arm_r:[-1.72,.30,-.44],arm_l:[-1.70,-.29,.43],leg_l:[-.34,-.14,.20],leg_r:[.32,.11,-.20],hips_y:-.18,knee:[.47,.45]},
+    win:{torso:[.08,.11,.03],head:[-.17,.06,0],arm_r:[-2.02,.18,-.40],arm_l:[-2.03,-.18,.44],leg_l:[-.34,-.10,.18],leg_r:[.32,.14,-.20],hips_y:-.18,knee:[.38,.39]},tempo:1.24 },
   aster: { // Massive armored shield wall -> one formal sword salute.
     ready: { torso: [0.13,-0.09,0], head: [0.02,0.04,0], arm_r: [-0.63,0.14,-0.25], arm_l: [-1.16,-0.1,0.31], leg_l: [-0.12,-0.12,0.22],leg_r:[0.18,0.09,-0.2],hips_y:-0.11,knee:[0.27,0.25] },
     wind: { torso:[0.20,-0.25,0.01],head:[0.05,0.17,0],arm_r:[-1.24,0.08,-0.30],arm_l:[-1.4,-0.3,0.14],hips_y:-0.15,knee:[0.38,0.32] },

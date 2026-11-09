@@ -246,6 +246,8 @@ export class VrmRig {
   glaive = false; // ZAREK_GLAIVE_CHOREO_V2: quicker, agile polearm hand alignment
   /** Fist fighter: high guard with bent elbows, staggered bladed stance, bounce and head weave. */
   boxer = false;
+  // RENJI_TONFA_RIG_V34 — independent elbow extension/chamber for paired tonfas.
+  tonfa = false;
   /** Archer: bow held upright across the aim line, string hand drawn to the jaw by IK. */
   archer = false;
   private drawW = 0;
@@ -423,11 +425,26 @@ export class VrmRig {
       // Boxer: the pose's wrist angle drives the elbow (guard ~115 deg, fists at the cheeks;
       // nearly straight at the moment a punch lands).
       const wristX = Math.abs(new THREE.Euler().setFromQuaternion(hk.joint.quaternion, "YXZ").x);
-      const flex = this.boxer
-        ? THREE.MathUtils.clamp(D(12) + wristX * 1.75, D(12), D(125))
-        : this.shield && side === "left"
-          ? D(55)
-          : Math.min(D(16) + elev * 0.3 + Math.sin(t * TAU / 3.8 + 1) * D(2) * idle, D(75));
+      // RENJI_TONFA_RIG_V34 — prior generic boxer flex was nearly constant
+      // because EVERY V3.3 beat uses almost the same wrist angle.  Follow the
+      // actual attacking upper arm instead: one elbow straightens for the hit,
+      // the other folds into a rib-level chamber.  Knees/parries keep a guard.
+      const renjiPose = m.pose ?? "";
+      const renjiHitPose = /^rn(?:[1-5]|z[1-7]|c[12]|v[1-8])_s$/.test(renjiPose) ||
+        renjiPose === "rnh_s" || renjiPose === "rn_insight_s" ||
+        /^rn_counter_/.test(renjiPose);
+      const renjiKneePose = /^(?:rn4_s|rnz7_s|rnv4_s|rn_counter_low)$/.test(renjiPose);
+      const renjiElbowPose = /^(?:rn3_s|rnz4_s|rnc2_s|rnv3_s|rn_counter_side_3)$/.test(renjiPose);
+      const armReach = renjiHitPose && !renjiKneePose && lk.joint.rotation.x < -1.35;
+      const flex = this.tonfa
+        ? (armReach ? D(renjiElbowPose ? 68 : 18) :
+           renjiHitPose && !renjiKneePose ? D(100) :
+           renjiPose.endsWith("_w") ? D(108) : D(92))
+        : this.boxer
+          ? THREE.MathUtils.clamp(D(12) + wristX * 1.75, D(12), D(125))
+          : this.shield && side === "left"
+            ? D(55)
+            : Math.min(D(16) + elev * 0.3 + Math.sin(t * TAU / 3.8 + 1) * D(2) * idle, D(75));
       // Forearm bends toward the front of the arm (around the arm's local Y).
       setLocal(B(`${side}LowerArm`), 0, -sgn * flex, 0);
       // Hand: blend the pose's absolute hand angle with "follow the forearm", so held weapons

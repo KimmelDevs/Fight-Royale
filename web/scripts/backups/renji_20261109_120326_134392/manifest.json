@@ -1,0 +1,20 @@
+{
+  "marker": "RENJI_COUNTER_FIST_V2",
+  "files": [
+    "src/game/roster.ts",
+    "src/game/kits.ts",
+    "src/game/fighter.ts",
+    "src/game/game.ts",
+    "src/game/model.ts",
+    "src/game/ai.ts",
+    "src/game/presentation.ts"
+  ],
+  "new_icons": [
+    "public/icons/chars/renji.webp",
+    "public/icons/passives/renji.webp",
+    "public/icons/skills/tonfa-z.webp",
+    "public/icons/skills/tonfa-x.webp",
+    "public/icons/skills/tonfa-c.webp",
+    "public/icons/skills/tonfa-v.webp"
+  ]
+}

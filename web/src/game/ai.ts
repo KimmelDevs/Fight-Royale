@@ -142,6 +142,8 @@ type FightStyle = {
   skillBias: readonly [number, number, number];
 };
 const FIGHT_STYLES: Readonly<Record<string, FightStyle>> = {
+  // RENJI_ECLIPSE_V32 — patient close-range reader, stronger at punishing recoveries.
+  renji: { range: 1.53, heavy: 0.19, combo: 0.90, bait: 0.77, pressure: 0.62, skillBias: [1.25, 1.85, 1.30] },
   aster: { range: 1.70, heavy: 0.26, combo: 0.65, bait: 0.52, pressure: 0.42, skillBias: [1.5, 1.0, 0.8] },
   vesper: { range: 1.55, heavy: 0.18, combo: 0.94, bait: 0.18, pressure: 0.90, skillBias: [1.0, 1.35, 0.9] },
   garrick: { range: 2.40, heavy: 0.45, combo: 0.42, bait: 0.70, pressure: 0.30, skillBias: [0.95, 1.2, 1.3] },
@@ -4576,7 +4578,9 @@ private personalizedSkill(f: Fighter, o: Fighter, distance: number): string | nu
         (a.style === "bird" ? distance >= 2.6 && distance < 9.4 :
           !o.status.has("freeze") && o.status.freezeImmunityRemaining() <= 0 && distance < 7.8);
     } else if (a.type === "buff") {
-      viable = a.mode === "frost_aegis" ?
+      viable = a.mode === "renji_reflection"
+        ? f.renjiReflectT <= 0 && ((attackComing && distance < 3.0) || close)
+        : a.mode === "frost_aegis" ?
         (f.frostShieldCharges <= 0 || f.frostShieldT <= 0) &&
         (f.hp < f.maxHp * 0.80 || (attackComing && distance < 6.5)) :
         a.mode === "counter" || a.mode === "blood_feint"
@@ -4594,6 +4598,14 @@ private personalizedSkill(f: Fighter, o: Fighter, distance: number): string | nu
     // Actual roster-specific choices, not a skill randomly selected by key.
     const name = a.name;
     switch (id) {
+      case "renji":
+        // Read the opponent, activate reflection before a committed enemy skill,
+        // and take fast punishes only at honest tonfa range.
+        if (name.startsWith("Iron Reflection")) points += f.renjiReflectT > 0 ? -5.0 :
+          (attackComing && distance < 3.0 ? 3.6 : close ? 1.4 : 0.18);
+        if (name.startsWith("Hundred Fangs")) points += punish && close ? 2.7 : close ? 0.45 : -0.4;
+        if (name.startsWith("Blindside Step")) points += attackComing && close ? 2.4 : distance > 1.5 && distance < 3.1 ? 1.1 : 0.2;
+        break;
       case "aster":
         if (name === "Shield Bash") points += close && (blocking || attackComing) ? 2.3 : 0.2;
         if (name === "Rising Slash") points += punish && close ? 1.2 : 0;

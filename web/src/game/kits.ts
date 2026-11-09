@@ -72,6 +72,8 @@ export const STATS: Record<string, { hp: number; guard: number; move: number; wa
   greatsword: { hp: 2750, guard: 120, move: 2.9, walk: 2.3, parry: 0.14, jump: 6.5 },
   katana: { hp: 2200, guard: 80, move: 3.8, walk: 3.0, parry: 0.2, jump: 7.5 },
   bow: { hp: 2000, guard: 60, move: 3.6, walk: 2.6, parry: 0.16, jump: 7.5 },
+  // RENJI_COUNTER_FIST_V2: fast close-range counter specialist.
+  tonfa: { hp: 2100, guard: 78, move: 4.30, walk: 3.45, parry: 0.21, jump: 8.1 },
   knuckles: { hp: 2300, guard: 90, move: 4.0, walk: 3.2, parry: 0.2, jump: 8.0 },
   kicks: { hp: 2300, guard: 85, move: 4.1, walk: 3.2, parry: 0.2, jump: 8.6 },
   wind: { hp: 2200, guard: 80, move: 4.1, walk: 3.3, parry: 0.2, jump: 8.4 },
@@ -113,6 +115,7 @@ function parryCounterAttack(kit: string, element: string, base: Record<string, A
     katana: [heavy.pose_w, heavy.pose_s],
     bow: [base.z?.pose_w ?? light.pose_w, base.z?.pose_s ?? light.pose_s],
     mage: [base.z?.pose_w ?? light.pose_w, base.z?.pose_s ?? light.pose_s],
+    tonfa: [heavy.pose_w, heavy.pose_s],
     knuckles: [heavy.pose_w, heavy.pose_s],
     kicks: [base.l2?.pose_w ?? light.pose_w, base.l2?.pose_s ?? light.pose_s],
     wind: [base.z?.pose_w ?? heavy.pose_w, base.z?.pose_s ?? heavy.pose_s],
@@ -132,6 +135,7 @@ function parryCounterAttack(kit: string, element: string, base: Record<string, A
     katana: "Sakura Reversal",
     bow: "Scarlet Revolver",
     mage: "Spell Reversal",
+    tonfa: "Read & Reversal",
     knuckles: "Iron Tornado",
     kicks: "Cyclone Roundhouse",
     wind: "Tempest Reversal",
@@ -147,19 +151,19 @@ function parryCounterAttack(kit: string, element: string, base: Record<string, A
   const reach: Record<string, number> = {
     knight: 1.95, greatsword: 2.20, hammer: 2.35, katana: 2.00,
     bow: 1.90, mage: 2.00, knuckles: 1.60, kicks: 1.85,
-    wind: 2.00, sickle: 1.95, chainblade: 2.35, glaive: 2.40, axeflail: 3.15, tristaff: 2.25, scythe: 2.45,
+    wind: 2.00, sickle: 1.95, chainblade: 2.35, glaive: 2.40, axeflail: 3.15, tristaff: 2.25, scythe: 2.45, tonfa: 1.92,
     bomb: 1.85, assassin: 1.85,
   };
   const lunge: Record<string, number> = {
     knight: 1.5, greatsword: 1.25, hammer: 1.35, katana: 1.8,
     bow: 1.2, mage: 1.15, knuckles: 1.65, kicks: 1.95,
-    wind: 1.85, sickle: 1.9, chainblade: 1.55, glaive: 1.8, axeflail: 0.55, tristaff: 2.0, scythe: 1.8,
+    wind: 1.85, sickle: 1.9, chainblade: 1.55, glaive: 1.8, axeflail: 0.55, tristaff: 2.0, scythe: 1.8, tonfa: 1.75,
     bomb: 1.25, assassin: 2.2,
   };
   const knock: Record<string, number> = {
     knight: 4.2, greatsword: 4.9, hammer: 5.1, katana: 4.1,
     bow: 3.6, mage: 3.8, knuckles: 3.8, kicks: 4.0,
-    wind: 4.2, sickle: 4.0, chainblade: 4.5, glaive: 4.8, axeflail: 5.5, tristaff: 4.3, scythe: 4.3,
+    wind: 4.2, sickle: 4.0, chainblade: 4.5, glaive: 4.8, axeflail: 5.5, tristaff: 4.3, scythe: 4.3, tonfa: 4.20,
     bomb: 3.8, assassin: 4.1,
   };
   const pose = poses[kit] ?? [light.pose_w, light.pose_s];
@@ -197,6 +201,7 @@ export function attacks(kit: string, element: string): Record<string, Attack> {
     katana: katana,
     bow: bow,
     knuckles: knuckles,
+    tonfa: tonfaMoves,
     wind: wind,
     sickle: sickle,
     chainblade: chainblade,
@@ -274,6 +279,12 @@ export function attacks(kit: string, element: string): Record<string, Attack> {
     if (move.dmg > 0) move.no_parry = true;
   }
   t.pc = parryCounterAttack(kit, element, t);
+  if (kit === "tonfa") {
+    // Riposte is a real directional 3-hit combo, with optional 3-Read finisher.
+    t.pc = { ...t.pc, name:"Counter Route", desc:"Directional three-hit elbow/tonfa/knee sequence after a perfect parry.",
+      style:"renji_riposte",wind:.25,active:.55,recover:.29,dmg:114,guard:35,reach:1.94,
+      no_parry:true,pose_w:"rnpc_w",pose_s:"rnpc_s",next:"" };
+  }
   if (kit === "mage") {
     // Roxy/Ember/Raven/Marina: after a legitimate parry, launch ONE regular
     // basic projectile. It is not a spin/AOE and still clashes and can be dodged.
@@ -291,7 +302,7 @@ export function attacks(kit: string, element: string): Record<string, Attack> {
   }
   // FIGHT_ROYALE_V29_PARRY_ORBIT_GUARD: parry riposte windup 0.40s for all kits before speed bonuses.
   // Actual attack windup becomes 0.24–0.45s after passive/fatigue modifiers.
-  if (t.pc) t.pc.wind = 0.40;
+  if (t.pc) t.pc.wind = kit === "tonfa" ? 0.25 : 0.40;
   // BULLET_SWORDPLAY_V1: Aster's X now sweeps forward instead of jumping.
   // Keep its existing name, damage and cooldown; each Weaken stack reduces outgoing damage 20% multiplicatively for 50s, up to x5.
   if (kit === "knight" && element === "light" && t.x?.name === "Rising Slash") {
@@ -460,6 +471,10 @@ function bonusSkill(kit: string, element: string): Attack {
       return a({ name: "Cluster Bomb", desc: "Throw a striped four-pod cluster canister. Its orange warning circle marks the full spread before the four blasts land.", cd: 10, type: "lob", wind: 0.2, recover: 0.4, dmg: 80, guard: 22, knock: 4, stun: 0.45, delay: 0.85, radius: 1.5, repeat: 4, interval: 0.12, style: "clusterbomb", size: 1.65, pose_w: "throw_w", pose_s: "throw_s" });
     case "wind":
       return a({ name: "Gust Barrage", desc: "Three wind blades fly out in a fan.", cd: 7, parry_stun: 1.5, type: "projectile", wind: 0.14, recover: 0.35, dmg: 60, guard: 16, knock: 2, stun: 0.35, speed: 22, count: 3, spread: 0.25, size: 1.2, style: "wave", pierce: true, pose_w: "w2_w", pose_s: "w2_s" });
+    case "tonfa":
+      return a({ name: "Final Verdict: Eightfold", desc: "Eight differently timed blunt contacts, hidden guard ring and capped extending tonfa; every impact uses real melee collision.",
+        cd: 43, wind: 0.34, active: 1.72, recover: 0.68, dmg: 35, guard: 12, reach: 2.08,
+        knock: 0.50, stun: 0.15, style: "renji_eightfold", pose_w: "rnv_w", pose_s: "rnv_s" });
     case "knuckles":
       return a({ name: "Iron Body", desc: "Shrug off every hit for 2.5 seconds.", cd: 13, type: "buff", mode: "ward", duration: 2.5, wind: 0.1, recover: 0.25, pose_w: "block", pose_s: "block" });
     case "kicks":
@@ -874,6 +889,21 @@ function wind(): Record<string, Attack> {
   };
 }
 
+/** RENJI_COUNTER_FIST_V2: no magical ranged hits; each hit uses real melee collision. */
+function tonfaMoves(): Record<string, Attack> {
+  return {
+    l1: a({ name:"Guard-Line Jab", wind:.095,active:.075,recover:.13,dmg:41,guard:12,reach:1.76,lunge:2.1,knock:.32,stun:.14,style:"renji_tonfa",pose_w:"rn1_w",pose_s:"rn1_s",next:"l2" }),
+    l2: a({ name:"Reverse-Grip Snap", wind:.105,active:.075,recover:.14,dmg:45,guard:13,reach:1.79,lunge:2.0,knock:.42,stun:.15,style:"renji_tonfa",pose_w:"rn2_w",pose_s:"rn2_s",next:"l3" }),
+    l3: a({ name:"Shoulder Elbow", wind:.12,active:.075,recover:.15,dmg:49,guard:14,reach:1.70,lunge:1.7,knock:.55,stun:.18,style:"renji_elbow",pose_w:"rn3_w",pose_s:"rn3_s",next:"l4" }),
+    l4: a({ name:"Intercepting Knee", wind:.14,active:.085,recover:.17,dmg:54,guard:16,reach:1.73,lunge:1.6,knock:.72,stun:.19,style:"renji_knee",pose_w:"rn4_w",pose_s:"rn4_s",next:"l5" }),
+    l5: a({ name:"Cross-Tonfa Verdict", wind:.17,active:.095,recover:.31,dmg:89,guard:26,reach:1.89,lunge:1.7,knock:3.1,stun:.32,style:"renji_tonfa",pose_w:"rn5_w",pose_s:"rn5_s" }),
+    heavy:a({ name:"Guard-Crushing Backfist",wind:.31,active:.12,recover:.52,dmg:152,guard:47,reach:1.91,lunge:1.2,knock:4.6,stun:.43,heavy:true,style:"renji_tonfa",pose_w:"rnh_w",pose_s:"rnh_s" }),
+    z:a({ name:"Hundred Fangs: Hollow Impact",desc:"Six staggered blunt tonfa and elbow contacts, then a grounded rising knee. The short chain deploys as a trapping weight.",cd:9,wind:.18,active:1.02,recover:.45,dmg:25,guard:9,reach:1.98,lunge:2.5,knock:.4,stun:.11,style:"renji_hundred",pose_w:"rnz_w",pose_s:"rnz_s" }),
+    x:a({ name:"Iron Reflection: Eclipse Guard",desc:"For 15 seconds, Guard is disabled and every incoming attack is automatically perfect-parried; hidden tonfa rings deploy on contact. 30s base cooldown, minus 5% per Read stack.",cd:30,type:"buff",mode:"renji_reflection",duration:15,wind:.08,active:.05,recover:.19,pose_w:"rnx_w",pose_s:"rnx_s" }),
+    c:a({ name:"Blindside Step: Breaker Pivot",desc:"Grounded boxing pivot, left tonfa bar trap, then a compact right elbow; both hits must connect through melee range.",cd:12,wind:.18,active:.46,recover:.35,dmg:52,guard:18,reach:2.03,lunge:3.65,knock:1.3,stun:.19,style:"renji_blindside",pose_w:"rnc_w",pose_s:"rnc_s" }),
+  };
+}
+
 function knuckles(): Record<string, Attack> {
   return {
     l1: a({ wind: 0.06, active: 0.05, recover: 0.12, dmg: 40, guard: 10, reach: 1.35, lunge: 3, knock: 1, stun: 0.24, pose_w: "k1_w", pose_s: "k1_s", next: "l2" }),
@@ -1146,6 +1176,79 @@ const BOW: Record<string, Pose> = {
 };
 
 // Boxing guard; jabs alternate hands, a hook, an uppercut and a double straight.
+// RENJI_COUNTER_FIST_V2: defensive footwork, hip-driven elbows and spring-loaded knees.
+/** Adds knee bend to a pose. */
+const K = (p: Pose, l: number, r: number): Pose => ({ ...p, knee: [l, r] });
+const RENJI_TONFA: Record<string, Pose> = {
+  ...COMMON,
+  idle: K(P([.10,-.18,.03],[-.07,.17,0],[-1.18,.28,-.32],[.30,.15,-.10],[-1.20,-.25,.34],[.31,-.11,.12],[-.26,-.12,.19],[.23,.11,-.19],-.14),.35,.29),
+  block: K(P([.17,-.10,0],[-.12,.13,0],[-1.53,.26,-.38],[.46,.08,.12],[-1.56,-.24,.42],[.45,0,-.12],[-.32,-.12,.20],[.30,.12,-.19],-.16),.39,.39),
+  charge:K(P([.26,-.43,.03],[-.04,.2,0],[-1.82,.34,-.45],[.50,0,.1],[-1.61,-.28,.39],[.38,0,-.13],[-.48,-.07,.19],[.43,.09,-.16],-.19),.5,.48),
+  rn_cancel_left:K(P([.28,-.52,.09],[-.12,.22,.02],[-1.31,.45,-.58],[.48,.01,.25],[-1.89,-.39,.52],[.54,0,-.22],[-.54,-.16,.22],[.31,.14,-.21],-.21),.54,.46),
+  rn_cancel_right:K(P([.29,.50,-.06],[-.12,-.19,0],[-1.96,.33,-.49],[.49,0,.22],[-1.29,-.50,.40],[.31,-.01,-.27],[-.31,-.17,.20],[.57,.09,-.22],-.20),.46,.51),
+  rn_cancel_cross:K(P([.26,.02,0],[-.08,.04,0],[-1.87,.33,-.42],[.55,0,.28],[-1.87,-.32,.42],[.55,0,-.28],[-.42,-.13,.20],[.41,.13,-.20],-.20),.51,.47),
+  rn_parry_cross:K(P([.22,-.25,.05],[-.11,.18,0],[-1.98,.44,-.45],[.53,.06,.38],[-1.95,-.42,.43],[.51,-.02,-.35],[-.57,-.13,.19],[.46,.13,-.19],-.21),.55,.43),
+  rn_parry_redirect:K(P([.20,.24,-.04],[-.12,-.2,0],[-1.44,-.59,-.43],[.40,0,.20],[-1.73,.29,.46],[.41,0,-.20],[-.48,-.11,.17],[.37,.11,-.20],-.19),.46,.37),
+  rn1_w:K(P([.18,-.44,.04],[-.06,.24,0],[-.73,.49,-.39],[.41,0,-.12],[-1.42,-.28,.42],[.41,0,.1],[-.40,-.07,.19],[.29,.05,-.19],-.19),.40,.35),
+  rn1_s:K(P([.25,.38,-.06],[-.1,-.18,0],[-1.84,-.33,-.36],[.26,0,.12],[-1.18,-.19,.35],[.33,0,-.12],[-.50,-.04,.16],[.39,.08,-.19],-.16),.34,.37),
+  rn2_w:K(P([.15,.43,.04],[-.05,-.3,0],[-1.23,.28,-.44],[.38,0,.14],[-.70,-.52,.45],[.37,0,-.14],[-.35,-.08,.20],[.33,.05,-.16],-.14),.39,.40),
+  rn2_s:K(P([.23,-.51,-.06],[-.1,.35,0],[-1.19,.24,-.41],[.25,0,-.1],[-1.96,.44,.31],[.20,0,.12],[-.53,-.08,.19],[.44,.09,-.16],-.19),.41,.42),
+  rn3_w:K(P([.32,-.57,.06],[-.05,.32,0],[-1.12,-.20,-.31],[.28,0,-.16],[-1.45,-.42,.49],[.42,0,.04],[-.48,-.11,.16],[.43,.12,-.17],-.25),.44,.45),
+  rn3_s:K(P([.32,.43,-.04],[-.15,-.21,0],[-1.55,.60,-.10],[.43,0,.24],[-1.33,.09,.34],[.24,0,-.1],[-.68,-.05,.15],[.58,.08,-.20],-.21),.47,.35),
+  rn4_w:K(P([.18,-.23,.04],[-.06,.12,0],[-1.51,.24,-.32],[.42,0,.17],[-1.44,-.24,.37],[.39,0,-.14],[-.28,0,.19],[-.82,.06,-.30],-.24),.3,1.10),
+  rn4_s:K(P([-.04,.25,-.04],[-.1,-.1,0],[-1.18,.26,-.30],[.34,0,.12],[-1.25,-.32,.39],[.36,0,-.14],[-.32,0,.20],[-1.41,.06,-.31],-.11),.24,.13),
+  rn5_w:K(P([.30,-.67,.06],[-.05,.41,0],[-1.92,.24,-.36],[.43,0,.17],[-1.84,-.34,.39],[.38,0,-.13],[-.53,-.14,.16],[.42,.12,-.17],-.23),.56,.48),
+  rn5_s:K(P([.37,.47,-.03],[-.22,-.19,0],[-1.40,.52,-.35],[.16,0,.12],[-1.44,-.45,.32],[.17,0,-.12],[-.68,-.07,.16],[.57,.11,-.18],-.24),.50,.46),
+  rnh_w:K(P([.30,-.67,.05],[0,.32,0],[-2.35,.33,-.4],[.49,0,.12],[-2.18,-.28,.36],[.51,0,-.08],[-.57,-.13,.21],[.49,.12,-.18],-.24),.53,.50),
+  rnh_s:K(P([.51,.39,-.04],[-.2,-.10,0],[-1.02,.41,-.36],[.13,0,.17],[-1.09,-.21,.31],[.22,0,-.09],[-.75,-.08,.16],[.66,.11,-.21],-.29),.60,.55),
+  rnz_w:K(P([.17,-.41,.04],[-.07,.18,0],[-1.57,.41,-.40],[.48,0,.14],[-1.55,-.40,.40],[.49,0,-.12],[-.38,-.10,.2],[.33,.13,-.20],-.20),.47,.42),
+  rnz_s:K(P([.30,.25,-.02],[-.17,-.11,0],[-1.65,.41,-.27],[.25,0,.15],[-1.42,-.28,.36],[.24,0,-.09],[-.62,-.08,.19],[.52,.07,-.18],-.19),.46,.51),
+  rnx_w:K(P([.18,-.15,0],[-.1,.12,0],[-2.03,.33,-.41],[.55,0,.25],[-2.04,-.33,.41],[.55,0,-.25],[-.44,-.13,.19],[.39,.12,-.19],-.24),.59,.52),
+  rnx_s:K(P([.13,.15,0],[-.12,.04,0],[-1.51,.24,-.37],[.44,0,.13],[-1.52,-.24,.37],[.45,0,-.14],[-.38,-.09,.21],[.35,.11,-.18],-.17),.42,.42),
+  rnc_w:K(P([.34,-.65,.11],[-.1,.32,0],[-1.14,.42,-.40],[.41,0,.18],[-1.62,-.23,.34],[.44,0,-.13],[-.80,-.10,.18],[.29,.10,-.24],-.31),.66,.50),
+  rnc_s:K(P([.11,.70,-.09],[-.15,-.26,0],[-1.84,.21,-.32],[.21,0,.17],[-1.20,-.36,.36],[.30,0,-.14],[-.51,-.11,.22],[.61,.14,-.17],-.19),.38,.37),
+  rnpc_w:K(P([.19,-.34,.05],[-.09,.28,0],[-1.86,.24,-.36],[.50,0,.19],[-1.72,-.30,.40],[.51,0,-.16],[-.55,-.13,.19],[.49,.11,-.19],-.23),.52,.46),
+  rnpc_s:K(P([.28,.38,-.04],[-.17,-.18,0],[-1.50,.46,-.33],[.22,0,.14],[-1.52,-.25,.37],[.24,0,-.11],[-.61,-.11,.17],[.55,.13,-.17],-.22),.42,.38),
+  rnv_w:K(P([.21,-.65,.04],[-.03,.31,0],[-2.16,.27,-.37],[.41,0,.16],[-1.84,-.32,.41],[.43,0,-.13],[-.57,-.12,.18],[.41,.12,-.19],-.21),.55,.47),
+  // RENJI_BLUNT_IMPACT_V33 — CHOREOGRAPHY: fixed stance, alternating chamber, genuine knee bend.
+  // P's 9 actual arguments include wrist rotations between arm and leg vectors.
+  rnz1_s:K(P([.15,.28,-.02],[-.08,-.18,0],[-1.83,-.15,-.08],[.24,0,.06],[-.66,-.40,.42],[.24,0,-.06],[-.37,-.04,.03],[.43,.03,-.03],-.17),.38,.40),
+  rnz2_s:K(P([.19,-.42,.03],[-.08,.24,0],[-.69,.37,-.47],[.24,0,.06],[-1.93,.11,.05],[.24,0,-.06],[-.44,-.03,.02],[.42,.04,-.03],-.20),.39,.38),
+  rnz3_s:K(P([.23,.57,-.05],[-.12,-.32,0],[-1.60,.69,-.12],[.24,0,.06],[-.55,-.37,.45],[.24,0,-.06],[-.56,-.03,.02],[.48,.01,-.04],-.23),.50,.41),
+  rnz4_s:K(P([.43,-.59,.04],[-.17,.26,0],[-.67,.24,-.48],[.24,0,.06],[-1.56,-.57,.11],[.24,0,-.06],[-.47,-.01,.03],[.49,.03,-.02],-.22),.52,.48),
+  rnz5_s:K(P([.22,.62,-.04],[-.09,-.36,0],[-1.49,.76,-.24],[.24,0,.06],[-.62,-.39,.43],[.24,0,-.06],[-.64,-.01,.02],[.48,.01,-.02],-.24),.55,.43),
+  rnz6_s:K(P([.22,-.63,.05],[-.12,.34,0],[-.64,.35,-.52],[.24,0,.06],[-1.82,-.17,.08],[.24,0,-.06],[-.46,-.03,.02],[.54,.03,-.03],-.20),.44,.49),
+  rnz7_s:K(P([.47,.18,-.06],[-.22,-.14,0],[-.77,.30,-.44],[.24,0,.06],[-1.20,-.33,.31],[.24,0,-.06],[.31,-.02,.02],[-1.52,.02,-.02],-.23),.53,1.76),
+  rnc1_s:K(P([.27,-.78,-.09],[-.09,.39,0],[-.72,.25,-.45],[.24,0,.06],[-1.72,-.45,.18],[.24,0,-.06],[-.61,-.02,.05],[.52,.02,-.03],-.28),.56,.38),
+  rnc2_s:K(P([.47,.69,.06],[-.14,-.34,0],[-1.56,.48,-.24],[.24,0,.06],[-.66,-.25,.45],[.24,0,-.06],[-.37,-.02,.03],[.58,.03,-.03],-.22),.43,.61),
+  rnv1_s:K(P([.19,.36,-.03],[-.10,-.17,0],[-1.88,-.14,-.04],[.24,0,.06],[-.61,-.32,.45],[.24,0,-.06],[-.44,-.02,.03],[.46,.03,-.03],-.18),.39,.42),
+  rnv2_s:K(P([.21,-.46,.04],[-.11,.22,0],[-.60,.32,-.48],[.24,0,.06],[-1.91,.08,.06],[.24,0,-.06],[-.46,-.04,.03],[.46,.03,-.02],-.22),.42,.45),
+  rnv3_s:K(P([.46,.60,-.08],[-.14,-.33,0],[-1.62,.53,-.21],[.24,0,.06],[-.62,-.25,.39],[.24,0,-.06],[-.57,-.03,.02],[.49,.04,-.02],-.26),.56,.44),
+  rnv4_s:K(P([.49,-.24,.05],[-.16,.13,0],[-.62,.28,-.39],[.24,0,.06],[-1.14,-.33,.31],[.24,0,-.06],[-1.51,-.03,.02],[.32,.03,-.02],-.23),1.73,.49),
+  rnv5_s:K(P([.57,-.65,.05],[-.22,.34,0],[-1.92,.31,-.15],[.24,0,.06],[-.75,-.28,.39],[.24,0,-.06],[-.68,-.02,.02],[.52,.03,-.02],-.30),.58,.52),
+  rnv6_s:K(P([.31,.72,-.08],[-.10,-.35,0],[-.67,.27,-.41],[.24,0,.06],[-1.67,-.56,.02],[.24,0,-.06],[-.51,-.02,.03],[.56,.03,-.02],-.23),.49,.53),
+  rnv7_s:K(P([.41,.17,-.03],[-.13,-.14,0],[-1.96,-.03,.04],[.24,0,.06],[-.69,-.24,.41],[.24,0,-.06],[-.66,-.01,.02],[.51,.04,-.02],-.29),.57,.51),
+  rnv8_s:K(P([.65,-.27,.02],[-.23,.14,0],[-1.84,-.03,-.16],[.24,0,.06],[-1.82,.06,.17],[.24,0,-.06],[-.80,-.01,.02],[.61,.02,-.03],-.33),.66,.65),
+  rn_counter_side:K(P([.34,.61,-.06],[-.08,-.27,0],[-1.65,.30,-.12],[.24,0,.06],[-.62,-.37,.45],[.24,0,-.06],[-.54,-.02,.02],[.49,.04,-.02],-.24),.51,.47),
+  rn_counter_over:K(P([.53,-.28,.03],[-.13,.12,0],[-1.68,.16,-.28],[.24,0,.06],[-.75,-.32,.42],[.24,0,-.06],[-.70,-.02,.02],[.49,.04,-.02],-.28),.62,.53),
+  rn_counter_low:K(P([.32,.25,-.07],[-.20,-.15,0],[-.74,.30,-.45],[.24,0,.06],[-1.25,-.25,.33],[.24,0,-.06],[.27,-.02,.02],[-1.39,.02,-.01],-.23),.39,1.67),
+  rn_counter_thrust:K(P([.33,-.61,.04],[-.12,.30,0],[-.57,.32,-.40],[.24,0,.06],[-1.86,-.04,.06],[.24,0,-.06],[-.53,-.03,.02],[.50,.03,-.02],-.25),.49,.53),
+  rn_counter_projectile:K(P([.28,.44,-.03],[-.12,-.22,0],[-1.85,.06,-.10],[.24,0,.06],[-.63,-.26,.41],[.24,0,-.06],[-.49,-.02,.03],[.45,.03,-.02],-.21),.44,.45),
+  rn_counter_side_2:K(P([.36,-.52,.04],[-.12,.30,0],[-.57,.22,-.45],[.24,0,.06],[-1.62,-.32,.11],[.24,0,-.06],[-.45,-.02,.02],[.54,.03,-.03],-.22),.45,.52),
+  rn_counter_side_3:K(P([.51,.58,-.07],[-.16,-.22,0],[-1.49,.54,-.23],[.24,0,.06],[-.60,-.32,.35],[.24,0,-.06],[-.63,-.03,.02],[.50,.03,-.03],-.27),.57,.49),
+  rn_counter_over_2:K(P([.42,.39,-.04],[-.13,-.25,0],[-1.89,-.12,.03],[.24,0,.06],[-.58,-.22,.34],[.24,0,-.06],[-.46,-.03,.02],[.47,.03,-.02],-.25),.47,.48),
+  rn_counter_over_3:K(P([.46,-.49,.03],[-.14,.22,0],[-.56,.23,-.39],[.24,0,.06],[-1.85,-.23,.08],[.24,0,-.06],[-.58,-.02,.02],[.51,.03,-.02],-.27),.52,.48),
+  rn_counter_low_2:K(P([.24,-.42,.04],[-.15,.20,0],[-.53,.23,-.44],[.24,0,.06],[-1.89,.09,.03],[.24,0,-.06],[-.47,-.02,.03],[.47,.03,-.02],-.19),.44,.47),
+  rn_counter_low_3:K(P([.47,.40,-.06],[-.16,-.17,0],[-1.51,.51,-.19],[.24,0,.06],[-.63,-.24,.41],[.24,0,-.06],[-.58,-.02,.02],[.47,.03,-.02],-.25),.55,.46),
+  rn_counter_thrust_2:K(P([.43,.55,-.06],[-.13,-.28,0],[-1.69,.45,-.17],[.24,0,.06],[-.55,-.30,.44],[.24,0,-.06],[-.60,-.02,.02],[.49,.03,-.02],-.26),.57,.43),
+  rn_counter_thrust_3:K(P([.47,-.44,.03],[-.14,.22,0],[-.65,.27,-.43],[.24,0,.06],[-1.87,-.18,.09],[.24,0,-.06],[-.51,-.02,.03],[.53,.03,-.02],-.22),.46,.54),
+  rn_counter_projectile_2:K(P([.35,-.50,.04],[-.12,.27,0],[-.58,.32,-.40],[.24,0,.06],[-1.75,.08,.02],[.24,0,-.06],[-.50,-.02,.02],[.49,.03,-.02],-.24),.45,.49),
+  rn_counter_projectile_3:K(P([.55,.57,-.07],[-.16,-.30,0],[-1.69,.48,-.16],[.24,0,.06],[-.61,-.30,.42],[.24,0,-.06],[-.63,-.02,.03],[.52,.03,-.02],-.29),.60,.53),
+  rn_insight_w:K(P([.46,-.58,.03],[-.10,.33,0],[-.65,.33,-.50],[.24,0,.06],[-.76,-.36,.44],[.24,0,-.06],[-.65,-.02,.03],[.49,.03,-.02],-.29),.58,.52),
+  rn_insight_s:K(P([.65,.38,-.05],[-.22,-.18,0],[-1.89,.16,-.08],[.24,0,.06],[-1.82,-.12,.09],[.24,0,-.06],[-.76,-.02,.02],[.61,.03,-.02],-.33),.67,.61),
+  rnv_s:K(P([.40,.42,-.06],[-.13,-.14,0],[-1.52,.60,-.29],[.23,0,.13],[-1.26,-.37,.32],[.23,0,-.1],[-.75,-.07,.19],[.62,.10,-.21],-.26),.57,.51),
+};
+
 const KNUCKLES: Record<string, Pose> = {
   idle: P([0.15, -0.3, 0], [-0.1, 0.3, 0], [-1.1, 0.45, -0.25], [0.6, 0, 0], [-1.15, -0.25, 0.25], [0.6, 0, 0], [-0.4, 0, 0.08], [0.4, 0, -0.08], -0.1),
   block: P([0.25, 0, 0], [0.15, 0, 0], [-1.75, 0.55, 0], [0.8, 0, 0], [-1.75, -0.55, 0], [0.8, 0, 0], [-0.4, 0, 0.08], [0.4, 0, -0.08], -0.14),
@@ -1171,8 +1274,6 @@ const KNUCKLES: Record<string, Pose> = {
 // forward; y (applied after) sweeps the raised leg sideways, for roundhouse arcs.
 const GUARD_R: Vec3 = [-1.0, 0.4, -0.3];
 const GUARD_L: Vec3 = [-1.1, -0.3, 0.3];
-/** Adds knee bend to a pose. */
-const K = (p: Pose, l: number, r: number): Pose => ({ ...p, knee: [l, r] });
 // Kicker: a relaxed, almost casual upper body (hands low and slightly behind, never a boxing
 // guard), weight on the rear leg, asymmetric stance; the legs do all the work. Kicks go
 // chamber (knee up, shin folded) -> snap -> recoil, arms swinging out only for balance.
@@ -1488,6 +1589,7 @@ const TABLES: Record<string, Record<string, Pose>> = {
   bow: BOW,
   scythe: GRAVITY_SCYTHE,
   knuckles: KNUCKLES,
+  tonfa: RENJI_TONFA,
   bomb: {
     // Bomb held in the right hand near the chest, left hand loose.
     idle: P([0.02, -0.3, 0], [0, 0.25, 0], [-0.7, 0.45, -0.25], [0.5, 0, 0], [-0.25, -0.15, 0.22], [0.2, 0, 0], [-0.25, 0, 0.08], [0.25, 0, -0.08], -0.04),

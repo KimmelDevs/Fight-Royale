@@ -635,6 +635,25 @@ function buildProjectile(g: THREE.Group, style: string, element: string, size: n
   g.add(new THREE.Mesh(new THREE.SphereGeometry(0.17 * size, 14, 8), M.water(color, 0.55, 1.6)));
 }
 
+// RENJI_BLUNT_IMPACT_V33 — five independent, tweakable feel controls.
+const RENJI_BLUNT_FEEL_V33 = {
+  Z_LEAD: 0.040,
+  V_LEAD: 0.085,
+  HITSTOP_FRAMES: [1.5, 3, 5, 8], // light, elbow/knee, finisher, V/Read finale at 60fps
+  SHAKE: [0.06, 0.11, 0.19, 0.32],
+  SOUND_GAIN: 0.54,
+} as const;
+
+const RENJI_BLUNT_AUDIO_V33 = {
+  light: "hit_blunt",
+  mid: "hit_blunt2",
+  heavy: "hit_heavy",
+  finale: "hit_big",
+  mechanism: "click",
+  pivot: "land",
+  parry: "parry",
+} as const;
+
 export class Game implements MobHost {
   cfg: GameConfig;
   net: Net | null;
@@ -757,6 +776,7 @@ export class Game implements MobHost {
     this.net = net;
     this.plat = cfg.mode === "brawl";
     Sound.preload(MATCH_SOUNDS);
+    Sound.preload(["click", "hit_big", "hit_blunt", "hit_blunt2", "hit_heavy", "land", "parry"]); // RENJI_BLUNT_IMPACT_V33
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -1618,7 +1638,8 @@ export class Game implements MobHost {
     }
     const heavy = a.heavy || f.atkId === "heavy";
     if (a.type === "melee") {
-      if (f.kit === "knuckles" || f.kit === "kicks") this.snd(heavy ? "swing_heavy" : "whoosh_light", 0.7);
+      if (f.kit === "tonfa") this.snd("whoosh_light", 0.28);
+      else if (f.kit === "knuckles" || f.kit === "kicks") this.snd(heavy ? "swing_heavy" : "whoosh_light", 0.7);
       else if (f.kit === "assassin") this.snd(heavy ? "swing2" : "dagger", 0.7);
       else if (f.kit === "greatsword" || f.kit === "hammer" || heavy) this.snd("swing_heavy", 0.8);
       else this.snd(Math.random() < 0.5 ? "swing" : "swing2", 0.7);
@@ -1651,6 +1672,14 @@ export class Game implements MobHost {
     if (attacker instanceof Fighter && attacker.look.element === "metal" && attacker.kit === "glaive") {
       this.snd("metal_arrow_hit", 0.5);
       if (crit) this.snd("crit", 0.45);
+      return;
+    }
+    if (attacker instanceof Fighter && attacker.kit === "tonfa") {
+      const t = this.renjiBluntTier(a);
+      const name = t === 3 ? RENJI_BLUNT_AUDIO_V33.finale : t === 2 ? RENJI_BLUNT_AUDIO_V33.heavy :
+        t === 1 ? RENJI_BLUNT_AUDIO_V33.mid : RENJI_BLUNT_AUDIO_V33.light;
+      this.snd(name, RENJI_BLUNT_FEEL_V33.SOUND_GAIN * (t === 3 ? 1.35 : t === 2 ? 1.1 : 1));
+      if (crit) this.snd("crit", 0.28);
       return;
     }
     const heavy = a.heavy;
@@ -2079,6 +2108,10 @@ export class Game implements MobHost {
         this.fxp("flash", tip, "#ff6575", a.heavy ? 0.42 : 0.22, 0.12, 0.7);
         this.fxp("sparks", tip, "#ffb4b4", a.heavy ? 20 : 10, 4);
       }
+    }
+    // RENJI: real multi-contact attacks resolve at their own animation beats.
+    if (f.kit === "tonfa" && ["renji_hundred","renji_blindside","renji_eightfold","renji_riposte"].includes(a.style)) {
+      this.renjiMulti(f, a); return;
     }
     switch (a.type) {
       case "projectile":
@@ -2546,6 +2579,109 @@ export class Game implements MobHost {
       if(last) this.fxp("ring",f.chest(),"#e0a85c",1.1,.18,.65);
       this.melee(f,attack);
     });
+  }
+
+  // RENJI_BLUNT_IMPACT_V33 — radial impacts, distinct limbs, real melee collision.
+  // Source sound names are embedded by the installer; no slash or blade sound plays.
+  private renjiBluntTier(a: Attack): number {
+    if (a.id === "renji_insight" || (a.style === "renji_pulse" && a.heavy)) return 3;
+    const idx = Number(/_rn(\d+)$/.exec(a.id)?.[1] ?? -1);
+    if ((a.id.startsWith("z") && idx === 6) || (a.id.startsWith("c") && idx === 1) ||
+        (a.style === "renji_riposte_hit" && idx === 2)) return 2;
+    if (idx === 2 || idx === 3 || idx === 4 || idx === 5) return 1;
+    if (a.id === "heavy" || a.id === "l5") return 2;
+    if (a.id === "l3" || a.id === "l4") return 1;
+    return 0;
+  }
+
+  private renjiBluntFX(f: Fighter, tier: number) {
+    // Called ONLY after melee() confirmed actual HP damage. 20ms after pose blend.
+    const p = f.model.bladeTip.getWorldPosition(new THREE.Vector3());
+    const color = tier >= 2 ? "#E8D7FF" : tier === 1 ? "#8E51D6" : "#58318E";
+    const count = [6, 12, 22, 36][tier];
+    const reach = [1.4, 2.4, 4.1, 5.7][tier];
+    this.fxp("sparks", p, color, count, reach);
+    this.fxp("flash", p, tier > 1 ? "#E8D7FF" : "#8E51D6",
+      [0.09, 0.15, 0.22, 0.29][tier], [0.065, 0.080, 0.105, 0.145][tier], 0.58);
+    if (tier >= 1) this.fxp("ring", p, color,
+      [0.0, 0.27, 0.56, 0.94][tier], [0.0, 0.13, 0.18, 0.25][tier], 0.52);
+    if (tier >= 2) this.fxp("smoke", p, "#27173D");
+  }
+
+  private renjiMulti(f: Fighter, a: Attack) {
+    const round = this.round, serial = f.swingSerial;
+    const riposte = a.style === "renji_riposte", z = a.style === "renji_hundred";
+    const c = a.style === "renji_blindside", v = a.style === "renji_eightfold";
+    // Unequal spacing: V pauses after knee #4 before accelerating to the finale.
+    const beats = riposte ? [.17,.48,.85] : z ? [.075,.18,.29,.425,.565,.73,.925] :
+      c ? [.32,.81] : v ? [.08,.18,.28,.40,.59,.70,.82,.96] : [.45];
+    const routes = [
+      ["rn_counter_side", "rn_counter_side_2", "rn_counter_side_3"],
+      ["rn_counter_over", "rn_counter_over_2", "rn_counter_over_3"],
+      ["rn_counter_low", "rn_counter_low_2", "rn_counter_low_3"],
+      ["rn_counter_thrust", "rn_counter_thrust_2", "rn_counter_thrust_3"],
+      ["rn_counter_projectile", "rn_counter_projectile_2", "rn_counter_projectile_3"],
+    ];
+    const poses = riposte ? routes[Math.max(0,Math.min(4,f.renjiCounterRoute))] :
+      z ? ["rnz1_s", "rnz2_s", "rnz3_s", "rnz4_s", "rnz5_s", "rnz6_s", "rnz7_s"] :
+      c ? ["rnc1_s", "rnc2_s"] :
+      ["rnv1_s", "rnv2_s", "rnv3_s", "rnv4_s", "rnv5_s", "rnv6_s", "rnv7_s", "rnv8_s"];
+    if (c) {
+      this.fxp("dodgeGhost", f.root.position.clone(), "#58318E", f.root.rotation.y);
+      this.snd(RENJI_BLUNT_AUDIO_V33.pivot, 0.28);
+    }
+    for (let i=0; i<beats.length; i++) {
+      const lead = z ? RENJI_BLUNT_FEEL_V33.Z_LEAD : v ? RENJI_BLUNT_FEEL_V33.V_LEAD : .060;
+      this.laterCombo(f, Math.max(.012,a.active*beats[i]-lead),()=>{
+        if(round!==this.round||f.isDown()||f.state!==S.ATTACK||f.parryRecoilT>0||f.swingSerial!==serial) return;
+        f.poseOverride=poses[i];
+        if ((z&&i===4)||(c&&i===0)||(v&&(i===4||i===5)))
+          this.snd(RENJI_BLUNT_AUDIO_V33.mechanism, 0.32);
+      });
+      this.laterCombo(f,a.active*beats[i],()=>{
+        if(round!==this.round||f.isDown()||f.state!==S.ATTACK||f.parryRecoilT>0||f.swingSerial!==serial) return;
+        f.poseOverride=poses[i];
+        const last = i===beats.length-1;
+        // All damage/guard/reach values are kept as in V3.2. Knock/stun are tuned
+        // only for light-vs-middle contact readability; final knock is preserved.
+        const tier = last ? v ? 3 : 2 : (i===2||i===3||i===4||i===5)?1:0;
+        const pulse:Attack={...a,id:`${a.id}_rn${i}`,style:riposte?"renji_riposte_hit":"renji_pulse",
+          dmg:riposte?[36,37,41][i]:z&&last?36:a.dmg,
+          guard:riposte?[10,12,13][i]:a.guard,
+          reach:Math.min(a.reach,c?2.03:v?2.08:1.98),
+          knock:last?(riposte?2.8:v?4.2:z?2.5:1.8):tier===1?.42:.24,
+          stun:last?.27:tier===1?.12:.10,heavy:last&&v,no_parry:riposte};
+        const hit=this.melee(f,pulse);
+        if(hit && last) f.model.recoil=Math.max(f.model.recoil,v?.19:.11); // visual-only impact nudge
+        if(hit) this.laterCombo(f,.020,()=>{
+          if(round!==this.round||f.isDown()||f.swingSerial!==serial||
+             f.state!==S.ATTACK||f.parryRecoilT>0||f.poseOverride!==poses[i]) return;
+          this.renjiBluntFX(f,tier);
+        });
+        if(riposte&&last&&hit&&f.renjiSpendRead()) {
+          // Bonus has a visible anticipation, not an instant effect/phantom hit.
+          this.laterCombo(f,.008,()=>{
+            if(round===this.round&&!f.isDown()&&f.swingSerial===serial&&f.state===S.ATTACK)
+              f.poseOverride="rn_insight_w";
+          });
+          this.laterCombo(f,.055,()=>{
+            if(round!==this.round||f.isDown()||f.swingSerial!==serial||
+               f.state!==S.ATTACK||f.parryRecoilT>0)return;
+            f.poseOverride="rn_insight_s";
+            const bonus=this.melee(f,{...a,id:"renji_insight",style:"renji_pulse",dmg:65,guard:24,
+              reach:1.95,knock:4.1,stun:.35,no_parry:true});
+            if(bonus){
+              f.model.recoil=Math.max(f.model.recoil,.20);
+              this.laterCombo(f,.020,()=>{
+                if(round!==this.round||f.isDown()||f.swingSerial!==serial||
+                   f.state!==S.ATTACK||f.parryRecoilT>0||f.poseOverride!=="rn_insight_s")return;
+                this.renjiBluntFX(f,3);
+              });
+            }
+          });
+        }
+      });
+    }
   }
 
   private melee(f: Fighter, a: Attack): boolean {
@@ -4276,6 +4412,12 @@ export class Game implements MobHost {
       f.bloodFeintT = Math.min(a.duration, 0.30);
       this.fxp("flash", f.chest(), "#ff456f", 0.38, 0.12, 0.8);
       this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.8, 0)), "DEATH FEINT", "#ffb6c6", 0.7);
+    } else if (a.mode === "renji_reflection" && f.kit === "tonfa") {
+      f.renjiReflectT = a.duration;
+      f.renjiParryFxT = Math.max(f.renjiParryFxT, 0.22);
+      this.fxp("flash", f.chest(), "#9452D8", 0.40, 0.17, 0.65);
+      this.fxp("ring", f.root.position.clone(), "#58318E", 0.95, 0.20, 0.55);
+      this.fxp("num", f.chest().add(new THREE.Vector3(0, 0.85, 0)), "IRON REFLECTION", "#CBA5FF", 0.65);
     } else if (a.mode === "counter") {
       f.counterT = a.duration;
       // A sideways read while setting the SPLIT counter, with no new i-frames.
@@ -4802,8 +4944,12 @@ export class Game implements MobHost {
         }
         if (attacker instanceof Fighter && attacker.look.element === "earth") this.fxp("rocks", d.root.position.clone(), heavy ? 12 : 6, heavy ? 0.9 : 0.6);
         const big = this.isDuel() || attacker instanceof Mob ? 1 : 0.5;
-        this.add_trauma((a.heavy ? 0.5 : heavy ? 0.3 : 0.18) * big);
-        this.hitStop(a.heavy ? 0.11 : heavy ? 0.07 : 0.045);
+        const renjiTier = attacker instanceof Fighter && attacker.kit === "tonfa" ?
+          this.renjiBluntTier(a) : -1;
+        this.add_trauma((renjiTier >= 0 ? RENJI_BLUNT_FEEL_V33.SHAKE[renjiTier] :
+          a.heavy ? 0.5 : heavy ? 0.3 : 0.18) * big);
+        this.hitStop(renjiTier >= 0 ? RENJI_BLUNT_FEEL_V33.HITSTOP_FRAMES[renjiTier] / 60 :
+          a.heavy ? 0.11 : heavy ? 0.07 : 0.045);
         if (result === "ko" && d instanceof Mob) this.creditMobKill(attacker instanceof Fighter ? attacker : null, d);
         const info = STATUS[a.effect as StatusKind];
         // Aster's Weaken shows its current stack on every successful follow-up,
@@ -4839,6 +4985,15 @@ export class Game implements MobHost {
         if (df.kit === "axeflail") {
           df.earnRaigoMomentum(`parry:${this.time.toFixed(3)}`);
           this.fxp("sparks",df.chest(),"#f4c982",20,5);
+        }
+        // RENJI: calculate recoil from PRE-hit Read, then earn at most one per swing.
+        const renjiRecoil = df.kit === "tonfa" ? df.renjiRecoilSeconds() : 0.50;
+        if (df.kit === "tonfa") {
+          df.renjiAwardRead(attacker, a);
+          this.fxp("flash", df.chest(), "#9B56E8", 0.32, 0.11, 0.65);
+          this.fxp("sparks", shieldPos, "#E8D7FF", 30, 5);
+          this.fxp("num", df.chest().add(new THREE.Vector3(0, 0.65, 0)),
+            `READ ${df.renjiRead}/3`, "#D7B8FF", 0.64);
         }
         df.recoverFromParry(); // FIGHT_ROYALE_V31_MOONFLOAT_ORBIT_PARRY: +20% max guard, -1 fatigue (once per parry)
         if (df.kit === "tristaff") {
@@ -4877,13 +5032,15 @@ export class Game implements MobHost {
           // A successful enemy parry still works, but does not apply attacker recoil.
           if (!ranged && a.type === "melee") {
             if (!(attacker.kit==="tristaff" && attacker.dragonMode===1))
-              attacker.applyParryRecoil(0.50);
+              attacker.applyParryRecoil(renjiRecoil);
           } else attacker.model.recoil = Math.max(attacker.model.recoil, 0.35);
-          df.armParryCounter(attacker, attacker.atkId === "pc" ? attacker.parryCounterDepth + 1 : 0);
+          // Auto-perfect-parry still defends against a riposte, but cannot start a new counter loop.
+          if (!(df.kit === "tonfa" && (a.style === "renji_riposte_hit" || a.id === "renji_insight")))
+            df.armParryCounter(attacker, attacker.atkId === "pc" ? attacker.parryCounterDepth + 1 : 0);
           this.fxp("num", df.chest().add(new THREE.Vector3(0, 0.95, 0)),
             "COUNTER READY", "#ffd0f5", 0.95);
         } else if (!ranged && attacker instanceof Mob) attacker.receiveHit(d, { ...a, dmg: 0, knock: 4 }, 0);
-        this.snd("parry", 0.9);
+        this.snd(df.kit === "tonfa" ? RENJI_BLUNT_AUDIO_V33.parry : "parry", 0.9);
         if (!ranged && a.type === "melee")
           this.fxp("clashBurst", shieldPos, neutralDragonSwitch ? "#dedede" : "#aee9ff", 1.15);
         this.fxp("sparks", shieldPos, neutralDragonSwitch ? "#dedede" : "#aee9ff", 40, 9);
@@ -4957,6 +5114,7 @@ export class Game implements MobHost {
         break;
       case "perfect_dodge": {
         const defender = d as Fighter;
+        if(defender.kit==="tonfa") defender.renjiAwardRead(attacker,a);
         this.highlightRecord(defender).perfectDodges++;
         // No extra i-frames or damage immunity: this was already a legitimate
         // dash-invulnerable hit, with exactly one Perfect Dodge per dash.
@@ -5013,6 +5171,10 @@ export class Game implements MobHost {
     // not passive blocks, parries, shield hits or projectile defenses.
     for (const fighter of [a, b]) {
       if (fighter.kit === "axeflail") fighter.earnRaigoMomentum(`swing:${fighter.swingSerial}`);
+      if(fighter.kit==="tonfa") {
+        const enemy=fighter===a?b:a;
+        if(enemy.atk)fighter.renjiAwardRead(enemy,enemy.atk);
+      }
       this.awardZarekClash(fighter);
       if (fighter.kit === "tristaff") fighter.earnDragonRhythm();
       if (fighter.kit === "hammer" && /^l\d+$/.test(fighter.atkId))
@@ -5645,6 +5807,8 @@ export class Game implements MobHost {
         passives.push({ label: "GUARD FATIGUE", icon: "/icons/emblems/tank.webp",
           value: `${f.guardFatigueStacks}/10`,
           desc: "Each defended hit adds 1 fatigue (max 10), slowing total boosted attack speed by 2% per stack. Successful parries remove 1 stack and recover 20% maximum guard. Decays by 1 every 3 seconds without another defended hit." });
+      if (f.kit === "tonfa") passives.push({ label:"READ", value:`${f.renjiRead}/3 · ${f.renjiReadDecayT.toFixed(0)}s` + (f.renjiReflectT > 0 ? ` · REFLECT ${f.renjiReflectT.toFixed(1)}s` : ""),
+        desc:"Perfect parries grant Read, max 3. Lose only one stack every 30 seconds without a new stack. X lasts 15s, auto-perfect-parries every incoming hit, disables Guard, and cools down 5% faster per Read stack (30s base). Recoil is 0.30–0.70s.", icon:"/icons/passives/renji.webp" });
       if (f.kit === "tristaff") passives.push({ label: "RHYTHM", value: `${f.dragonRhythm}/3 · ${f.dragonRhythmT.toFixed(1)}s · ${["STAFF","SPLIT","WHIP","FOLDED"][f.dragonMode]}` });
       if (f.kit === "axeflail") passives.push({ label: "MOMENTUM", value: `${f.raigoMomentum}/3 · ${f.raigoMomentumT.toFixed(1)}s` });
       if (f.kit === "hammer") passives.push({ label: "HEARTS", value: `${f.nesaCCharges}/3` });

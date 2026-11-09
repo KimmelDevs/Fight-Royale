@@ -1,0 +1,8 @@
+{
+  "version": "RENJI_TONFA_RIG_V34",
+  "files": [
+    "src/game/vrm.ts",
+    "src/game/model.ts",
+    "src/game/fighter.ts"
+  ]
+}

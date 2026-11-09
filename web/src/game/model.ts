@@ -393,6 +393,13 @@ export class FighterModel extends THREE.Group {
   bladeBase!: THREE.Object3D; bladeTip!: THREE.Object3D; shieldNode!: THREE.Object3D; castPoint!: THREE.Object3D;
   hairSway: THREE.Group[] = [];
   /** Two-handed weapons: the left hand is pulled onto this point of the grip every frame. */
+  // RENJI_COUNTER_FIST_V2: compact real tonfas held with their perpendicular grips.
+  renjiParryT = 0;
+  private renjiTonfas: THREE.Group[] = [];
+  // RENJI_BLUNT_IMPACT_V33 — hidden blunt bars, capped staff, unchanged tonfa grip orientation.
+  // Visual state derives from the already-replicated pose; no new net fields.
+  private renjiMechanisms: { chain: THREE.Group; hook: THREE.Group;
+    ring: THREE.Group; extend: THREE.Group; tip: THREE.Group }[] = [];
   private gripL: THREE.Object3D | null = null;
   private roxyFloatingBook: THREE.Group | null = null;
   private roxyOpenPalm = 0;
@@ -639,6 +646,7 @@ export class FighterModel extends THREE.Group {
       case "hammer": this.buildHammer(); break;
       case "katana": this.buildKatana(); break;
       case "bow": this.buildBow(); break;
+      case "tonfa": this.buildRenjiTonfas(); break;
       case "knuckles": this.buildKnuckles(); break;
       case "wind": this.buildWind(); break;
       case "bomb": this.buildBomb(); break;
@@ -1673,7 +1681,11 @@ export class FighterModel extends THREE.Group {
     const axe=pivot(this);
     this.raigoAxe=axe;
     const head=pivot(axe);
-    head.scale.setScalar(.75); // 25% smaller axe HEAD than the original. No long haft.
+    head.scale.setScalar(.75);
+    // RAIGO_AXE_FACE_FORWARD_V1: cutting edge is drawn along +X; fighter forward is +Z.
+    // Turn HEAD only about the short handle's Y axis: no handedness or enemy-side flip.
+    // Tip, axe butt/chain anchor, and sharp edge outline rotate with this head.
+    head.rotation.y=-PI/2; // 25% smaller axe HEAD than the original. No long haft.
     mesh(head,box(.27,.24,.15),iron,[-.025,0,0]);
     // RAIGO_AXE_GRIP_FIX: a SHORT functional one-hand axe handle.
     // Handle is part of the .75-scaled head; NO second disconnected weapon.
@@ -1702,7 +1714,7 @@ export class FighterModel extends THREE.Group {
     mesh(head,cyl(.11,.11,.09,10),bronze,[.015,0,0],[PI/2,0,0]);
     // 0.75 head scaling makes grip offset -0.375 in axe-root coordinates.
     // The axe root follows the right hand so the grip, NOT the head, is held.
-    this.raigoAxeGrip=pivot(axe,[-.01125,-.375,0]);
+    this.raigoAxeGrip=pivot(axe,[0,-.375,-.01125]); // RAIGO_AXE_FACE_FORWARD_V1: grip follows rotated handle
     this.raigoAxeAttach=pivot(head,[-.015,-.79,0]); // chain connected to handle BUTT
     this.bladeBase=pivot(head,[.08,.02,0]);
     this.bladeTip=pivot(head,[.76,.04,0]);
@@ -2728,6 +2740,142 @@ export class FighterModel extends THREE.Group {
     this.shieldNode = this.hand_l;
   }
 
+  private buildRenjiTonfas() {
+    // RENJI_ECLIPSE_V32. The SHORT perpendicular T-handle passes through the fist;
+    // the long shaft runs UP the forearm, not forward like a baton. The VRM grips
+    // this cross-handle instead of holding the shaft like a sword.
+    for (let i=0;i<2;i++) {
+      const hand = i===0 ? this.hand_r : this.hand_l;
+      const sign = i===0 ? -1 : 1;
+      const root = pivot(hand, [sign*0.012,-0.017,0.014]);
+      // Traditional tonfa shaft: short striking nose below hand, long protective
+      // section toward elbow. Metal caps are restrained for a readable silhouette.
+      mesh(root, cyl(.027,.029,.53,12),this.tn("#292635"),[0,.145,-.105]);
+      mesh(root, cyl(.030,.032,.15,12),this.tn("#575267"),[0,.385,-.105]);
+      mesh(root, cyl(.032,.034,.07,12),this.tn("#7B7294"),[0,-.099,-.105]);
+      // This cylinder crosses the PALM at z≈0. Its front end attaches to the long shaft.
+      mesh(root,cyl(.030,.030,.235,12),this.tn("#24222D"),[0,-.015,-.008],[Math.PI/2,0,0]);
+      mesh(root,cyl(.038,.039,.019,12),this.tn("#ACA1BD"),[0,-.015,.099],[Math.PI/2,0,0]);
+      mesh(root,cyl(.037,.039,.02,12),this.tn("#ACA1BD"),[0,-.015,-.119],[Math.PI/2,0,0]);
+      for(let j=0;j<4;j++) mesh(root,torus(.031,.038),this.tn("#55506D"),[0,.02+j*.038,-.105]);
+      // Mechanical forms fold inside the LONG shaft and unfold from its far end.
+      const chain=pivot(root,[0,.419,-.105]);
+      for(let j=0;j<5;j++) mesh(chain,torus(.009,.019),this.tn("#A393B7"),[0,.029+j*.044,0],
+        [j%2?Math.PI/2:0,0,0]);
+      const hook=pivot(root,[0,.369,-.105]);
+      mesh(hook,cyl(.024,.024,.15,10),this.tn("#8D83A8"),[sign*.07,.075,0],[0,0,-sign*.63]);
+      mesh(hook,cyl(.025,.025,.095,10),this.tn("#C4B3ED"),[sign*.126,.154,0],[0,0,-sign*.92]);
+      const ring=pivot(root,[0,.305,-.105]);
+      mesh(ring,torus(.071,.086),this.tn("#ADA1C7"),[0,0,0],[Math.PI/2,0,0]);
+      for (let j=0;j<4;j++) {
+        const angle=j*Math.PI/2;
+        mesh(ring,cyl(.018,.018,.07,9),this.tn("#A090B2"),
+          [Math.cos(angle)*.082,0,Math.sin(angle)*.082],[0,0,-angle]);
+      }
+      const extend=pivot(root,[0,.412,-.105]);
+      mesh(extend,cyl(.018,.023,.34,10),this.tn("#B2A8C4"),[0,.17,0]);
+      mesh(extend,new THREE.SphereGeometry(.030,12,9),this.tn("#E8D7FF"),[0,.378,0]);
+      const tip=pivot(root,[0,.412,-.105]);
+      chain.scale.setScalar(.001); hook.scale.setScalar(.001);
+      ring.scale.setScalar(.001); extend.scale.y=.001;
+      this.renjiTonfas.push(root);
+      this.renjiMechanisms.push({chain,hook,ring,extend,tip});
+    }
+    this.bladeBase=this.renjiTonfas[0];
+    this.bladeTip=this.renjiMechanisms[0].tip;
+    this.castPoint=this.bladeTip;
+    this.shieldNode=this.hand_l;
+  }
+
+  // RENJI_TONFA_RIG_V34 — reused scratch transforms, no frame-by-frame allocations.
+  private readonly renjiWristWorld = new THREE.Vector3();
+  private readonly renjiElbowWorld = new THREE.Vector3();
+  private readonly renjiTonfaDir = new THREE.Vector3();
+  private readonly renjiTonfaForward = new THREE.Vector3();
+  private readonly renjiLocalAxis = new THREE.Vector3(0, 1, 0);
+  private readonly renjiParentWorldQ = new THREE.Quaternion();
+  private readonly renjiModelWorldQ = new THREE.Quaternion();
+  private readonly renjiTonfaTargetQ = new THREE.Quaternion();
+
+  private updateRenjiTonfas(dt: number, pose: string) {
+    if(this.renjiTonfas.length!==2 || this.renjiMechanisms.length!==2) return;
+    // Timed reveal, contact, and retraction all ease from the *current* pose.
+    const z=/^rnz[1-7]_s$/.test(pose) || pose==="rnz_s";
+    const c=/^rnc[12]_s$/.test(pose) || pose==="rnc_s";
+    const v=/^rnv[1-8]_s$/.test(pose) || pose==="rnv_s";
+    const counter=/^rn_counter_/.test(pose) || pose.startsWith("rn_parry") || pose.startsWith("rn_cancel");
+    const guard=pose==="block" || pose==="rnx_w" || pose==="rnx_s" || this.renjiParryT>.02;
+    const chainWant=z && /rnz[4567]_s/.test(pose) ? 1 : 0;
+    const hookWant=c || pose==="rn_counter_thrust" ? 1 : 0;
+    const ringWant=guard || pose==="rn_counter_over" || (v && /rnv[357]_s/.test(pose)) ? 1 : 0;
+    const extendWant=v && /rnv[678]_s/.test(pose) || pose==="rnh_s" ? 1 : 0;
+    const k=1-Math.exp(-Math.max(0,Math.min(dt,.10))*24);
+    const p=Math.min(1,this.renjiParryT/.4);
+    const flash=Math.sin(Math.PI*p);
+    for(let i=0;i<2;i++) {
+      const s=i===0 ? -1:1, mechanism=this.renjiMechanisms[i], weapon=this.renjiTonfas[i];
+      const sideChain=chainWant && i===0 ? 1:0;
+      const sideHook=hookWant && i===1 ? 1:0;
+      const sideExtend=extendWant && i===0 ? 1:0;
+      const sideRing=ringWant ? 1:0;
+      const scale=(g:THREE.Object3D,target:number)=>{
+        const want=.001+Math.max(0,target)*.999;
+        const next=THREE.MathUtils.lerp(g.scale.x,want,k);
+        g.scale.setScalar(next);
+      };
+      scale(mechanism.chain,sideChain);
+      scale(mechanism.hook,sideHook);
+      scale(mechanism.ring,sideRing);
+      mechanism.extend.scale.y=THREE.MathUtils.lerp(mechanism.extend.scale.y,.001+sideExtend*.999,k);
+      // Tip tracks the extended shaft's REAL end, including interpolation and retraction.
+      // The spear's visible tip cone is at y=.378 inside the scaled extend group.
+      mechanism.tip.position.y=.412 + .378*mechanism.extend.scale.y;
+      // RENJI_TONFA_RIG_V34 — align the visible shaft to the REAL elbow->wrist
+      // axis on the Aster VRM.  A fixed local rotation is wrong because left and
+      // right hands have different calibrated axes.  The +Y shaft points back
+      // from the fist to the elbow in idle/guard, then flips toward the opponent
+      // only for the tonfa that is actually landing a strike.
+      if (this.vrmRig && weapon.parent) {
+        const human = this.vrmRig.vrm.humanoid;
+        const hand = human.getNormalizedBoneNode(i === 0 ? "rightHand" : "leftHand");
+        const elbow = human.getNormalizedBoneNode(i === 0 ? "rightLowerArm" : "leftLowerArm");
+        if (hand && elbow) {
+          hand.getWorldPosition(this.renjiWristWorld);
+          elbow.getWorldPosition(this.renjiElbowWorld);
+          this.renjiTonfaDir.copy(this.renjiElbowWorld).sub(this.renjiWristWorld);
+          if (this.renjiTonfaDir.lengthSq() > 1e-8) {
+            this.renjiTonfaDir.normalize();
+            const strikeR = /^(?:rn1_s|rn3_s|rn5_s|rnh_s|rnz[135]_s|rnc2_s|rnv[13578]_s|rn_insight_s|rn_counter_(?:side|over|projectile)(?:_3)?)$/.test(pose);
+            const strikeL = /^(?:rn2_s|rn5_s|rnz[246]_s|rnc1_s|rnv[268]_s|rn_insight_s|rn_counter_(?:thrust|side_2|over_2|projectile_2))$/.test(pose);
+            const striking = i === 0 ? strikeR : strikeL;
+            if (striking) {
+              this.getWorldQuaternion(this.renjiModelWorldQ);
+              this.renjiTonfaForward.set(0, 0, 1).applyQuaternion(this.renjiModelWorldQ);
+              this.renjiTonfaDir.lerp(this.renjiTonfaForward, 0.86).normalize();
+            }
+            this.renjiTonfaTargetQ.setFromUnitVectors(this.renjiLocalAxis, this.renjiTonfaDir);
+            weapon.parent.getWorldQuaternion(this.renjiParentWorldQ).invert();
+            this.renjiParentWorldQ.multiply(this.renjiTonfaTargetQ);
+            weapon.quaternion.slerp(this.renjiParentWorldQ,
+              1-Math.exp(-Math.max(0,Math.min(dt,.10))*(striking?45:26)));
+          }
+        }
+      } else {
+        // Preserve the procedural fallback when no VRM is loaded.
+        const zag=z && i===0 ? -.20 : c && i===1 ? .21 : 0;
+        const twist=counter ? s*.31*flash : 0;
+        weapon.rotation.z=THREE.MathUtils.damp(weapon.rotation.z,zag+twist,26,dt);
+        weapon.rotation.x=THREE.MathUtils.damp(weapon.rotation.x,guard?-.14:0,24,dt);
+        weapon.rotation.y=THREE.MathUtils.damp(weapon.rotation.y,guard?s*.12:0,22,dt);
+      }
+    }
+    // The hit FX follows the tonfa currently leading the contact, including
+    // the off-hand hook and knee-follow-up; no invisible standalone hit source.
+    const left = /^rn(z[246]|c1|v[2468]|2|4|_counter_thrust)/.test(pose);
+    this.bladeTip=this.renjiMechanisms[left?1:0].tip;
+    this.castPoint=this.bladeTip;
+  }
+
   private buildKnuckles() {
     for (const h of [this.hand_r, this.hand_l]) {
       mesh(h, box(0.085, 0.08, 0.095), this.metal(), [0, -0.01, 0]);
@@ -3454,6 +3602,7 @@ export class FighterModel extends THREE.Group {
         -0.26 + Math.sin(this.t * 1.8) * 0.09,
         0.10 + Math.sin(this.t * 2.0) * 0.035);
     }
+    if (this.kit === "tonfa") this.updateRenjiTonfas(dt, actionPose);
     if (this.bowPivot) this.updateBow();
     if (this.kit === "axeflail") this.updateRaigoWeapon(dt);
     if (this.kit === "chainblade") this.updateChainblade(dt);
@@ -3674,6 +3823,21 @@ export class FighterModel extends THREE.Group {
     const box = new THREE.Box3();
     const inv = this.matrixWorld.clone().invert();
     for (const m of this.bodyMeshes) box.union(new THREE.Box3().setFromObject(m).applyMatrix4(inv));
+    // Renji only: yellow hair and amber eyes on a CLONED material.
+    // Aster retains his original appearance even when both fight in one match.
+    if (this.kit === "tonfa" && this.look.vrm === "aster") {
+      vrm.scene.traverse(node => {
+        if (!(node instanceof THREE.Mesh)) return;
+        const recolor = (m: THREE.Material): THREE.Material => {
+          const n = m.name.toLowerCase();
+          if (!n.includes("_hair") && !n.includes("eyeiris")) return m;
+          const clone = m.clone() as THREE.Material & { color?: THREE.Color };
+          clone.color?.set(n.includes("hair") ? "#ffd438" : "#edae2f");
+          return clone;
+        };
+        node.material = Array.isArray(node.material) ? node.material.map(recolor) : recolor(node.material);
+      });
+    }
     this.vrmRig = new VrmRig(vrm, {
       root: this, hips: this.hips, torso: this.torso, head: this.head, arm_l: this.arm_l, hand_l: this.hand_l,
       arm_r: this.arm_r, hand_r: this.hand_r, leg_l: this.leg_l, leg_r: this.leg_r,
@@ -3706,6 +3870,15 @@ export class FighterModel extends THREE.Group {
       this.vrmRig.blade = { base: this.bladeBase, tip: this.bladeTip, edge };
     }
     if (this.kit === "greatsword" || this.kit === "hammer") { this.vrmRig.restSword = true; this.vrmRig.grip.left = true; }
+    if (this.kit === "tonfa") {
+      this.vrmRig.boxer = true;
+      this.vrmRig.tonfa = true; // RENJI_TONFA_RIG_V34
+      this.vrmRig.followArm = 0.65; // wrists follow forearm rather than fixed / pose
+      this.vrmRig.bladed = 0.15; // squared close-guard, not two-handed sword stance
+      this.vrmRig.style = "light";
+      this.vrmRig.grip.left = true;  // V2 left fist was OPEN despite holding a tonfa
+      this.vrmRig.grip.right = true; // both palms curl around perpendicular T-grips
+    }
     if (this.kit === "knuckles") { this.vrmRig.boxer = true; this.vrmRig.bladed = 0.65; }
     // Kicker: relaxed, hands-free upper body; the legs do everything.
     // A longbow is about 85-90% of body height.

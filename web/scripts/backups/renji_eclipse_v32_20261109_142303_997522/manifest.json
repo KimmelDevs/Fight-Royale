@@ -1,0 +1,20 @@
+{
+  "installer": "RENJI_ECLIPSE_V32",
+  "previous": "V2",
+  "files": [
+    "src/game/roster.ts",
+    "src/game/kits.ts",
+    "src/game/model.ts",
+    "src/game/game.ts",
+    "src/game/fighter.ts",
+    "src/game/presentation.ts",
+    "src/game/ai.ts"
+  ],
+  "updated_stock_icons": [
+    "public/icons/passives/renji.webp",
+    "public/icons/skills/tonfa-z.webp",
+    "public/icons/skills/tonfa-x.webp",
+    "public/icons/skills/tonfa-c.webp",
+    "public/icons/skills/tonfa-v.webp"
+  ]
+}
