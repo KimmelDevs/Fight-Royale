@@ -37,6 +37,7 @@ class SoundEngine {
   private ctx: AudioContext | null = null;
   private out: GainNode | null = null;
   private combatOut: GainNode | null = null;
+  private tap: MediaStreamAudioDestinationNode | null = null; // FR_VIDEO_RECORDER_V1
   private buffers = new Map<string, AudioBuffer | null>();
   private loading = new Map<string, Promise<AudioBuffer | null>>();
   private lastPlay = new Map<string, number>();
@@ -72,7 +73,19 @@ class SoundEngine {
     this.combatOut = this.ctx.createGain();
     this.combatOut.gain.value = this.vol.master * this.vol.combat;
     this.combatOut.connect(this.ctx.destination);
+    // FR_VIDEO_RECORDER_V1: extra copy of the sound effects for canvas-only recordings.
+    try {
+      this.tap = this.ctx.createMediaStreamDestination();
+      this.out.connect(this.tap);
+      this.combatOut.connect(this.tap);
+    } catch {}
     return this.ctx;
+  }
+
+  /** FR_VIDEO_RECORDER_V1: sound-effect stream for the video recorder (music is not included). */
+  captureStream(): MediaStream | null {
+    this.context();
+    return this.tap?.stream ?? null;
   }
 
   private load(name: string): Promise<AudioBuffer | null> {

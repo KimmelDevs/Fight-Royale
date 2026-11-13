@@ -1,0 +1,12 @@
+{
+  "name": "video_recorder",
+  "modified": [
+    "src/app/globals.css",
+    "src/game/sound.ts",
+    "src/ui/GameView.tsx",
+    "src/ui/WatchSelect.tsx"
+  ],
+  "created": [
+    "src/game/recorder.ts"
+  ]
+}

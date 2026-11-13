@@ -16,6 +16,7 @@ import { Preview } from "@/game/preview";
 import type { Net } from "@/game/net";
 import { account } from "@/lib/account";
 import { Icon, skillIcon, charIcon } from "./icons";
+import { Recorder, autoRecordEnabled, type RecMode } from "@/game/recorder"; // FR_VIDEO_RECORDER_V1
 
 type Hud = ReturnType<Game["hud"]>;
 
@@ -242,6 +243,46 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3000);
   };
 
+  // FR_VIDEO_RECORDER_V1 — CPU vs CPU video recording.
+  const [recMode, setRecMode] = useState<RecMode | null>(null);
+  const recTimer = useRef<any>(null);
+  const titleBefore = useRef(typeof document !== "undefined" ? document.title : "");
+  const recFileName = () => {
+    const names = (cfg.players ?? []).slice(0, 2).map((p: any) => String(p.name ?? "CPU").replace(/[^A-Za-z0-9]+/g, ""));
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+    return `FightRoyale_${names.join("_vs_") || "CPU"}_${stamp}`;
+  };
+  const finishRec = async () => {
+    clearTimeout(recTimer.current);
+    const blob = await Recorder.stop();
+    setRecMode(null);
+    document.title = titleBefore.current;
+    if (blob) { Recorder.save(blob, recFileName()); toast("Video saved to your downloads"); }
+  };
+  const startRec = async () => {
+    if (!cfg.spectator) return;
+    clearTimeout(recTimer.current);
+    if (Recorder.recording) await finishRec();
+    const mode = await Recorder.start(canvas.current);
+    setRecMode(mode);
+    if (!mode) toast("Video recording is not supported in this browser");
+    else if (mode === "canvas") toast("Recording the arena only (no HUD). Allow screen sharing to include the HUD.");
+    else document.title = "● REC";
+  };
+  /** After a rematch: begin a fresh recording (auto mode) or close the previous one. */
+  const onRestart = () => {
+    if (!cfg.spectator) return;
+    if (autoRecordEnabled()) startRec();
+    else if (Recorder.recording) finishRec();
+  };
+  const toggleRec = () => {
+    if (Recorder.recording) { finishRec(); return; }
+    Recorder.prepareTab(); // must run inside the click / key press
+    startRec();
+  };
+
   useEffect(() => { Sound.setMusic("battle"); return () => Sound.setMusic("menu"); }, []);
 
   useEffect(() => {
@@ -259,6 +300,8 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
       } else if (e.type === "perks") setPerks(e.options);
       else if (e.type === "over") {
         setOver({ text: e.text, sub: e.sub, color: e.color });
+        // FR_VIDEO_RECORDER_V1: keep rolling 5 s so the winner pose and highlights are in the video.
+        if (Recorder.recording) { clearTimeout(recTimer.current); recTimer.current = setTimeout(() => { finishRec(); }, 5000); }
         Sound.play(/VICTORY|WIN|CLEAR/i.test(e.text) ? "victory" : "defeat", 0.9, 0);
       }
       else if (e.type === "reward") {
@@ -286,21 +329,36 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
       net.onLeave = (p) => { prevLeave(p); if (cfg.role === "client") setLost(true); };
     }
     g.start();
+    // FR_VIDEO_RECORDER_V1
+    Recorder.onUnexpectedStop = (blob) => {
+      Recorder.save(blob, recFileName());
+      setRecMode(null);
+      document.title = titleBefore.current;
+      toast("Screen sharing ended: video saved");
+    };
+    if (cfg.spectator && autoRecordEnabled()) startRec();
     const iv = setInterval(() => setHud(g.hud()), 80);
     const key = (e: KeyboardEvent) => {
       if (e.code === "Escape") { e.preventDefault(); const p = !g.paused; g.paused = p; setPausedState(p); }
-      if (e.code === "KeyR" && g.canRestart) { setOver(null); setHighlights(null); setWinnerChar(null); setRankChange(null); rankDone.current = false; g.restart(); }
+      if (e.code === "F9" && cfg.spectator) { e.preventDefault(); toggleRec(); } // FR_VIDEO_RECORDER_V1
+      if (e.code === "KeyR" && g.canRestart) { setOver(null); setHighlights(null); setWinnerChar(null); setRankChange(null); rankDone.current = false; g.restart(); onRestart(); }
     };
     window.addEventListener("keydown", key);
     return () => {
       clearInterval(iv);
       clearTimeout(bannerTimer);
       window.removeEventListener("keydown", key);
+      // FR_VIDEO_RECORDER_V1: leaving the match saves any recording in progress and ends screen sharing.
+      clearTimeout(recTimer.current);
+      Recorder.onUnexpectedStop = null;
+      document.title = titleBefore.current;
+      if (Recorder.recording) Recorder.stop().then((b) => { if (b) Recorder.save(b, recFileName()); Recorder.release(); });
+      else Recorder.release();
       g.dispose();
     };
   }, []);
 
-  const rematch = () => { setOver(null); setHighlights(null); setWinnerChar(null); setPerks(null); setRankChange(null); rankDone.current = false; game.current?.restart(); };
+  const rematch = () => { setOver(null); setHighlights(null); setWinnerChar(null); setPerks(null); setRankChange(null); rankDone.current = false; game.current?.restart(); onRestart(); };
   // FIGHT_ROYALE_CPU_VS_CPU_SPECTATOR_V1: CPU vs CPU uses a two-sided HUD without local input controls.
   const me = hud?.me;
   const other = hud?.other;
@@ -516,6 +574,15 @@ export default function GameView({ cfg, net, onExit, matchId, bet, team }: {
         </div>
       )}
       <div className="toasts">{toasts.map((t) => <div key={t.id} className="toast">{t.text}</div>)}</div>
+      {/* FR_VIDEO_RECORDER_V1: hidden while tab-recording so the button never appears in the video */}
+      {cfg.spectator && recMode !== "tab" && (
+        <button type="button" className={"fr-rec-btn" + (recMode ? " on" : "")} onClick={toggleRec}
+          title="Record this match to a video file (F9)">
+          {recMode
+            ? `■ REC ${Math.floor(Recorder.elapsed() / 60)}:${String(Math.floor(Recorder.elapsed() % 60)).padStart(2, "0")} · stop`
+            : "⏺ Record (F9)"}
+        </button>
+      )}
       {banner && (
         <div key={banner.key} className="banner">
           <div className="txt" style={{ color: banner.color }}>{banner.text}</div>

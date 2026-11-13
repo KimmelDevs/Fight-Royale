@@ -1,9 +1,10 @@
 "use client";
 // FIGHT_ROYALE_CPU_VS_CPU_SPECTATOR_V1
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CHARACTERS } from "@/game/roster";
 import { LEVELS } from "@/game/ai";
 import { CardRow, Showcase, RANDOM } from "./Select";
+import { Recorder, autoRecordEnabled, setAutoRecord } from "@/game/recorder"; // FR_VIDEO_RECORDER_V1
 
 const COLORS = ["#6fcf7f", "#5fa8e3", "#f2994a", "#e8534a"];
 const nameOf = (i: number) => i === RANDOM ? "Random fighter" : CHARACTERS[i]?.look.name ?? "Unknown";
@@ -18,8 +19,13 @@ export default function WatchSelect({ onBack, onStart }: {
   const [right, setRight] = useState(1);
   const [difficulty, setDifficulty] = useState(1);
   const chosen = active === 0 ? left : right;
+  // FR_VIDEO_RECORDER_V1
+  const [autoRec, setAutoRecState] = useState(false);
+  useEffect(() => { setAutoRecState(autoRecordEnabled()); }, []);
+  const toggleAutoRec = (on: boolean) => { setAutoRecState(on); setAutoRecord(on); };
 
   const start = () => {
+    if (autoRec) Recorder.prepareTab(); // FR_VIDEO_RECORDER_V1: must be called inside this click
     const ids = CHARACTERS.map((_, i) => i);
     const a = left === RANDOM ? ids[Math.floor(Math.random() * ids.length)] : left;
     const choices = ids.filter((i) => i !== a);
@@ -63,6 +69,12 @@ export default function WatchSelect({ onBack, onStart }: {
               ))}
             </div>
           </div>
+          {/* FR_VIDEO_RECORDER_V1 */}
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", margin: "0 0 8px" }}
+            title="Records every fight to a video file. Your browser asks once to share this tab; tick &quot;Share tab audio&quot; to capture the music.">
+            <input type="checkbox" checked={autoRec} onChange={(e) => toggleAutoRec(e.target.checked)} />
+            <span>⏺ Auto-record every fight (saves a video file)</span>
+          </label>
           <div className="row">
             <button className="big ghost" onClick={onBack}>&lt; BACK</button>
             <button className="big gold" onClick={start}>WATCH FIGHT!</button>

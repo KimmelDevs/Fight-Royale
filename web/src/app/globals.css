@@ -465,3 +465,16 @@ input:focus { border-color: #e6c26e; }
   .cpu-compact-passives { max-width: 125px; }
   .fr-hud-mode-toggle { right: 5px; bottom: 4px; font-size: 9px; padding: 3px 6px; }
 }
+
+
+/* FR_VIDEO_RECORDER_V1 — record button on CPU vs CPU matches. */
+.fr-rec-btn {
+  position: absolute; left: 12px; bottom: 10px; z-index: 20;
+  border: 1px solid rgba(255,120,120,.55); border-radius: 6px;
+  padding: 5px 10px; background: rgba(40,8,12,.72);
+  color: #ffd3d3; font-family: inherit; font-size: 11px; font-weight: 800; line-height: 1.2;
+  cursor: pointer; pointer-events: auto; opacity: .85;
+}
+.fr-rec-btn:hover, .fr-rec-btn:focus-visible { opacity: 1; background: rgba(90,14,20,.92); }
+.fr-rec-btn.on { background: rgba(160,16,24,.92); color: #fff; border-color: #ff6b6b; opacity: 1; }
+@media (max-width: 700px) { .fr-rec-btn { left: 5px; bottom: 4px; font-size: 9px; padding: 3px 6px; } }
